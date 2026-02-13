@@ -49,23 +49,27 @@ export default function SuppliersPage() {
     try {
       setIsLoading(true)
       const response = await fetch("/api/suppliers")
+      const data = await response.json()
+      
       if (response.ok) {
-        const data = await response.json()
         setSuppliers(data)
       } else {
+        console.error("Error fetching suppliers:", data)
         toast({
           title: "Error",
-          description: "Failed to fetch suppliers",
+          description: data.error || "Failed to fetch suppliers",
           variant: "destructive",
         })
+        setSuppliers([])
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching suppliers:", error)
       toast({
         title: "Error",
-        description: "Failed to fetch suppliers",
+        description: error.message || "Failed to fetch suppliers. Please check your connection.",
         variant: "destructive",
       })
+      setSuppliers([])
     } finally {
       setIsLoading(false)
     }
@@ -273,6 +277,26 @@ function SupplierForm({
       return
     }
 
+    if (!formData.email.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Email is required",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(formData.email.trim())) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsSaving(true)
 
     try {
@@ -331,13 +355,14 @@ function SupplierForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">Email *</Label>
           <Input
             id="email"
             type="email"
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             placeholder="contact@abcsupplies.com"
+            required
           />
         </div>
       </div>

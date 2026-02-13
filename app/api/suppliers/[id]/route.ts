@@ -35,11 +35,18 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, email, phone, address, city, state, contactPerson } = body
+    const { name, email, phone, address, city, state, zipCode, country, contactPerson } = body
 
-    if (!name) {
+    if (!name || !name.trim()) {
       return NextResponse.json(
         { error: "Name is required" },
+        { status: 400 }
+      )
+    }
+
+    if (!email || !email.trim()) {
+      return NextResponse.json(
+        { error: "Email is required" },
         { status: 400 }
       )
     }
@@ -47,13 +54,15 @@ export async function PUT(
     const supplier = await prisma.supplier.update({
       where: { id },
       data: {
-        name,
-        email: email || null,
-        phone: phone || null,
-        address: address || null,
-        city: city || null,
-        state: state || null,
-        contactPerson: contactPerson || null,
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone?.trim() || null,
+        address: address?.trim() || null,
+        city: city?.trim() || null,
+        state: state?.trim() || null,
+        zipCode: zipCode?.trim() || null,
+        country: country?.trim() || null,
+        contactPerson: contactPerson?.trim() || null,
       },
     })
 
@@ -70,7 +79,7 @@ export async function PUT(
 
     if (error.code === "P2002") {
       return NextResponse.json(
-        { error: "Supplier with this name already exists" },
+        { error: "Supplier with this email or name already exists" },
         { status: 400 }
       )
     }
