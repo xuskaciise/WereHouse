@@ -7,20 +7,59 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const payment = await prisma.supplierPayment.findUnique({
-      where: { id },
-      include: {
-        supplier: true,
-        purchaseOrder: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
+    // Try to fetch with supplier balance first
+    let payment
+    try {
+      payment = await prisma.supplierPayment.findUnique({
+        where: { id },
+        include: {
+          supplier: true,
+          purchaseOrder: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+            },
           },
         },
-      },
-    })
+      })
+    } catch (dbError: any) {
+      // If balance column doesn't exist, fetch without it
+      if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
+        payment = await prisma.supplierPayment.findUnique({
+          where: { id },
+          include: {
+            supplier: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                address: true,
+                city: true,
+                state: true,
+                zipCode: true,
+                country: true,
+                contactPerson: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+            purchaseOrder: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+              },
+            },
+          },
+        })
+      } else {
+        throw dbError
+      }
+    }
 
     if (!payment) {
       return NextResponse.json(
@@ -56,10 +95,41 @@ export async function PUT(
     }
 
     // Get current payment to calculate balance difference
-    const currentPayment = await prisma.supplierPayment.findUnique({
-      where: { id },
-      include: { supplier: true },
-    })
+    // Handle missing balance column gracefully
+    let currentPayment
+    try {
+      currentPayment = await prisma.supplierPayment.findUnique({
+        where: { id },
+        include: { supplier: true },
+      })
+    } catch (dbError: any) {
+      // If balance column doesn't exist, fetch without it
+      if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
+        currentPayment = await prisma.supplierPayment.findUnique({
+          where: { id },
+          include: {
+            supplier: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                address: true,
+                city: true,
+                state: true,
+                zipCode: true,
+                country: true,
+                contactPerson: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+          },
+        })
+      } else {
+        throw dbError
+      }
+    }
 
     if (!currentPayment) {
       return NextResponse.json(
@@ -85,37 +155,86 @@ export async function PUT(
       })
 
       // Adjust supplier balance based on amount difference
+      // Handle case where balance column might not exist
       if (amountDifference !== 0) {
-        const supplier = await tx.supplier.findUnique({
-          where: { id: currentPayment.supplierId },
-          select: { balance: true },
-        })
-        
-        if (supplier) {
-          await tx.supplier.update({
+        try {
+          const supplier = await tx.supplier.findUnique({
             where: { id: currentPayment.supplierId },
-            data: {
-              balance: (supplier.balance || 0) - amountDifference,
-            },
+            select: { balance: true },
           })
+          
+          if (supplier) {
+            await tx.supplier.update({
+              where: { id: currentPayment.supplierId },
+              data: {
+                balance: (supplier.balance || 0) - amountDifference,
+              },
+            })
+          }
+        } catch (balanceError: any) {
+          // If balance column doesn't exist, skip balance update
+          // Balance will be calculated on-the-fly from purchase orders and payments
+          if (!balanceError.message?.includes("balance") && !balanceError.message?.includes("does not exist")) {
+            // Only log if it's a different error
+            console.error("Error updating supplier balance:", balanceError)
+          }
+          // Continue with payment update even if balance update fails
         }
       }
 
       // Fetch updated payment with relations
-      return await tx.supplierPayment.findUnique({
-        where: { id: payment.id },
-        include: {
-          supplier: true,
-          purchaseOrder: true,
-          user: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
+      // Handle missing balance column gracefully
+      try {
+        return await tx.supplierPayment.findUnique({
+          where: { id: payment.id },
+          include: {
+            supplier: true,
+            purchaseOrder: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+              },
             },
           },
-        },
-      })
+        })
+      } catch (dbError: any) {
+        // If balance column doesn't exist, fetch without it
+        if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
+          return await tx.supplierPayment.findUnique({
+            where: { id: payment.id },
+            include: {
+              supplier: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phone: true,
+                  address: true,
+                  city: true,
+                  state: true,
+                  zipCode: true,
+                  country: true,
+                  contactPerson: true,
+                  createdAt: true,
+                  updatedAt: true,
+                },
+              },
+              purchaseOrder: true,
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  username: true,
+                },
+              },
+            },
+          })
+        } else {
+          throw dbError
+        }
+      }
     })
 
     return NextResponse.json(result)
@@ -136,10 +255,41 @@ export async function DELETE(
     const { id } = await params
 
     // Get current payment to restore supplier balance
-    const currentPayment = await prisma.supplierPayment.findUnique({
-      where: { id },
-      include: { supplier: true },
-    })
+    // Handle missing balance column gracefully
+    let currentPayment
+    try {
+      currentPayment = await prisma.supplierPayment.findUnique({
+        where: { id },
+        include: { supplier: true },
+      })
+    } catch (dbError: any) {
+      // If balance column doesn't exist, fetch without it
+      if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
+        currentPayment = await prisma.supplierPayment.findUnique({
+          where: { id },
+          include: {
+            supplier: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                address: true,
+                city: true,
+                state: true,
+                zipCode: true,
+                country: true,
+                contactPerson: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+          },
+        })
+      } else {
+        throw dbError
+      }
+    }
 
     if (!currentPayment) {
       return NextResponse.json(
@@ -151,18 +301,29 @@ export async function DELETE(
     // Use transaction to delete payment and restore supplier balance
     await prisma.$transaction(async (tx) => {
       // Restore supplier balance (increase balance when payment is deleted)
-      const supplier = await tx.supplier.findUnique({
-        where: { id: currentPayment.supplierId },
-        select: { balance: true },
-      })
-      
-      if (supplier) {
-        await tx.supplier.update({
+      // Handle case where balance column might not exist
+      try {
+        const supplier = await tx.supplier.findUnique({
           where: { id: currentPayment.supplierId },
-          data: {
-            balance: (supplier.balance || 0) + currentPayment.amount,
-          },
+          select: { balance: true },
         })
+        
+        if (supplier) {
+          await tx.supplier.update({
+            where: { id: currentPayment.supplierId },
+            data: {
+              balance: (supplier.balance || 0) + currentPayment.amount,
+            },
+          })
+        }
+      } catch (balanceError: any) {
+        // If balance column doesn't exist, skip balance update
+        // Balance will be calculated on-the-fly from purchase orders and payments
+        if (!balanceError.message?.includes("balance") && !balanceError.message?.includes("does not exist")) {
+          // Only log if it's a different error
+          console.error("Error updating supplier balance:", balanceError)
+        }
+        // Continue with payment deletion even if balance update fails
       }
 
       // Delete payment

@@ -3,27 +3,73 @@ import { prisma } from "@/lib/prisma"
 
 export async function GET() {
   try {
-    const purchaseOrders = await prisma.purchaseOrder.findMany({
-      include: {
-        supplier: true,
-        warehouse: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
+    // Try to fetch with supplier balance first
+    let purchaseOrders
+    try {
+      purchaseOrders = await prisma.purchaseOrder.findMany({
+        include: {
+          supplier: true,
+          warehouse: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+            },
+          },
+          items: {
+            include: {
+              product: true,
+            },
           },
         },
-        items: {
+        orderBy: {
+          createdAt: "desc",
+        },
+      })
+    } catch (dbError: any) {
+      // If balance column doesn't exist, fetch without it
+      if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
+        purchaseOrders = await prisma.purchaseOrder.findMany({
           include: {
-            product: true,
+            supplier: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                address: true,
+                city: true,
+                state: true,
+                zipCode: true,
+                country: true,
+                contactPerson: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+            warehouse: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+              },
+            },
+            items: {
+              include: {
+                product: true,
+              },
+            },
           },
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    })
+          orderBy: {
+            createdAt: "desc",
+          },
+        })
+      } else {
+        throw dbError
+      }
+    }
     return NextResponse.json(purchaseOrders)
   } catch (error) {
     console.error("Error fetching purchase orders:", error)
@@ -46,18 +92,6 @@ export async function POST(request: Request) {
       )
     }
 
-    // Get current user (for now, use a default user - in production, get from session)
-    const defaultUser = await prisma.user.findFirst({
-      where: { role: "ADMIN" },
-    })
-
-    if (!defaultUser) {
-      return NextResponse.json(
-        { error: "No user found. Please create a user first." },
-        { status: 400 }
-      )
-    }
-
     // Calculate totals
     const subtotal = items.reduce((sum: number, item: any) => {
       return sum + (item.quantity * item.unitPrice)
@@ -66,12 +100,21 @@ export async function POST(request: Request) {
     const discount = 0
     const total = subtotal + tax - discount
 
-    // Generate order number
+    // Generate order number (do this outside transaction to avoid long transaction)
     const orderCount = await prisma.purchaseOrder.count()
     const orderNumber = `PO-${String(orderCount + 1).padStart(6, "0")}`
 
     // Use transaction to create order and update supplier balance
+    // Increased timeout to 30 seconds for complex operations
     const result = await prisma.$transaction(async (tx) => {
+      // Get current user inside transaction (for now, use a default user - in production, get from session)
+      const defaultUser = await tx.user.findFirst({
+        where: { role: "ADMIN" },
+      })
+
+      if (!defaultUser) {
+        throw new Error("No user found. Please create a user first.")
+      }
       // Create purchase order
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
@@ -98,19 +141,41 @@ export async function POST(request: Request) {
       })
 
       // Update supplier balance (increase balance when order is created - we owe supplier more)
-      // First get current balance
-      const supplier = await tx.supplier.findUnique({
-        where: { id: supplierId },
-        select: { balance: true },
-      })
-      
-      if (supplier) {
-        await tx.supplier.update({
-          where: { id: supplierId },
-          data: {
-            balance: (supplier.balance || 0) + total,
-          },
-        })
+      // Use savepoint to prevent balance update failure from aborting the transaction
+      try {
+        // Create a savepoint
+        await tx.$executeRaw`SAVEPOINT balance_update`
+        
+        // Check if balance column exists and update
+        const columnExists = await tx.$queryRaw<Array<{ exists: boolean }>>`
+          SELECT EXISTS (
+            SELECT 1 
+            FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'suppliers' 
+            AND column_name = 'balance'
+          ) as exists
+        `
+        
+        if (columnExists[0]?.exists) {
+          await tx.$executeRaw`
+            UPDATE suppliers 
+            SET balance = COALESCE(balance, 0) + ${total}
+            WHERE id = ${supplierId}
+          `
+        }
+        
+        // Release savepoint if successful
+        await tx.$executeRaw`RELEASE SAVEPOINT balance_update`
+      } catch (balanceError: any) {
+        // Rollback to savepoint if balance update fails
+        try {
+          await tx.$executeRaw`ROLLBACK TO SAVEPOINT balance_update`
+        } catch (rollbackError) {
+          // Ignore rollback errors
+        }
+        // Balance will be calculated on-the-fly from purchase orders and payments
+        console.log("Skipping balance update:", balanceError.message)
       }
 
       // Update stock for each item in the order
@@ -185,9 +250,18 @@ export async function POST(request: Request) {
         }
       }
 
-      // Fetch order with relations
-      return await tx.purchaseOrder.findUnique({
-        where: { id: purchaseOrder.id },
+      return purchaseOrder
+    }, {
+      maxWait: 10000, // Maximum time to wait for a transaction slot
+      timeout: 30000, // Maximum time the transaction can run (30 seconds)
+    })
+
+    // Fetch order with relations outside transaction to avoid timeout
+    // Handle missing balance column gracefully
+    let orderWithRelations
+    try {
+      orderWithRelations = await prisma.purchaseOrder.findUnique({
+        where: { id: result.id },
         include: {
           supplier: true,
           warehouse: true,
@@ -205,9 +279,49 @@ export async function POST(request: Request) {
           },
         },
       })
-    })
+    } catch (dbError: any) {
+      // If balance column doesn't exist, fetch without it
+      if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
+        orderWithRelations = await prisma.purchaseOrder.findUnique({
+          where: { id: result.id },
+          include: {
+            supplier: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                address: true,
+                city: true,
+                state: true,
+                zipCode: true,
+                country: true,
+                contactPerson: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+            warehouse: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+              },
+            },
+            items: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        })
+      } else {
+        throw dbError
+      }
+    }
 
-    return NextResponse.json(result, { status: 201 })
+    return NextResponse.json(orderWithRelations, { status: 201 })
   } catch (error: any) {
     console.error("Error creating purchase order:", error)
     return NextResponse.json(

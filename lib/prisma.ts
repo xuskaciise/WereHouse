@@ -10,4 +10,12 @@ export const prisma =
     log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
   })
 
+// Configure connection pool - reuse instance in development
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma
+
+// Graceful shutdown
+if (typeof window === "undefined") {
+  process.on("beforeExit", async () => {
+    await prisma.$disconnect()
+  })
+}

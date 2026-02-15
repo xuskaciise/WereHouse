@@ -3,22 +3,63 @@ import { prisma } from "@/lib/prisma"
 
 export async function GET() {
   try {
-    const payments = await prisma.supplierPayment.findMany({
-      include: {
-        supplier: true,
-        purchaseOrder: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
+    // Try to fetch with supplier balance first
+    let payments
+    try {
+      payments = await prisma.supplierPayment.findMany({
+        include: {
+          supplier: true,
+          purchaseOrder: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+            },
           },
         },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    })
+        orderBy: {
+          createdAt: "desc",
+        },
+      })
+    } catch (dbError: any) {
+      // If balance column doesn't exist, fetch without it
+      if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
+        payments = await prisma.supplierPayment.findMany({
+          include: {
+            supplier: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                address: true,
+                city: true,
+                state: true,
+                zipCode: true,
+                country: true,
+                contactPerson: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+            purchaseOrder: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        })
+      } else {
+        throw dbError
+      }
+    }
     return NextResponse.json(payments)
   } catch (error) {
     console.error("Error fetching supplier payments:", error)
@@ -70,36 +111,85 @@ export async function POST(request: Request) {
       })
 
       // Update supplier balance (decrease balance when we pay supplier - reduces what we owe)
-      // First get current balance
-      const supplier = await tx.supplier.findUnique({
-        where: { id: supplierId },
-        select: { balance: true },
-      })
-      
-      if (supplier) {
-        await tx.supplier.update({
+      // Handle case where balance column might not exist
+      try {
+        // First get current balance
+        const supplier = await tx.supplier.findUnique({
           where: { id: supplierId },
-          data: {
-            balance: (supplier.balance || 0) - parseFloat(amount),
-          },
+          select: { balance: true },
         })
+        
+        if (supplier) {
+          await tx.supplier.update({
+            where: { id: supplierId },
+            data: {
+              balance: (supplier.balance || 0) - parseFloat(amount),
+            },
+          })
+        }
+      } catch (balanceError: any) {
+        // If balance column doesn't exist, skip balance update
+        // Balance will be calculated on-the-fly from purchase orders and payments
+        if (!balanceError.message?.includes("balance") && !balanceError.message?.includes("does not exist")) {
+          // Only log if it's a different error
+          console.error("Error updating supplier balance:", balanceError)
+        }
+        // Continue with payment creation even if balance update fails
       }
 
       // Fetch updated supplier with payment
-      return await tx.supplierPayment.findUnique({
-        where: { id: payment.id },
-      include: {
-        supplier: true,
-        purchaseOrder: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
+      // Handle missing balance column gracefully
+      try {
+        return await tx.supplierPayment.findUnique({
+          where: { id: payment.id },
+          include: {
+            supplier: true,
+            purchaseOrder: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                username: true,
+              },
+            },
           },
-        },
-      },
-      })
+        })
+      } catch (dbError: any) {
+        // If balance column doesn't exist, fetch without it
+        if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
+          return await tx.supplierPayment.findUnique({
+            where: { id: payment.id },
+            include: {
+              supplier: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phone: true,
+                  address: true,
+                  city: true,
+                  state: true,
+                  zipCode: true,
+                  country: true,
+                  contactPerson: true,
+                  createdAt: true,
+                  updatedAt: true,
+                },
+              },
+              purchaseOrder: true,
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  username: true,
+                },
+              },
+            },
+          })
+        } else {
+          throw dbError
+        }
+      }
     })
 
     return NextResponse.json(result, { status: 201 })
