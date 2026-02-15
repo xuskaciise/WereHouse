@@ -14,14 +14,15 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String?  @unique
+  id        String     @id @default(cuid())
+  email     String?    @unique
   name      String
-  username  String   @unique
+  username  String     @unique
   password  String?
-  role      Role     @default(STUDENT)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  role      Role       @default(STUDENT)
+  status    UserStatus @default(PENDING)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   stockMovements     StockMovement[]
   purchaseOrders    PurchaseOrder[]
@@ -40,6 +41,12 @@ enum Role {
   SALES_OFFICER
   ACCOUNTANT
   STUDENT
+}
+
+enum UserStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 model Category {

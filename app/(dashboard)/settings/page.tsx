@@ -26,9 +26,6 @@ export default function SettingsPage() {
     lowStockThreshold: "",
     dateFormat: "",
     timezone: "",
-    invoicePrefix: "",
-    purchaseOrderPrefix: "",
-    salesOrderPrefix: "",
   })
 
   useEffect(() => {
@@ -261,47 +258,6 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground">
                 Products below this quantity will be marked as low stock
               </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Order Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Order Settings</CardTitle>
-            <CardDescription>
-              Configure order number prefixes and formats
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="invoicePrefix">Invoice Prefix</Label>
-                <Input
-                  id="invoicePrefix"
-                  value={settings.invoicePrefix}
-                  onChange={(e) => setSettings({ ...settings, invoicePrefix: e.target.value })}
-                  placeholder="INV"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="purchaseOrderPrefix">Purchase Order Prefix</Label>
-                <Input
-                  id="purchaseOrderPrefix"
-                  value={settings.purchaseOrderPrefix}
-                  onChange={(e) => setSettings({ ...settings, purchaseOrderPrefix: e.target.value })}
-                  placeholder="PO"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="salesOrderPrefix">Sales Order Prefix</Label>
-                <Input
-                  id="salesOrderPrefix"
-                  value={settings.salesOrderPrefix}
-                  onChange={(e) => setSettings({ ...settings, salesOrderPrefix: e.target.value })}
-                  placeholder="SO"
-                />
-              </div>
             </div>
           </CardContent>
         </Card>

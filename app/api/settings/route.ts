@@ -25,9 +25,6 @@ export async function GET() {
       lowStockThreshold: settingsObj.lowStockThreshold || "10",
       dateFormat: settingsObj.dateFormat || "MM/DD/YYYY",
       timezone: settingsObj.timezone || "UTC",
-      invoicePrefix: settingsObj.invoicePrefix || "INV",
-      purchaseOrderPrefix: settingsObj.purchaseOrderPrefix || "PO",
-      salesOrderPrefix: settingsObj.salesOrderPrefix || "SO",
     }
 
     return NextResponse.json(defaultSettings)

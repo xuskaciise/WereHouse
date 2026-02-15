@@ -15,6 +15,7 @@ export async function GET(
         username: true,
         email: true,
         role: true,
+        status: true,
         createdAt: true,
         updatedAt: true,
         // Don't include password in response
@@ -45,7 +46,7 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, username, password, role, email } = body
+    const { name, username, password, role, email, status } = body
 
     // Build update data object
     const updateData: any = {
@@ -62,6 +63,11 @@ export async function PUT(
     // Only update password if provided (and not empty)
     if (password && password.trim() !== "") {
       updateData.password = password // In production, hash this password with bcrypt!
+    }
+
+    // Update status if provided
+    if (status !== undefined) {
+      updateData.status = status
     }
 
     const user = await prisma.user.update({
@@ -91,6 +97,90 @@ export async function PUT(
 
     return NextResponse.json(
       { error: "Failed to update user" },
+      { status: 500 }
+    )
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const body = await request.json()
+    const { status } = body
+
+    if (!status || !["PENDING", "APPROVED", "REJECTED"].includes(status)) {
+      return NextResponse.json(
+        { error: "Valid status (PENDING, APPROVED, REJECTED) is required" },
+        { status: 400 }
+      )
+    }
+
+    let user
+    try {
+      user = await prisma.user.update({
+        where: { id },
+        data: { status },
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          email: true,
+          role: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
+    } catch (prismaError: any) {
+      // If status field is not recognized, use raw SQL
+      if (prismaError.message?.includes("status") || prismaError.message?.includes("Unknown argument")) {
+        console.log("Using raw SQL for status update")
+        await prisma.$executeRaw`
+          UPDATE users 
+          SET status = ${status}::"UserStatus"
+          WHERE id = ${id}
+        `
+        // Fetch the updated user
+        user = await prisma.user.findUnique({
+          where: { id },
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            email: true,
+            role: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+        if (!user) {
+          return NextResponse.json(
+            { error: "User not found" },
+            { status: 404 }
+          )
+        }
+      } else {
+        throw prismaError
+      }
+    }
+
+    return NextResponse.json(user)
+  } catch (error: any) {
+    console.error("Error updating user status:", error)
+    
+    if (error.code === "P2025") {
+      return NextResponse.json(
+        { error: "User not found" },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json(
+      { error: error.message || "Failed to update user status" },
       { status: 500 }
     )
   }

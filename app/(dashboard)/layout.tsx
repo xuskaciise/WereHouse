@@ -18,9 +18,34 @@ export default function DashboardLayout({
     // Check authentication on mount and when pathname changes
     const checkAuth = () => {
       if (typeof window !== "undefined") {
-        const user = localStorage.getItem("user") || sessionStorage.getItem("user")
-        if (user) {
-          setIsAuthenticated(true)
+        const userData = localStorage.getItem("user") || sessionStorage.getItem("user")
+        if (userData) {
+          try {
+            const user = JSON.parse(userData)
+            // Check if user is approved - block PENDING and REJECTED users
+            if (user.status === "PENDING") {
+              // Clear user data and redirect to login
+              localStorage.removeItem("user")
+              sessionStorage.removeItem("user")
+              setIsAuthenticated(false)
+              router.replace("/login?message=pending")
+              return
+            }
+            if (user.status === "REJECTED") {
+              // Clear user data and redirect to login
+              localStorage.removeItem("user")
+              sessionStorage.removeItem("user")
+              setIsAuthenticated(false)
+              router.replace("/login?message=rejected")
+              return
+            }
+            // User is approved, allow access
+            setIsAuthenticated(true)
+          } catch (error) {
+            // Invalid user data, redirect to login
+            setIsAuthenticated(false)
+            router.replace("/login")
+          }
         } else {
           setIsAuthenticated(false)
           // Only redirect if not already on login page
