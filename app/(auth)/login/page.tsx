@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { GraduationCap, Lock, User, Mail, UserPlus } from "lucide-react"
+import { GraduationCap, Lock, User, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -33,7 +33,6 @@ export default function LoginPage() {
   const [signUpData, setSignUpData] = useState({
     name: "",
     username: "",
-    email: "",
     password: "",
     confirmPassword: "",
   })
@@ -185,7 +184,6 @@ export default function LoginPage() {
         body: JSON.stringify({
           name: signUpData.name,
           username: signUpData.username,
-          email: signUpData.email || undefined,
           password: signUpData.password,
           role: "STUDENT", // Default role for new registrations
         }),
@@ -201,7 +199,6 @@ export default function LoginPage() {
         setSignUpData({
           name: "",
           username: "",
-          email: "",
           password: "",
           confirmPassword: "",
         })
@@ -346,22 +343,6 @@ export default function LoginPage() {
                         onChange={(e) => setSignUpData({ ...signUpData, username: e.target.value })}
                         required
                         autoComplete="username"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email (Optional)</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="Enter your email"
-                        className="pl-9"
-                        value={signUpData.email}
-                        onChange={(e) => setSignUpData({ ...signUpData, email: e.target.value })}
-                        autoComplete="email"
                       />
                     </div>
                   </div>
