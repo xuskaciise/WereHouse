@@ -243,10 +243,10 @@ export default function LoginPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{isSignUp ? "Create Account" : "Sign In"}</CardTitle>
+            <CardTitle>{isSignUp ? "Student Register" : "Sign In"}</CardTitle>
             <CardDescription>
               {isSignUp 
-                ? "Create a new account to access the system"
+                ? "Register as a student to access the system"
                 : "Enter your credentials to access the system"}
             </CardDescription>
           </CardHeader>
@@ -254,7 +254,7 @@ export default function LoginPage() {
             <Tabs value={isSignUp ? "signup" : "login"} onValueChange={(value) => setIsSignUp(value === "signup")}>
               <TabsList className="grid w-full grid-cols-2 mb-4">
                 <TabsTrigger value="login">Sign In</TabsTrigger>
-                <TabsTrigger value="signup">Create Account</TabsTrigger>
+                <TabsTrigger value="signup">Student Register</TabsTrigger>
               </TabsList>
 
               <TabsContent value="login">
@@ -389,7 +389,7 @@ export default function LoginPage() {
                   </div>
 
                   <Button type="submit" className="w-full" disabled={isSigningUp}>
-                    {isSigningUp ? "Creating Account..." : "Create Account"}
+                    {isSigningUp ? "Registering..." : "Student Register"}
                   </Button>
                 </form>
               </TabsContent>
