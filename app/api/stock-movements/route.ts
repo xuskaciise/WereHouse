@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getRequestUser, ownershipWhere } from "@/lib/rbac"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
     const stockMovements = await prisma.stockMovement.findMany({
+      where: ownershipWhere(currentUser),
       include: {
         product: true,
         warehouse: true,

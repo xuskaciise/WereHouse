@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getRequestUser, ownershipWhere } from "@/lib/rbac"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
+    const supplierWhere = ownershipWhere(currentUser)
     // Try to fetch suppliers - handle case where balance column doesn't exist
     let suppliers: any[]
     try {
       // First try normal query
       suppliers = await prisma.supplier.findMany({
+        where: supplierWhere,
         select: {
           id: true,
           name: true,
@@ -43,14 +47,18 @@ export async function GET() {
         // Use raw query to get suppliers without balance column
         const rawSuppliers = await prisma.$queryRaw<any[]>`
           SELECT 
-            id, name, email, phone, address, city, state, "zipCode", country, "contactPerson", 
+            id, name, email, phone, address, city, state, "zipCode", country, "contactPerson", "userId",
             "createdAt", "updatedAt"
           FROM suppliers
           ORDER BY "createdAt" DESC
         `
+        const filteredRawSuppliers =
+          currentUser && currentUser.role !== "ADMIN"
+            ? rawSuppliers.filter((s: any) => s.userId === currentUser.id)
+            : rawSuppliers
         
         // Fetch related data separately
-        const supplierIds = rawSuppliers.map((s: any) => s.id)
+        const supplierIds = filteredRawSuppliers.map((s: any) => s.id)
         
         const purchaseOrders = await prisma.purchaseOrder.findMany({
           where: { supplierId: { in: supplierIds } },
@@ -63,7 +71,7 @@ export async function GET() {
         })
         
         // Attach related data to suppliers
-        suppliers = rawSuppliers.map((supplier: any) => ({
+        suppliers = filteredRawSuppliers.map((supplier: any) => ({
           ...supplier,
           purchaseOrders: purchaseOrders.filter((po: any) => po.supplierId === supplier.id).map((po: any) => ({ total: po.total })),
           supplierPayments: supplierPayments.filter((sp: any) => sp.supplierId === supplier.id).map((sp: any) => ({ amount: sp.amount })),
@@ -124,6 +132,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     const body = await request.json()
     const { name, email, phone, address, city, state, zipCode, country, contactPerson } = body
 
@@ -155,6 +167,7 @@ export async function POST(request: Request) {
           zipCode: zipCode?.trim() || null,
           country: country?.trim() || null,
           contactPerson: contactPerson?.trim() || null,
+          userId: currentUser.id,
         },
       })
     } catch (createError: any) {

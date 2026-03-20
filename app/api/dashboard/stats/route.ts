@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getRequestUser, ownershipWhere } from "@/lib/rbac"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
+    const where = ownershipWhere(currentUser)
     // Get total products count
-    const totalProducts = await prisma.product.count()
+    const totalProducts = await prisma.product.count({ where })
 
     // Get total stock value (sum of quantity * costPrice for all stock)
     const stockItems = await prisma.stock.findMany({
+      where,
       include: {
         product: true,
       },
@@ -17,11 +21,11 @@ export async function GET() {
     }, 0)
 
     // Get total sales (sum of all sales orders)
-    const salesOrders = await prisma.salesOrder.findMany()
+    const salesOrders = await prisma.salesOrder.findMany({ where })
     const totalSales = salesOrders.reduce((sum, order) => sum + order.total, 0)
 
     // Get total purchases (sum of all purchase orders)
-    const purchaseOrders = await prisma.purchaseOrder.findMany()
+    const purchaseOrders = await prisma.purchaseOrder.findMany({ where })
     const totalPurchases = purchaseOrders.reduce((sum, order) => sum + order.total, 0)
 
     // Get low stock alert count (products below reorder level)
@@ -32,6 +36,7 @@ export async function GET() {
 
     // Get recent stock movements (last 5)
     const recentMovements = await prisma.stockMovement.findMany({
+      where,
       include: {
         product: true,
         warehouse: true,
@@ -51,6 +56,7 @@ export async function GET() {
 
     // Get recent sales orders (last 5)
     const recentSales = await prisma.salesOrder.findMany({
+      where,
       include: {
         customer: true,
       },

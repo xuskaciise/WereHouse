@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getRequestUser, isAdminRole } from "@/lib/rbac"
+import { validateProductDates } from "@/lib/product-date-validation"
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     const { id } = await params
     const product = await prisma.product.findUnique({
       where: { id },
@@ -19,6 +23,9 @@ export async function GET(
         { error: "Product not found" },
         { status: 404 }
       )
+    }
+    if (!isAdminRole(currentUser.role) && product.userId !== currentUser.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
     return NextResponse.json(product)
@@ -36,15 +43,49 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     const { id } = await params
     const body = await request.json()
-    const { name, sku, description, categoryId, costPrice, sellingPrice, reorderLevel, stockUpdates } = body
+    const {
+      name,
+      sku,
+      description,
+      categoryId,
+      costPrice,
+      sellingPrice,
+      reorderLevel,
+      issueDate,
+      expireDate,
+      productionDate,
+      expiryDate,
+      stockUpdates,
+    } = body
 
     if (!name || !sku || !categoryId) {
       return NextResponse.json(
         { error: "Name, SKU, and Category are required" },
         { status: 400 }
       )
+    }
+
+    const normalizedProductionDate = productionDate || issueDate || null
+    const normalizedExpiryDate = expiryDate || expireDate || null
+    const dateError = validateProductDates({
+      productionDate: normalizedProductionDate,
+      expiryDate: normalizedExpiryDate,
+    })
+
+    if (dateError) {
+      return NextResponse.json({ error: dateError }, { status: 400 })
+    }
+
+    const existingProduct = await prisma.product.findUnique({ where: { id } })
+    if (!existingProduct) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 })
+    }
+    if (!isAdminRole(currentUser.role) && existingProduct.userId !== currentUser.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
     const product = await prisma.product.update({
@@ -57,6 +98,8 @@ export async function PUT(
         costPrice: costPrice || 0,
         sellingPrice: sellingPrice || 0,
         reorderLevel: reorderLevel || 10,
+        issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
+        expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
       },
       include: {
         category: true,
@@ -114,7 +157,16 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     const { id } = await params
+    const existingProduct = await prisma.product.findUnique({ where: { id } })
+    if (!existingProduct) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 })
+    }
+    if (!isAdminRole(currentUser.role) && existingProduct.userId !== currentUser.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
     await prisma.product.delete({
       where: { id },
     })

@@ -1,250 +1,429 @@
 "use client"
 
-import { Download, FileText } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useToast } from "@/components/ui/use-toast"
 import { formatCurrency } from "@/lib/utils"
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts"
 
-// Mock data removed - use database API instead
-const weeklyData: any[] = []
-const categoryData: any[] = []
-const topProducts: any[] = []
+type PurchaseOrder = any
+type SalesOrder = any
+type SupplierPayment = any
+type CustomerPayment = any
+
+function inDateRange(dateValue: string | Date, start: string, end: string) {
+  const date = new Date(dateValue)
+  if (Number.isNaN(date.getTime())) return false
+  if (start) {
+    const startDate = new Date(start)
+    startDate.setHours(0, 0, 0, 0)
+    if (date < startDate) return false
+  }
+  if (end) {
+    const endDate = new Date(end)
+    endDate.setHours(23, 59, 59, 999)
+    if (date > endDate) return false
+  }
+  return true
+}
 
 export default function ReportsPage() {
+  const { toast } = useToast()
+  const [isLoading, setIsLoading] = useState(true)
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([])
+  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([])
+  const [supplierPayments, setSupplierPayments] = useState<SupplierPayment[]>([])
+  const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([])
+
+  const [purchaseStartDate, setPurchaseStartDate] = useState("")
+  const [purchaseEndDate, setPurchaseEndDate] = useState("")
+  const [purchaseSupplier, setPurchaseSupplier] = useState("all")
+  const [purchaseStatus, setPurchaseStatus] = useState("all")
+
+  const [salesStartDate, setSalesStartDate] = useState("")
+  const [salesEndDate, setSalesEndDate] = useState("")
+  const [salesWarehouse, setSalesWarehouse] = useState("all")
+  const [salesCustomer, setSalesCustomer] = useState("all")
+
+  useEffect(() => {
+    fetchReportData()
+  }, [])
+
+  const fetchReportData = async () => {
+    try {
+      setIsLoading(true)
+      const [poRes, soRes, spRes, cpRes] = await Promise.all([
+        fetch("/api/purchase-orders"),
+        fetch("/api/sales-orders"),
+        fetch("/api/supplier-payments"),
+        fetch("/api/customer-payments"),
+      ])
+
+      if (!poRes.ok || !soRes.ok || !spRes.ok || !cpRes.ok) {
+        throw new Error("Failed to fetch report data")
+      }
+
+      const [poData, soData, spData, cpData] = await Promise.all([
+        poRes.json(),
+        soRes.json(),
+        spRes.json(),
+        cpRes.json(),
+      ])
+
+      setPurchaseOrders(poData || [])
+      setSalesOrders(soData || [])
+      setSupplierPayments(spData || [])
+      setCustomerPayments(cpData || [])
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load reports data.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const purchaseSuppliers = useMemo(() => {
+    const unique = new Map<string, string>()
+    purchaseOrders.forEach((order) => {
+      if (order?.supplier?.id) {
+        unique.set(order.supplier.id, order.supplier.name || "Unknown")
+      }
+    })
+    return Array.from(unique.entries()).map(([id, name]) => ({ id, name }))
+  }, [purchaseOrders])
+
+  const salesWarehouses = useMemo(() => {
+    const unique = new Map<string, string>()
+    salesOrders.forEach((order) => {
+      if (order?.warehouse?.id) {
+        unique.set(order.warehouse.id, order.warehouse.name || "Unknown")
+      }
+    })
+    return Array.from(unique.entries()).map(([id, name]) => ({ id, name }))
+  }, [salesOrders])
+
+  const salesCustomers = useMemo(() => {
+    const unique = new Map<string, string>()
+    salesOrders.forEach((order) => {
+      if (order?.customer?.id) {
+        unique.set(order.customer.id, order.customer.name || "Unknown")
+      }
+    })
+    return Array.from(unique.entries()).map(([id, name]) => ({ id, name }))
+  }, [salesOrders])
+
+  const filteredPurchaseOrders = useMemo(() => {
+    return purchaseOrders.filter((order) => {
+      const dateMatch = inDateRange(order.orderDate, purchaseStartDate, purchaseEndDate)
+      const supplierMatch = purchaseSupplier === "all" || order.supplierId === purchaseSupplier
+      const statusMatch = purchaseStatus === "all" || order.status === purchaseStatus
+      return dateMatch && supplierMatch && statusMatch
+    })
+  }, [purchaseOrders, purchaseStartDate, purchaseEndDate, purchaseSupplier, purchaseStatus])
+
+  const filteredSalesOrders = useMemo(() => {
+    return salesOrders.filter((order) => {
+      const dateMatch = inDateRange(order.orderDate, salesStartDate, salesEndDate)
+      const warehouseMatch = salesWarehouse === "all" || order.warehouseId === salesWarehouse
+      const customerMatch = salesCustomer === "all" || order.customerId === salesCustomer
+      return dateMatch && warehouseMatch && customerMatch
+    })
+  }, [salesOrders, salesStartDate, salesEndDate, salesWarehouse, salesCustomer])
+
+  const paymentTrackingRows = useMemo(() => {
+    const supplierPaymentMap = supplierPayments.reduce((map: Record<string, number>, payment) => {
+      if (!payment.purchaseOrderId) return map
+      map[payment.purchaseOrderId] = (map[payment.purchaseOrderId] || 0) + (payment.amount || 0)
+      return map
+    }, {})
+
+    const customerPaymentMap = customerPayments.reduce((map: Record<string, number>, payment) => {
+      if (!payment.salesOrderId) return map
+      map[payment.salesOrderId] = (map[payment.salesOrderId] || 0) + (payment.amount || 0)
+      return map
+    }, {})
+
+    const purchaseRows = purchaseOrders.map((order) => {
+      const paid = supplierPaymentMap[order.id] || 0
+      return {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        type: "PURCHASE",
+        party: order.supplier?.name || "N/A",
+        total: order.total || 0,
+        paid,
+        balance: (order.total || 0) - paid,
+        orderDate: order.orderDate,
+      }
+    })
+
+    const salesRows = salesOrders.map((order) => {
+      const paid = customerPaymentMap[order.id] || 0
+      return {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        type: "SALES",
+        party: order.customer?.name || "N/A",
+        total: order.total || 0,
+        paid,
+        balance: (order.total || 0) - paid,
+        orderDate: order.orderDate,
+      }
+    })
+
+    return [...purchaseRows, ...salesRows].sort(
+      (a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime()
+    )
+  }, [purchaseOrders, salesOrders, supplierPayments, customerPayments])
+
+  const clearPurchaseFilters = () => {
+    setPurchaseStartDate("")
+    setPurchaseEndDate("")
+    setPurchaseSupplier("all")
+    setPurchaseStatus("all")
+  }
+
+  const clearSalesFilters = () => {
+    setSalesStartDate("")
+    setSalesEndDate("")
+    setSalesWarehouse("all")
+    setSalesCustomer("all")
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Reports & Analytics</h1>
-          <p className="text-muted-foreground">
-            Review your warehouse performance for the Fall Semester 2024
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <FileText className="mr-2 h-4 w-4" />
-            Export to Excel
-          </Button>
-          <Button>
-            <Download className="mr-2 h-4 w-4" />
-            Export to PDF
-          </Button>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Reports</h1>
+        <p className="text-muted-foreground">
+          Detailed filterable purchase, sales, and payment tracking reports.
+        </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Stock Value</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(0)}</div>
-            <p className="text-xs text-muted-foreground">
-              No stock data
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Add products to see stock value
-            </p>
-          </CardContent>
-        </Card>
+      <Tabs defaultValue="purchases" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="purchases">Purchase Report</TabsTrigger>
+          <TabsTrigger value="sales">Sales Report</TabsTrigger>
+          <TabsTrigger value="payments">Payments Report</TabsTrigger>
+        </TabsList>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Sales</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(0)}</div>
-            <p className="text-xs text-muted-foreground">
-              No sales data
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Create sales orders to see data
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Net Profit Margin</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">0%</div>
-            <p className="text-xs text-muted-foreground">
-              No data available
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Requires sales and purchase data
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Inventory Turnover</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">0x</div>
-            <p className="text-xs text-muted-foreground">No data</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Requires inventory and sales data
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Weekly Sales Performance</CardTitle>
-            <CardDescription>
-              Comparing actual sales to the semester target
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {weeklyData.length === 0 ? (
-              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                No sales data available
+        <TabsContent value="purchases" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Purchase Filters</CardTitle>
+              <CardDescription>Filter by date range, supplier, and status.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-2">
+                  <Label>Start Date</Label>
+                  <Input type="date" value={purchaseStartDate} onChange={(e) => setPurchaseStartDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>End Date</Label>
+                  <Input type="date" value={purchaseEndDate} onChange={(e) => setPurchaseEndDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Supplier</Label>
+                  <Select value={purchaseSupplier} onValueChange={setPurchaseSupplier}>
+                    <SelectTrigger><SelectValue placeholder="All Suppliers" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Suppliers</SelectItem>
+                      {purchaseSuppliers.map((supplier) => (
+                        <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={purchaseStatus} onValueChange={setPurchaseStatus}>
+                    <SelectTrigger><SelectValue placeholder="All Statuses" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="PENDING">PENDING</SelectItem>
+                      <SelectItem value="CONFIRMED">CONFIRMED</SelectItem>
+                      <SelectItem value="SHIPPED">SHIPPED</SelectItem>
+                      <SelectItem value="DELIVERED">DELIVERED</SelectItem>
+                      <SelectItem value="CANCELLED">CANCELLED</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={weeklyData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="day" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="sales" fill="#3b82f6" name="Sales" />
-                  <Bar dataKey="target" fill="#94a3b8" name="Target" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+              <Button variant="outline" onClick={clearPurchaseFilters}>Clear Filters</Button>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Inventory by Category</CardTitle>
-            <CardDescription>Distribution of inventory across categories</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {categoryData.length === 0 ? (
-              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                No category data available
+          <Card>
+            <CardHeader>
+              <CardTitle>Purchase Orders</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Order No</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead>Warehouse</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {!isLoading && filteredPurchaseOrders.length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No purchase records found.</TableCell></TableRow>
+                  ) : (
+                    filteredPurchaseOrders.map((order) => (
+                      <TableRow key={order.id}>
+                        <TableCell>{order.orderNumber}</TableCell>
+                        <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
+                        <TableCell>{order.supplier?.name || "N/A"}</TableCell>
+                        <TableCell>{order.warehouse?.name || "N/A"}</TableCell>
+                        <TableCell><Badge variant="outline">{order.status}</Badge></TableCell>
+                        <TableCell className="text-right">{formatCurrency(order.total || 0)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="sales" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Sales Filters</CardTitle>
+              <CardDescription>Filter by warehouse, customer, and date.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-2">
+                  <Label>Start Date</Label>
+                  <Input type="date" value={salesStartDate} onChange={(e) => setSalesStartDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>End Date</Label>
+                  <Input type="date" value={salesEndDate} onChange={(e) => setSalesEndDate(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Warehouse</Label>
+                  <Select value={salesWarehouse} onValueChange={setSalesWarehouse}>
+                    <SelectTrigger><SelectValue placeholder="All Warehouses" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Warehouses</SelectItem>
+                      {salesWarehouses.map((warehouse) => (
+                        <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Customer</Label>
+                  <Select value={salesCustomer} onValueChange={setSalesCustomer}>
+                    <SelectTrigger><SelectValue placeholder="All Customers" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Customers</SelectItem>
+                      {salesCustomers.map((customer) => (
+                        <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={categoryData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) =>
-                      `${name} ${(percent * 100).toFixed(0)}%`
-                    }
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {categoryData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              <Button variant="outline" onClick={clearSalesFilters}>Clear Filters</Button>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Top Performing Products</CardTitle>
+          <Card>
+            <CardHeader>
+              <CardTitle>Sales Orders</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Order No</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Warehouse</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {!isLoading && filteredSalesOrders.length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No sales records found.</TableCell></TableRow>
+                  ) : (
+                    filteredSalesOrders.map((order) => (
+                      <TableRow key={order.id}>
+                        <TableCell>{order.orderNumber}</TableCell>
+                        <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
+                        <TableCell>{order.warehouse?.name || "N/A"}</TableCell>
+                        <TableCell>{order.customer?.name || "N/A"}</TableCell>
+                        <TableCell><Badge variant="outline">{order.status}</Badge></TableCell>
+                        <TableCell className="text-right">{formatCurrency(order.total || 0)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="payments">
+          <Card>
+            <CardHeader>
+              <CardTitle>Payment Tracking</CardTitle>
               <CardDescription>
-                Best selling products by revenue
+                Linked payment status for both Purchase and Sales orders.
               </CardDescription>
-            </div>
-            <Button variant="link">View Full Catalog</Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left p-2">Product Name</th>
-                  <th className="text-left p-2">Category</th>
-                  <th className="text-right p-2">Total Sold</th>
-                  <th className="text-right p-2">Revenue</th>
-                  <th className="text-left p-2">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topProducts.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="text-center text-muted-foreground p-8">
-                      No product data available
-                    </td>
-                  </tr>
-                ) : (
-                  topProducts.map((product, index) => (
-                  <tr key={index} className="border-b">
-                    <td className="p-2 font-medium">{product.name}</td>
-                    <td className="p-2">{product.category}</td>
-                    <td className="p-2 text-right">{product.sold} units</td>
-                    <td className="p-2 text-right">
-                      {formatCurrency(product.revenue)}
-                    </td>
-                    <td className="p-2">
-                      <Badge
-                        variant={
-                          product.status === "IN STOCK"
-                            ? "success"
-                            : product.status === "LOW STOCK"
-                            ? "warning"
-                            : "destructive"
-                        }
-                      >
-                        {product.status}
-                      </Badge>
-                    </td>
-                  </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="bg-blue-50 border-blue-200">
-        <CardHeader>
-          <CardTitle className="text-blue-900">Business Analysis Insight</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-blue-800">
-            No data available yet. Start by adding products, creating sales orders,
-            and managing inventory to see business insights and analytics.
-          </p>
-        </CardContent>
-      </Card>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Order No</TableHead>
+                    <TableHead>Party</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Total Amount</TableHead>
+                    <TableHead className="text-right">Amount Paid</TableHead>
+                    <TableHead className="text-right">Balance Due</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {!isLoading && paymentTrackingRows.length === 0 ? (
+                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No payment tracking data found.</TableCell></TableRow>
+                  ) : (
+                    paymentTrackingRows.map((row) => (
+                      <TableRow key={`${row.type}-${row.id}`}>
+                        <TableCell><Badge variant={row.type === "SALES" ? "default" : "secondary"}>{row.type}</Badge></TableCell>
+                        <TableCell>{row.orderNumber}</TableCell>
+                        <TableCell>{row.party}</TableCell>
+                        <TableCell>{new Date(row.orderDate).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(row.total)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(row.paid)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(row.balance)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

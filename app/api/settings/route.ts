@@ -13,7 +13,7 @@ export async function GET() {
 
     // Set defaults if not found
     const defaultSettings = {
-      companyName: settingsObj.companyName || "EduWarehouse",
+      companyName: settingsObj.companyName || "Siu Warehouse",
       companyAddress: settingsObj.companyAddress || "",
       companyPhone: settingsObj.companyPhone || "",
       companyEmail: settingsObj.companyEmail || "",

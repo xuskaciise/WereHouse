@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
@@ -14,7 +15,6 @@ import {
   CreditCard,
   DollarSign,
   Settings,
-  GraduationCap,
   AlertTriangle,
   Users,
   ChevronDown,
@@ -36,37 +36,56 @@ interface NavItem {
   children?: NavItem[]
 }
 
-const navigation: NavItem[] = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Customers", href: "/customers", icon: ShoppingCart },
+interface NavSection {
+  title: string
+  items: NavItem[]
+}
+
+const navigationSections: NavSection[] = [
   {
-    name: "Warehouses",
-    href: "/warehouses",
-    icon: Warehouse,
-    children: [
-      { name: "Warehouse Management", href: "/warehouses", icon: Warehouse },
-      { name: "Stock", href: "/inventory", icon: Package },
-      { name: "Products", href: "/products", icon: Package },
+    title: "Core",
+    items: [{ name: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
+  },
+  {
+    title: "Master Data",
+    items: [
+      { name: "Warehouses", href: "/warehouses", icon: Warehouse },
       { name: "Categories", href: "/categories", icon: FileText },
-      { name: "Purchases", href: "/purchases", icon: ShoppingBag },
+      { name: "Products", href: "/products", icon: Package },
       { name: "Suppliers", href: "/suppliers", icon: ShoppingBag },
+      { name: "Customers", href: "/customers", icon: ShoppingCart },
     ],
   },
   {
-    name: "Inventory",
-    href: "/inventory",
-    icon: Package,
-    children: [
-      { name: "Stock Movements", href: "/inventory/movements", icon: TrendingUp },
-      { name: "Low Stock", href: "/inventory/low-stock", icon: AlertTriangle },
-      { name: "Sales", href: "/sales", icon: ShoppingCart },
+    title: "Procurement (Inbound)",
+    items: [
+      { name: "Purchases", href: "/purchases", icon: ShoppingBag },
+      { name: "Stock (In-hand)", href: "/inventory", icon: Package },
     ],
   },
-  { name: "Payments", href: "/payments", icon: CreditCard },
-  { name: "Expenses", href: "/expenses", icon: DollarSign },
-  { name: "Reports", href: "/reports", icon: FileText },
-  { name: "Users", href: "/users", icon: Users, adminOnly: true },
-  { name: "Settings", href: "/settings", icon: Settings },
+  {
+    title: "Inventory Control",
+    items: [
+      { name: "Stock Movements", href: "/inventory/movements", icon: TrendingUp },
+      { name: "Low Stock Alerts", href: "/inventory/low-stock", icon: AlertTriangle },
+      { name: "Expenses", href: "/expenses", icon: DollarSign },
+    ],
+  },
+  {
+    title: "Sales & Finance",
+    items: [
+      { name: "Sales", href: "/sales", icon: ShoppingCart },
+      { name: "Payments", href: "/payments", icon: CreditCard },
+    ],
+  },
+  {
+    title: "System",
+    items: [
+      { name: "Reports", href: "/reports", icon: FileText },
+      { name: "Users", href: "/users", icon: Users, adminOnly: true },
+      { name: "Settings", href: "/settings", icon: Settings },
+    ],
+  },
 ]
 
 export function Sidebar() {
@@ -86,14 +105,16 @@ export function Sidebar() {
   // Initialize open menus based on active routes
   useEffect(() => {
     const initialOpen: Record<string, boolean> = {}
-    navigation.forEach((item) => {
-      if (item.children && item.children.length > 0) {
-        const hasActiveChild = item.children.some((child) => {
-          return pathname === child.href || pathname?.startsWith(child.href + "/")
-        })
-        const isParentActive = pathname === item.href || pathname?.startsWith(item.href + "/")
-        initialOpen[item.name] = hasActiveChild || isParentActive
-      }
+    navigationSections.forEach((section) => {
+      section.items.forEach((item) => {
+        if (item.children && item.children.length > 0) {
+          const hasActiveChild = item.children.some((child) => {
+            return pathname === child.href
+          })
+          const isParentActive = pathname === item.href
+          initialOpen[item.name] = hasActiveChild || isParentActive
+        }
+      })
     })
     setOpenMenus(initialOpen)
   }, [pathname])
@@ -116,129 +137,129 @@ export function Sidebar() {
   return (
     <div className="flex h-screen w-64 flex-col border-r bg-card">
       <div className="flex h-16 items-center gap-2 border-b px-6">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-          <GraduationCap className="h-6 w-6 text-primary-foreground" />
+        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border bg-white">
+          <Image src="/siu-logo.png" alt="SIU Logo" width={40} height={40} className="h-full w-full object-cover" />
         </div>
         <div className="flex flex-col">
-          <span className="text-sm font-semibold">EduWarehouse</span>
+          <span className="text-sm font-semibold">Siu Warehouse</span>
           <span className="text-xs text-muted-foreground">Inventory System</span>
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
-        {navigation.map((item) => {
-          // Hide admin-only items if user is not admin
-          if (item.adminOnly && user?.role !== "ADMIN") {
-            return null
-          }
+      <nav className="flex-1 p-4 overflow-y-auto">
+        {navigationSections.map((section) => (
+          <div key={section.title} className="mb-5">
+            <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+              {section.title}
+            </p>
+            <div className="space-y-1">
+              {section.items.map((item) => {
+                // Hide admin-only items if user is not admin
+                if (item.adminOnly && user?.role !== "ADMIN") {
+                  return null
+                }
 
-          // Check if any child route is active (more precise matching)
-          // First check for exact matches, then check for path prefixes
-          const hasActiveChild = item.children?.some((child) => {
-            // Exact match
-            if (pathname === child.href) return true
-            // Path prefix match (but not if it's the same as parent href)
-            if (child.href !== item.href && pathname?.startsWith(child.href + "/")) return true
-            return false
-          })
+                // Check if any child route is active (more precise matching)
+                // First check for exact matches, then check for path prefixes
+                const hasActiveChild = item.children?.some((child) => {
+                  return pathname === child.href
+                })
 
-          // Check if parent route is active (but not if a child matches exactly or has a prefix match)
-          const exactChildMatch = item.children?.some((child) => {
-            if (pathname === child.href) return true
-            // Don't mark parent as active if we're on a child's nested route
-            if (child.href !== item.href && pathname?.startsWith(child.href + "/")) return true
-            return false
-          })
-          const isParentActive = !exactChildMatch && (pathname === item.href || pathname?.startsWith(item.href + "/"))
+                // Check if parent route is active (but not if a child matches exactly or has a prefix match)
+                const exactChildMatch = item.children?.some((child) => {
+                  return pathname === child.href
+                })
+                const isParentActive = !exactChildMatch && pathname === item.href
 
-          // If item has children, render as collapsible
-          if (item.children && item.children.length > 0) {
-            const isOpen = openMenus[item.name] ?? false
+                // If item has children, render as collapsible
+                if (item.children && item.children.length > 0) {
+                  const isOpen = openMenus[item.name] ?? false
 
-            return (
-              <Collapsible
-                key={item.name}
-                open={isOpen}
-                onOpenChange={(open) => {
-                  setOpenMenus((prev) => ({ ...prev, [item.name]: open }))
-                }}
-                className="w-full"
-              >
-                <CollapsibleTrigger
-                  className={cn(
-                    "w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                    isParentActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <item.icon className="h-5 w-5" />
-                    {item.name}
-                  </div>
-                  {isOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </CollapsibleTrigger>
-                <CollapsibleContent className="pl-4 space-y-1 mt-1">
-                  {item.children.map((child) => {
-                    // More precise child active detection
-                    // Find the most specific (longest) matching child first
-                    const allChildren = item.children || []
-                    const matchingChildren = allChildren.filter((c) => {
-                      if (pathname === c.href) return true
-                      if (pathname?.startsWith(c.href + "/")) return true
-                      return false
-                    })
-                    
-                    // Sort by href length (longest first) to prioritize more specific matches
-                    matchingChildren.sort((a, b) => b.href.length - a.href.length)
-                    
-                    // Only mark as active if this child is the most specific match
-                    const isChildActive = matchingChildren.length > 0 && matchingChildren[0].href === child.href
-
-                    return (
-                      <Link
-                        key={child.href}
-                        href={child.href}
+                  return (
+                    <Collapsible
+                      key={item.name}
+                      open={isOpen}
+                      onOpenChange={(open) => {
+                        setOpenMenus((prev) => ({ ...prev, [item.name]: open }))
+                      }}
+                      className="w-full"
+                    >
+                      <CollapsibleTrigger
                         className={cn(
-                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                          isChildActive
+                          "w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                          isParentActive
                             ? "bg-primary text-primary-foreground"
                             : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                         )}
                       >
-                        <child.icon className="h-4 w-4" />
-                        {child.name}
-                      </Link>
-                    )
-                  })}
-                </CollapsibleContent>
-              </Collapsible>
-            )
-          }
+                        <div className="flex items-center gap-3">
+                          <item.icon className="h-5 w-5" />
+                          {item.name}
+                        </div>
+                        {isOpen ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="pl-4 space-y-1 mt-1">
+                        {item.children.map((child) => {
+                          // More precise child active detection
+                          // Find the most specific (longest) matching child first
+                          const allChildren = item.children || []
+                          const matchingChildren = allChildren.filter((c) => {
+                            return pathname === c.href
+                          })
 
-          // Regular navigation item without children
-          const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
+                          // Sort by href length (longest first) to prioritize more specific matches
+                          matchingChildren.sort((a, b) => b.href.length - a.href.length)
 
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              )}
-            >
-              <item.icon className="h-5 w-5" />
-              {item.name}
-            </Link>
-          )
-        })}
+                          // Only mark as active if this child is the most specific match
+                          const isChildActive = matchingChildren.length > 0 && matchingChildren[0].href === child.href
+
+                          return (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              className={cn(
+                                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                                isChildActive
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                              )}
+                            >
+                              <child.icon className="h-4 w-4" />
+                              {child.name}
+                            </Link>
+                          )
+                        })}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )
+                }
+
+                // Regular navigation item without children
+                const isActive = pathname === item.href
+
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    )}
+                  >
+                    <item.icon className="h-5 w-5" />
+                    {item.name}
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       <div className="border-t p-4">

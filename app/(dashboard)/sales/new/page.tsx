@@ -124,6 +124,27 @@ export default function NewSalesOrderPage() {
     return stockItem ? stockItem.quantity - stockItem.reservedQuantity : 0
   }
 
+  const getInsufficientStockItems = () => {
+    return items
+      .map((item, index) => {
+        const available = getAvailableStock(item.productId)
+        return {
+          index,
+          item,
+          available,
+          isInvalid:
+            !item.productId ||
+            item.quantity <= 0 ||
+            (item.productId && item.quantity > available),
+        }
+      })
+      .filter((entry) => entry.isInvalid)
+  }
+
+  const hasInsufficientStock = getInsufficientStockItems().some(
+    (entry) => entry.item.productId && entry.item.quantity > entry.available
+  )
+
   const subtotal = items.reduce(
     (sum, item) => sum + item.quantity * item.unitPrice,
     0
@@ -147,6 +168,26 @@ export default function NewSalesOrderPage() {
       toast({
         title: "Validation Error",
         description: "Please ensure all items have a product selected and quantity is greater than 0.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Validate available stock per selected warehouse before submit
+    const insufficientItems = items
+      .map((item) => ({
+        item,
+        available: getAvailableStock(item.productId),
+      }))
+      .filter(({ item, available }) => item.productId && item.quantity > available)
+
+    if (insufficientItems.length > 0) {
+      const first = insufficientItems[0]
+      const productName =
+        products.find((p) => p.id === first.item.productId)?.name || "Selected product"
+      toast({
+        title: "Insufficient Stock",
+        description: `Insufficient stock! Only ${first.available} items available in this warehouse. (${productName})`,
         variant: "destructive",
       })
       return
@@ -184,9 +225,13 @@ export default function NewSalesOrderPage() {
         router.push("/sales")
       } else {
         const error = await response.json()
+        const serverMessage =
+          error?.error ||
+          error?.message ||
+          "Failed to create sales order"
         toast({
           title: "Error",
-          description: error.error || "Failed to create sales order",
+          description: serverMessage,
           variant: "destructive",
         })
       }
@@ -339,14 +384,18 @@ export default function NewSalesOrderPage() {
                           {item.productId && (
                             <Badge
                               variant={
-                                availableStock === 0
+                                item.quantity > availableStock
+                                  ? "destructive"
+                                  : availableStock === 0
                                   ? "destructive"
                                   : availableStock < 10
                                   ? "warning"
                                   : "success"
                               }
                             >
-                              {availableStock === 0
+                              {item.quantity > availableStock
+                                ? `Insufficient (${availableStock} available)`
+                                : availableStock === 0
                                 ? "Out of Stock"
                                 : availableStock < 10
                                 ? `Low Stock (${availableStock} left)`
@@ -397,9 +446,9 @@ export default function NewSalesOrderPage() {
             <Button 
               className="flex-1"
               onClick={() => handleSubmit(false)}
-              disabled={isSaving}
+              disabled={isSaving || hasInsufficientStock}
             >
-              {isSaving ? "Creating..." : "Finalize & Post"}
+              {isSaving ? "Creating..." : hasInsufficientStock ? "Insufficient Stock" : "Finalize & Post"}
             </Button>
           </div>
 
@@ -430,7 +479,7 @@ export default function NewSalesOrderPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-center border-b pb-4">
-                <div className="text-lg font-bold">EduWarehouse Corp.</div>
+                <div className="text-lg font-bold">Siu Warehouse</div>
                 <div className="text-xs text-muted-foreground mt-1">
                   123 Business School Ave.
                   <br />

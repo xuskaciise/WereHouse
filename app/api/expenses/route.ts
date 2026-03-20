@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getRequestUser, ownershipWhere } from "@/lib/rbac"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
     const expenses = await prisma.expense.findMany({
+      where: ownershipWhere(currentUser),
       include: {
         category: true,
         user: {
@@ -30,24 +33,16 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     const body = await request.json()
     const { categoryId, amount, description, expenseDate, paymentMethod, reference } = body
 
     if (!categoryId || !amount || !description || !paymentMethod) {
       return NextResponse.json(
         { error: "Category, Amount, Description, and Payment Method are required" },
-        { status: 400 }
-      )
-    }
-
-    // Get current user (for now, use a default user - in production, get from session)
-    const defaultUser = await prisma.user.findFirst({
-      where: { role: "ADMIN" },
-    })
-
-    if (!defaultUser) {
-      return NextResponse.json(
-        { error: "No user found. Please create a user first." },
         { status: 400 }
       )
     }
@@ -60,7 +55,7 @@ export async function POST(request: Request) {
         expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
         paymentMethod,
         reference: reference || null,
-        userId: defaultUser.id,
+        userId: currentUser.id,
       },
       include: {
         category: true,

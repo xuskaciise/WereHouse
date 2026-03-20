@@ -39,6 +39,8 @@ export interface Product {
   costPrice: number
   sellingPrice: number
   reorderLevel: number
+  issueDate: Date | null
+  expireDate: Date | null
   createdAt: Date
   updatedAt: Date
 }

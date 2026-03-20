@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatCurrency } from "@/lib/utils"
 import { Product, Category } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
+import { validateProductDates } from "@/lib/product-date-validation"
 
 export default function ProductsPage() {
   const { toast } = useToast()
@@ -261,6 +262,8 @@ export default function ProductsPage() {
                   <TableHead>Category</TableHead>
                   <TableHead>Cost</TableHead>
                   <TableHead>Selling Price</TableHead>
+                  <TableHead>Production Date</TableHead>
+                  <TableHead>Expiry Date</TableHead>
                   <TableHead>Stock Quantity</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -269,7 +272,7 @@ export default function ProductsPage() {
               <TableBody>
                 {filteredProducts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                       No products found. Click "Add New Product" to create your first product.
                     </TableCell>
                   </TableRow>
@@ -290,6 +293,12 @@ export default function ProductsPage() {
                   <TableCell>{formatCurrency(product.costPrice)}</TableCell>
                   <TableCell className="text-green-600 font-medium">
                     {formatCurrency(product.sellingPrice)}
+                  </TableCell>
+                  <TableCell>
+                    {product.issueDate ? new Date(product.issueDate).toLocaleDateString() : "-"}
+                  </TableCell>
+                  <TableCell>
+                    {product.expireDate ? new Date(product.expireDate).toLocaleDateString() : "-"}
                   </TableCell>
                   <TableCell>{getTotalStock(product.id)}</TableCell>
                   <TableCell>{getStatusBadge(product)}</TableCell>
@@ -344,6 +353,12 @@ function ProductForm({
   onSuccess: () => void
 }) {
   const { toast } = useToast()
+  const toDateInputValue = (value?: string | Date | null) => {
+    if (!value) return ""
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ""
+    return date.toISOString().split("T")[0]
+  }
   const [formData, setFormData] = useState({
     name: product?.name || "",
     sku: product?.sku || "",
@@ -351,6 +366,8 @@ function ProductForm({
     categoryId: product?.categoryId || "",
     costPrice: product?.costPrice.toString() || "",
     sellingPrice: product?.sellingPrice.toString() || "",
+    productionDate: toDateInputValue(product?.issueDate),
+    expiryDate: toDateInputValue(product?.expireDate),
   })
   const [productStock, setProductStock] = useState<any[]>([])
   const [stockQuantities, setStockQuantities] = useState<Record<string, string>>({})
@@ -366,6 +383,8 @@ function ProductForm({
         categoryId: product.categoryId,
         costPrice: product.costPrice.toString(),
         sellingPrice: product.sellingPrice.toString(),
+        productionDate: toDateInputValue(product.issueDate),
+        expiryDate: toDateInputValue(product.expireDate),
       })
       fetchProductStock()
     } else {
@@ -376,6 +395,8 @@ function ProductForm({
         categoryId: "",
         costPrice: "",
         sellingPrice: "",
+        productionDate: "",
+        expiryDate: "",
       })
       setProductStock([])
       setStockQuantities({})
@@ -419,6 +440,19 @@ function ProductForm({
       return
     }
 
+    const productDateError = validateProductDates({
+      productionDate: formData.productionDate,
+      expiryDate: formData.expiryDate,
+    })
+    if (productDateError) {
+      toast({
+        title: "Validation Error",
+        description: productDateError,
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsSaving(true)
 
     try {
@@ -437,6 +471,8 @@ function ProductForm({
           categoryId: formData.categoryId,
           costPrice: parseFloat(formData.costPrice) || 0,
           sellingPrice: parseFloat(formData.sellingPrice) || 0,
+          productionDate: formData.productionDate || null,
+          expiryDate: formData.expiryDate || null,
           reorderLevel: product?.reorderLevel || 10,
           stockUpdates: product ? Object.entries(stockQuantities).map(([stockId, quantity]) => ({
             stockId,
@@ -549,6 +585,27 @@ function ProductForm({
               setFormData({ ...formData, sellingPrice: e.target.value })
             }
             required
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="productionDate">Production Date</Label>
+          <Input
+            id="productionDate"
+            type="date"
+            value={formData.productionDate}
+            onChange={(e) => setFormData({ ...formData, productionDate: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="expiryDate">Expiry Date</Label>
+          <Input
+            id="expiryDate"
+            type="date"
+            value={formData.expiryDate}
+            onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
           />
         </div>
       </div>

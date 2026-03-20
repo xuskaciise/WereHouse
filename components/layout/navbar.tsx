@@ -17,7 +17,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 
 export function Navbar() {
   const router = useRouter()
-  const [user, setUser] = useState<{ username: string; role: string } | null>(null)
+  const [user, setUser] = useState<{ name?: string; username?: string; role: string } | null>(null)
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -38,12 +38,27 @@ export function Navbar() {
 
   const getUserInitials = () => {
     if (!user) return "U"
-    return user.username.substring(0, 2).toUpperCase()
+    const fullName = user.name?.trim()
+    if (fullName) {
+      const parts = fullName.split(/\s+/).filter(Boolean)
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[1][0]).toUpperCase()
+      }
+      return fullName.substring(0, 2).toUpperCase()
+    }
+    return user.username?.substring(0, 2).toUpperCase() || "U"
   }
 
   const getUserDisplayName = () => {
     if (!user) return "User"
-    return user.username.charAt(0).toUpperCase() + user.username.slice(1)
+    if (user.name?.trim()) return user.name
+    if (user.username?.trim()) return user.username
+    return "User"
+  }
+
+  const getRoleDisplayName = () => {
+    if (!user) return "User"
+    return user.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
   }
 
   return (
@@ -81,7 +96,7 @@ export function Navbar() {
                   {getUserDisplayName()}
                 </p>
                 <p className="text-xs leading-none text-muted-foreground">
-                  {user?.role.replace("_", " ").toLowerCase() || "user"}
+                  {getRoleDisplayName()}
                 </p>
               </div>
             </DropdownMenuLabel>

@@ -61,6 +61,47 @@ export default function DashboardLayout({
     return () => clearTimeout(timer)
   }, [router, pathname])
 
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const originalFetch = window.fetch.bind(window)
+
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const isApiRequest = url.startsWith("/api") || url.includes("/api/")
+
+      if (!isApiRequest) {
+        return originalFetch(input, init)
+      }
+
+      const userData = localStorage.getItem("user") || sessionStorage.getItem("user")
+      if (!userData) {
+        return originalFetch(input, init)
+      }
+
+      let parsedUser: any = null
+      try {
+        parsedUser = JSON.parse(userData)
+      } catch {
+        return originalFetch(input, init)
+      }
+
+      const headers = new Headers(init?.headers || {})
+      if (parsedUser?.id) headers.set("x-user-id", parsedUser.id)
+      if (parsedUser?.role) headers.set("x-user-role", parsedUser.role)
+      if (parsedUser?.user_type) headers.set("x-user-type", parsedUser.user_type)
+
+      return originalFetch(input, {
+        ...init,
+        headers,
+      })
+    }
+
+    return () => {
+      window.fetch = originalFetch
+    }
+  }, [])
+
   // Show loading state while checking authentication
   if (isAuthenticated === null) {
     return (

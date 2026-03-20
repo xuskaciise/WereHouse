@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { GraduationCap, Lock, User, UserPlus } from "lucide-react"
+import { Lock, User, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -230,10 +231,10 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-2">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-              <GraduationCap className="h-7 w-7 text-primary-foreground" />
+            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg border bg-white">
+              <Image src="/siu-logo.png" alt="SIU Logo" width={48} height={48} className="h-full w-full object-cover" />
             </div>
-            <h1 className="text-3xl font-bold text-foreground">EduWarehouse</h1>
+            <h1 className="text-3xl font-bold text-foreground">Siu Warehouse</h1>
           </div>
           <p className="text-sm text-muted-foreground">
             University Inventory Management System
@@ -331,13 +332,13 @@ export default function LoginPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="signup-username">Username *</Label>
+                    <Label htmlFor="signup-username">ID Number *</Label>
                     <div className="relative">
                       <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         id="signup-username"
                         type="text"
-                        placeholder="Choose a username"
+                        placeholder="131313"
                         className="pl-9"
                         value={signUpData.username}
                         onChange={(e) => setSignUpData({ ...signUpData, username: e.target.value })}

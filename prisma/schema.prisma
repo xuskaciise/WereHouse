@@ -31,6 +31,13 @@ model User {
   customerPayments  CustomerPayment[]
   stockTransfers    StockTransfer[]
   expenses          Expense[]
+  expenseCategories ExpenseCategory[]
+  categories        Category[]
+  products          Product[]
+  suppliers         Supplier[]
+  customers         Customer[]
+  warehouses        Warehouse[]
+  stocks            Stock[]
 
   @@map("users")
 }
@@ -55,6 +62,8 @@ model Category {
   description String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
 
   products Product[]
 
@@ -71,8 +80,12 @@ model Product {
   costPrice    Float    @default(0)
   sellingPrice Float    @default(0)
   reorderLevel Int      @default(10)
+  issueDate    DateTime?
+  expireDate   DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
 
   stock              Stock[]
   stockMovements     StockMovement[]
@@ -97,6 +110,8 @@ model Supplier {
   balance      Float    @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
 
   purchaseOrders   PurchaseOrder[]
   supplierPayments SupplierPayment[]
@@ -117,6 +132,8 @@ model Customer {
   balance   Float    @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
 
   salesOrders      SalesOrder[]
   customerPayments CustomerPayment[]
@@ -136,6 +153,8 @@ model Warehouse {
   capacity  Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
 
   stock              Stock[]
   stockMovements     StockMovement[]
@@ -158,6 +177,8 @@ model Stock {
   status          StockStatus  @default(IN_STOCK)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+  userId          String?
+  user            User?        @relation(fields: [userId], references: [id])
 
   @@unique([productId, warehouseId])
   @@map("stock")
@@ -356,6 +377,8 @@ model ExpenseCategory {
   description String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
 
   expenses    Expense[]
 

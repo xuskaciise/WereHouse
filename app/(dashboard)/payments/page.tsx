@@ -145,7 +145,7 @@ export default function PaymentsPage() {
         </head>
         <body>
           <div class="header">
-            <h1>EduWarehouse Corp.</h1>
+            <h1>Siu Warehouse</h1>
             <p>123 Business School Ave., Education District, ED 10245</p>
             <h2>${paymentType}</h2>
           </div>

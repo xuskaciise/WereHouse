@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getRequestUser, ownershipWhere } from "@/lib/rbac"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
+    const where = ownershipWhere(currentUser)
     // Try to fetch with supplier balance first
     let purchaseOrders
     try {
       purchaseOrders = await prisma.purchaseOrder.findMany({
+        where,
         include: {
           supplier: true,
           warehouse: true,
@@ -31,6 +35,7 @@ export async function GET() {
       // If balance column doesn't exist, fetch without it
       if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
         purchaseOrders = await prisma.purchaseOrder.findMany({
+          where,
           include: {
             supplier: {
               select: {
@@ -82,6 +87,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     const body = await request.json()
     const { supplierId, warehouseId, expectedDelivery, items, notes, status } = body
 
@@ -107,21 +116,13 @@ export async function POST(request: Request) {
     // Use transaction to create order and update supplier balance
     // Increased timeout to 30 seconds for complex operations
     const result = await prisma.$transaction(async (tx) => {
-      // Get current user inside transaction (for now, use a default user - in production, get from session)
-      const defaultUser = await tx.user.findFirst({
-        where: { role: "ADMIN" },
-      })
-
-      if (!defaultUser) {
-        throw new Error("No user found. Please create a user first.")
-      }
       // Create purchase order
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
           orderNumber,
           supplierId,
           warehouseId,
-          userId: defaultUser.id,
+          userId: currentUser.id,
           expectedDeliveryDate: expectedDelivery ? new Date(expectedDelivery) : null,
           subtotal,
           tax,
@@ -182,72 +183,48 @@ export async function POST(request: Request) {
       for (const item of items) {
         const { productId, quantity } = item
         const purchasedQuantity = parseInt(quantity)
+        if (!Number.isFinite(purchasedQuantity) || purchasedQuantity <= 0) {
+          continue
+        }
 
-        // Find or create stock entry
-        const existingStock = await tx.stock.findUnique({
+        // Upsert stock by productId + warehouseId:
+        // - if exists: increment quantity
+        // - if not exists: create with initial quantity
+        await tx.stock.upsert({
           where: {
             productId_warehouseId: {
               productId,
               warehouseId,
             },
           },
+          update: {
+            quantity: { increment: purchasedQuantity },
+            status: "IN_STOCK",
+            userId: currentUser.id,
+          },
+          create: {
+            productId,
+            warehouseId,
+            quantity: purchasedQuantity,
+            reservedQuantity: 0,
+            status: "IN_STOCK",
+            userId: currentUser.id,
+          },
         })
 
-        if (existingStock) {
-          // Update existing stock: increase quantity
-          const newQuantity = existingStock.quantity + purchasedQuantity
-
-          await tx.stock.update({
-            where: { id: existingStock.id },
-            data: {
-              quantity: newQuantity,
-              status: newQuantity === 0 
-                ? "OUT_OF_STOCK" 
-                : newQuantity < 10 
-                ? "LOW_STOCK" 
-                : "IN_STOCK",
-            },
-          })
-
-          // Create stock movement record
-          await tx.stockMovement.create({
-            data: {
-              productId,
-              warehouseId,
-              type: "IN",
-              quantity: purchasedQuantity,
-              reference: orderNumber,
-              referenceId: purchaseOrder.id,
-              notes: `Purchase order ${orderNumber}`,
-              userId: defaultUser.id,
-            },
-          })
-        } else {
-          // Create new stock entry
-          await tx.stock.create({
-            data: {
-              productId,
-              warehouseId,
-              quantity: purchasedQuantity,
-              reservedQuantity: 0,
-              status: purchasedQuantity > 0 ? "IN_STOCK" : "OUT_OF_STOCK",
-            },
-          })
-
-          // Create stock movement record
-          await tx.stockMovement.create({
-            data: {
-              productId,
-              warehouseId,
-              type: "IN",
-              quantity: purchasedQuantity,
-              reference: orderNumber,
-              referenceId: purchaseOrder.id,
-              notes: `Purchase order ${orderNumber}`,
-              userId: defaultUser.id,
-            },
-          })
-        }
+        // Create stock movement record for each purchase item
+        await tx.stockMovement.create({
+          data: {
+            productId,
+            warehouseId,
+            type: "IN",
+            quantity: purchasedQuantity,
+            reference: orderNumber,
+            referenceId: purchaseOrder.id,
+            notes: `Purchase order ${orderNumber}`,
+            userId: currentUser.id,
+          },
+        })
       }
 
       return purchaseOrder

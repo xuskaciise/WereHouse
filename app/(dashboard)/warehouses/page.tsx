@@ -373,6 +373,21 @@ function WarehouseForm({
   onSuccess: () => void
 }) {
   const { toast } = useToast()
+  const getAuthHeaders = () => {
+    if (typeof window === "undefined") return {}
+    const userData = localStorage.getItem("user") || sessionStorage.getItem("user")
+    if (!userData) return {}
+    try {
+      const user = JSON.parse(userData)
+      return {
+        "x-user-id": user?.id || "",
+        "x-user-role": user?.role || "",
+        "x-user-type": user?.user_type || "",
+      }
+    } catch {
+      return {}
+    }
+  }
   const [formData, setFormData] = useState({
     name: warehouse?.name || "",
     code: warehouse?.code || "",
@@ -427,6 +442,7 @@ function WarehouseForm({
         method,
         headers: {
           "Content-Type": "application/json",
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           name: formData.name.trim(),

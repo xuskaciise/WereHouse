@@ -6,13 +6,27 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Separator } from "@/components/ui/separator"
 import { useToast } from "@/components/ui/use-toast"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 export default function SettingsPage() {
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [currentUser, setCurrentUser] = useState<{ id?: string; role?: string; user_type?: string } | null>(null)
+  const [resetConfirmText, setResetConfirmText] = useState("")
+  const [resetPassword, setResetPassword] = useState("")
+  const [isResettingSystem, setIsResettingSystem] = useState(false)
   const [settings, setSettings] = useState({
     companyName: "",
     companyAddress: "",
@@ -29,6 +43,12 @@ export default function SettingsPage() {
   })
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const userData = localStorage.getItem("user") || sessionStorage.getItem("user")
+      if (userData) {
+        setCurrentUser(JSON.parse(userData))
+      }
+    }
     fetchSettings()
   }, [])
 
@@ -84,6 +104,81 @@ export default function SettingsPage() {
       })
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const normalizeRole = (value?: string) => (value || "").trim().toLowerCase()
+  const isAdminUser =
+    normalizeRole(currentUser?.role).includes("admin") ||
+    normalizeRole(currentUser?.user_type).includes("admin")
+
+  const isTruncateConfirmed = resetConfirmText.trim().toUpperCase() === "TRUNCATE"
+
+  const canSubmitSystemReset =
+    isTruncateConfirmed && resetPassword.trim().length > 0 && isAdminUser && !isResettingSystem
+
+  const handleSystemReset = async () => {
+    if (!isAdminUser) {
+      toast({
+        title: "Forbidden",
+        description: "Only admin users can perform system reset.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!isTruncateConfirmed) {
+      toast({
+        title: "Confirmation Required",
+        description: "Type TRUNCATE in all caps to continue.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!resetPassword.trim()) {
+      toast({
+        title: "Password Required",
+        description: "Enter your admin password to continue.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsResettingSystem(true)
+    try {
+      const response = await fetch("/api/admin/system-reset", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": currentUser?.id || "",
+          "x-user-role": currentUser?.role || "",
+          "x-user-type": currentUser?.user_type || "",
+        },
+        body: JSON.stringify({
+          password: resetPassword,
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Failed to reset system data")
+      }
+
+      toast({
+        title: "System Reset Complete",
+        description: "All operational data was truncated successfully. Users were preserved.",
+      })
+      setResetConfirmText("")
+      setResetPassword("")
+    } catch (error: any) {
+      toast({
+        title: "Reset Failed",
+        description: error.message || "Could not reset system data.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsResettingSystem(false)
     }
   }
 
@@ -291,6 +386,85 @@ export default function SettingsPage() {
                 />
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Danger Zone */}
+        <Card className="border-destructive/30">
+          <CardHeader>
+            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+            <CardDescription>
+              Permanently truncate operational data and reset auto-increment IDs. Users are never deleted.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-muted-foreground">
+              This action will clear warehouses, products, categories, purchases, sales, stock movements, expenses,
+              payments, and customers. This cannot be undone.
+            </div>
+
+            {!isAdminUser && (
+              <p className="text-sm text-destructive">
+                Only admin users can access this operation.
+              </p>
+            )}
+
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button type="button" variant="destructive" disabled={!isAdminUser}>
+                  Reset System Data (TRUNCATE)
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirm System Reset</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Type <span className="font-semibold text-foreground">TRUNCATE</span> in all caps to enable reset.
+                    Users table will remain intact.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+
+                <div className="space-y-2">
+                  <Label htmlFor="truncate-confirmation">Confirmation</Label>
+                  <Input
+                    id="truncate-confirmation"
+                    value={resetConfirmText}
+                    onChange={(e) => setResetConfirmText(e.target.value)}
+                    placeholder="Type TRUNCATE"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="truncate-password">Admin Password</Label>
+                  <Input
+                    id="truncate-password"
+                    type="password"
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    placeholder="Enter admin password"
+                    autoComplete="current-password"
+                  />
+                </div>
+
+                <AlertDialogFooter>
+                  <AlertDialogCancel
+                    onClick={() => {
+                      setResetConfirmText("")
+                      setResetPassword("")
+                    }}
+                  >
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleSystemReset}
+                    disabled={!canSubmitSystemReset}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {isResettingSystem ? "Resetting..." : "Confirm Reset"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </CardContent>
         </Card>
 

@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getRequestUser, isAdminRole } from "@/lib/rbac"
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     const { id } = await params
     const stock = await prisma.stock.findUnique({
       where: { id },
@@ -20,6 +23,9 @@ export async function GET(
         { error: "Stock not found" },
         { status: 404 }
       )
+    }
+    if (!isAdminRole(currentUser.role) && stock.userId !== currentUser.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
     return NextResponse.json(stock)
@@ -37,6 +43,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     const { id } = await params
     const body = await request.json()
     const { quantity, reservedQuantity } = body
@@ -58,6 +66,9 @@ export async function PUT(
         { error: "Stock not found" },
         { status: 404 }
       )
+    }
+    if (!isAdminRole(currentUser.role) && existingStock.userId !== currentUser.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
     const oldQuantity = existingStock.quantity
@@ -81,11 +92,7 @@ export async function PUT(
     })
 
     // Get current user for movement record
-    const defaultUser = await prisma.user.findFirst({
-      where: { role: "ADMIN" },
-    })
-
-    if (defaultUser && newQuantity !== oldQuantity) {
+    if (newQuantity !== oldQuantity) {
       // Create stock movement record
       await prisma.stockMovement.create({
         data: {
@@ -95,7 +102,7 @@ export async function PUT(
           quantity: newQuantity - oldQuantity,
           reference: "Manual Update",
           notes: "Stock updated via edit",
-          userId: defaultUser.id,
+          userId: currentUser.id,
         },
       })
     }
@@ -123,7 +130,16 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     const { id } = await params
+    const existingStock = await prisma.stock.findUnique({ where: { id } })
+    if (!existingStock) {
+      return NextResponse.json({ error: "Stock not found" }, { status: 404 })
+    }
+    if (!isAdminRole(currentUser.role) && existingStock.userId !== currentUser.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
     await prisma.stock.delete({
       where: { id },
     })

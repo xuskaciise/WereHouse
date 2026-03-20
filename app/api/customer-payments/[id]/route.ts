@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getRequestUser, isAdminRole } from "@/lib/rbac"
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     const { id } = await params
     const payment = await prisma.customerPayment.findUnique({
       where: { id },
@@ -28,6 +33,9 @@ export async function GET(
         { status: 404 }
       )
     }
+    if (!isAdminRole(currentUser.role) && payment.userId !== currentUser.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
 
     return NextResponse.json(payment)
   } catch (error) {
@@ -44,6 +52,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     const { id } = await params
     const body = await request.json()
     const { amount, paymentDate, paymentMethod, reference, notes } = body
@@ -66,6 +78,9 @@ export async function PUT(
         { error: "Payment not found" },
         { status: 404 }
       )
+    }
+    if (!isAdminRole(currentUser.role) && currentPayment.userId !== currentUser.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
     const amountDifference = parseFloat(amount) - currentPayment.amount
@@ -128,6 +143,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     const { id } = await params
 
     // Get current payment to restore customer balance
@@ -141,6 +160,9 @@ export async function DELETE(
         { error: "Payment not found" },
         { status: 404 }
       )
+    }
+    if (!isAdminRole(currentUser.role) && currentPayment.userId !== currentUser.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
     // Use transaction to delete payment and restore customer balance

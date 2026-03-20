@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getRequestUser, ownershipWhere } from "@/lib/rbac"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
     const customers = await prisma.customer.findMany({
+      where: ownershipWhere(currentUser),
       orderBy: {
         createdAt: "desc",
       },
@@ -20,6 +23,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     const body = await request.json()
     const { name, email, phone, address, city, state } = body
 
@@ -38,6 +45,7 @@ export async function POST(request: Request) {
         address: address || null,
         city: city || null,
         state: state || null,
+        userId: currentUser.id,
       },
     })
 

@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getRequestUser, ownershipWhere } from "@/lib/rbac"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
     const warehouses = await prisma.warehouse.findMany({
+      where: ownershipWhere(currentUser),
       orderBy: {
         createdAt: "desc",
       },
@@ -20,6 +23,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const currentUser = await getRequestUser(request)
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
     const body = await request.json()
     const { name, code, address, city, state, zipCode, country, capacity } = body
 
@@ -40,6 +47,7 @@ export async function POST(request: Request) {
         zipCode: zipCode || null,
         country: country || null,
         capacity: capacity ? parseInt(capacity.toString()) : null,
+        userId: currentUser.id,
       },
     })
 
