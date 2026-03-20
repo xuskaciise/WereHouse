@@ -373,17 +373,23 @@ function WarehouseForm({
   onSuccess: () => void
 }) {
   const { toast } = useToast()
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (): Record<string, string> => {
     if (typeof window === "undefined") return {}
     const userData = localStorage.getItem("user") || sessionStorage.getItem("user")
     if (!userData) return {}
     try {
-      const user = JSON.parse(userData)
-      return {
-        "x-user-id": user?.id || "",
-        "x-user-role": user?.role || "",
-        "x-user-type": user?.user_type || "",
+      const user: { id?: string; role?: string; user_type?: string } = JSON.parse(userData)
+      const rawHeaders: Record<string, string | undefined | null> = {
+        "x-user-id": user?.id,
+        "x-user-role": user?.role,
+        "x-user-type": user?.user_type,
       }
+
+      const cleanedHeaders = Object.fromEntries(
+        Object.entries(rawHeaders).filter(([, value]) => value !== undefined && value !== null && value !== "")
+      ) as Record<string, string>
+
+      return cleanedHeaders
     } catch {
       return {}
     }
@@ -438,12 +444,14 @@ function WarehouseForm({
       const url = warehouse ? `/api/warehouses/${warehouse.id}` : "/api/warehouses"
       const method = warehouse ? "PUT" : "POST"
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      }
+
       const response = await fetch(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-        },
+        headers,
         body: JSON.stringify({
           name: formData.name.trim(),
           code: formData.code.trim(),
