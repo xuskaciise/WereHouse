@@ -30,6 +30,7 @@ model User {
   supplierPayments  SupplierPayment[]
   customerPayments  CustomerPayment[]
   stockTransfers    StockTransfer[]
+  purchaseReceives  PurchaseReceive[]
   expenses          Expense[]
   expenseCategories ExpenseCategory[]
   categories        Category[]
@@ -237,6 +238,7 @@ model PurchaseOrder {
 
   items              PurchaseOrderItem[]
   supplierPayments   SupplierPayment[]
+  receives           PurchaseReceive[]
 
   @@map("purchase_orders")
 }
@@ -252,7 +254,34 @@ model PurchaseOrderItem {
   subtotal        Float
   createdAt       DateTime      @default(now())
 
+  receiveItems    PurchaseReceiveItem[]
+
   @@map("purchase_order_items")
+}
+
+model PurchaseReceive {
+  id                String   @id @default(cuid())
+  purchaseOrderId   String
+  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  notes             String?
+  createdAt         DateTime @default(now())
+
+  items             PurchaseReceiveItem[]
+
+  @@map("purchase_receives")
+}
+
+model PurchaseReceiveItem {
+  id                   String            @id @default(cuid())
+  purchaseReceiveId    String
+  purchaseReceive      PurchaseReceive   @relation(fields: [purchaseReceiveId], references: [id], onDelete: Cascade)
+  purchaseOrderItemId  String
+  purchaseOrderItem    PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
+  quantityReceived     Int
+
+  @@map("purchase_receive_items")
 }
 
 model SupplierPayment {
@@ -365,6 +394,7 @@ model StockTransferItem {
 
 enum OrderStatus {
   PENDING
+  PARTIALLY_RECEIVED
   CONFIRMED
   SHIPPED
   DELIVERED

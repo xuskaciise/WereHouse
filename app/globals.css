@@ -35,3 +35,38 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Purchase order / sheet print: show only printable region */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #purchase-order-print-root,
+  #purchase-order-print-root * {
+    visibility: visible;
+  }
+  #purchase-order-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+  }
+  [role="dialog"] {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 1.5rem !important;
+    background: white !important;
+  }
+}

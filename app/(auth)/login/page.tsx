@@ -232,7 +232,7 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-2">
             <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg border bg-white">
-              <Image src="/siu-logo.png" alt="SIU Logo" width={48} height={48} className="h-full w-full object-cover" />
+              <Image src="/siu_logo.png" alt="SIU Logo" width={48} height={48} className="h-full w-full object-cover" />
             </div>
             <h1 className="text-3xl font-bold text-foreground">Siu Warehouse</h1>
           </div>

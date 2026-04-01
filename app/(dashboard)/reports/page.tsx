@@ -250,6 +250,7 @@ export default function ReportsPage() {
                     <SelectContent>
                       <SelectItem value="all">All Statuses</SelectItem>
                       <SelectItem value="PENDING">PENDING</SelectItem>
+                      <SelectItem value="PARTIALLY_RECEIVED">PARTIALLY_RECEIVED</SelectItem>
                       <SelectItem value="CONFIRMED">CONFIRMED</SelectItem>
                       <SelectItem value="SHIPPED">SHIPPED</SelectItem>
                       <SelectItem value="DELIVERED">DELIVERED</SelectItem>

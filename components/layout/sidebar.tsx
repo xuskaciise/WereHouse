@@ -138,7 +138,7 @@ export function Sidebar() {
     <div className="flex h-screen w-64 flex-col border-r bg-card">
       <div className="flex h-16 items-center gap-2 border-b px-6">
         <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border bg-white">
-          <Image src="/siu-logo.png" alt="SIU Logo" width={40} height={40} className="h-full w-full object-cover" />
+          <Image src="/siu_logo.png" alt="SIU Logo" width={40} height={40} className="h-full w-full object-cover" />
         </div>
         <div className="flex flex-col">
           <span className="text-sm font-semibold">Siu Warehouse</span>

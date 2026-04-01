@@ -130,7 +130,7 @@ export default function NewPurchaseOrderPage() {
             unitPrice: item.unitPrice,
           })),
           notes: notes.trim() || null,
-          status: isDraft ? "PENDING" : "CONFIRMED",
+          status: "PENDING",
         }),
       })
 
@@ -139,7 +139,7 @@ export default function NewPurchaseOrderPage() {
           title: isDraft ? "Draft Saved" : "Purchase Order Created",
           description: isDraft
             ? "Purchase order has been saved as draft."
-            : "Purchase order has been created successfully.",
+            : "Purchase order issued. Warehouse stock updates when you receive the order on the Purchases page.",
         })
         router.push("/purchases")
       } else {

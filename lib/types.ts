@@ -6,7 +6,13 @@ export type StockStatus = "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK"
 
 export type MovementType = "IN" | "OUT" | "TRANSFER" | "ADJUSTMENT"
 
-export type OrderStatus = "PENDING" | "CONFIRMED" | "SHIPPED" | "DELIVERED" | "CANCELLED"
+export type OrderStatus =
+  | "PENDING"
+  | "PARTIALLY_RECEIVED"
+  | "CONFIRMED"
+  | "SHIPPED"
+  | "DELIVERED"
+  | "CANCELLED"
 
 export type PaymentStatus = "PENDING" | "PAID" | "PARTIAL" | "OVERDUE"
 

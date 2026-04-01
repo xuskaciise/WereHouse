@@ -24,6 +24,16 @@ export async function GET(request: Request) {
           items: {
             include: {
               product: true,
+              receiveItems: true,
+            },
+          },
+          receives: {
+            orderBy: { createdAt: "desc" },
+            include: {
+              user: {
+                select: { id: true, name: true, username: true },
+              },
+              items: true,
             },
           },
         },
@@ -64,6 +74,16 @@ export async function GET(request: Request) {
             items: {
               include: {
                 product: true,
+                receiveItems: true,
+              },
+            },
+            receives: {
+              orderBy: { createdAt: "desc" },
+              include: {
+                user: {
+                  select: { id: true, name: true, username: true },
+                },
+                items: true,
               },
             },
           },
@@ -92,7 +112,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     const body = await request.json()
-    const { supplierId, warehouseId, expectedDelivery, items, notes, status } = body
+    const { supplierId, warehouseId, expectedDelivery, items, notes } = body
 
     if (!supplierId || !warehouseId || !items || items.length === 0) {
       return NextResponse.json(
@@ -128,7 +148,7 @@ export async function POST(request: Request) {
           tax,
           discount,
           total,
-          status: status || "PENDING",
+          status: "PENDING",
           notes: notes || null,
           items: {
             create: items.map((item: any) => ({
@@ -140,6 +160,8 @@ export async function POST(request: Request) {
           },
         },
       })
+
+      // Stock is updated only when goods are received (see POST .../receive), not on PO creation.
 
       // Update supplier balance (increase balance when order is created - we owe supplier more)
       // Use savepoint to prevent balance update failure from aborting the transaction
@@ -179,54 +201,6 @@ export async function POST(request: Request) {
         console.log("Skipping balance update:", balanceError.message)
       }
 
-      // Update stock for each item in the order
-      for (const item of items) {
-        const { productId, quantity } = item
-        const purchasedQuantity = parseInt(quantity)
-        if (!Number.isFinite(purchasedQuantity) || purchasedQuantity <= 0) {
-          continue
-        }
-
-        // Upsert stock by productId + warehouseId:
-        // - if exists: increment quantity
-        // - if not exists: create with initial quantity
-        await tx.stock.upsert({
-          where: {
-            productId_warehouseId: {
-              productId,
-              warehouseId,
-            },
-          },
-          update: {
-            quantity: { increment: purchasedQuantity },
-            status: "IN_STOCK",
-            userId: currentUser.id,
-          },
-          create: {
-            productId,
-            warehouseId,
-            quantity: purchasedQuantity,
-            reservedQuantity: 0,
-            status: "IN_STOCK",
-            userId: currentUser.id,
-          },
-        })
-
-        // Create stock movement record for each purchase item
-        await tx.stockMovement.create({
-          data: {
-            productId,
-            warehouseId,
-            type: "IN",
-            quantity: purchasedQuantity,
-            reference: orderNumber,
-            referenceId: purchaseOrder.id,
-            notes: `Purchase order ${orderNumber}`,
-            userId: currentUser.id,
-          },
-        })
-      }
-
       return purchaseOrder
     }, {
       maxWait: 10000, // Maximum time to wait for a transaction slot
@@ -252,6 +226,16 @@ export async function POST(request: Request) {
           items: {
             include: {
               product: true,
+              receiveItems: true,
+            },
+          },
+          receives: {
+            orderBy: { createdAt: "desc" },
+            include: {
+              user: {
+                select: { id: true, name: true, username: true },
+              },
+              items: true,
             },
           },
         },
@@ -289,6 +273,16 @@ export async function POST(request: Request) {
             items: {
               include: {
                 product: true,
+                receiveItems: true,
+              },
+            },
+            receives: {
+              orderBy: { createdAt: "desc" },
+              include: {
+                user: {
+                  select: { id: true, name: true, username: true },
+                },
+                items: true,
               },
             },
           },
