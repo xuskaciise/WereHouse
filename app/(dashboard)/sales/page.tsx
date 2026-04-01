@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, Eye, Download } from "lucide-react"
+import { Plus, Eye, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import Link from "next/link"
+import Image from "next/image"
 
 export default function SalesPage() {
   const [salesOrders, setSalesOrders] = useState<any[]>([])
@@ -182,16 +183,44 @@ function SalesOrderDetailsSheet({
 }) {
   if (!order) return null
 
+  const handlePrintInvoice = () => {
+    window.print()
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="sm:max-w-2xl overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>Sales Order Details</SheetTitle>
-          <SheetDescription>
-            Order Number: {order.orderNumber}
-          </SheetDescription>
+        <SheetHeader className="print:mb-4">
+          <div className="flex items-start justify-between gap-3 print:block">
+            <div>
+              <SheetTitle>Sales Order Details</SheetTitle>
+              <SheetDescription>
+                Order Number: {order.orderNumber}
+              </SheetDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrintInvoice}
+              className="print:hidden"
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              Print Invoice
+            </Button>
+          </div>
         </SheetHeader>
         <div className="mt-6 space-y-6">
+          <div className="flex justify-center border-b pb-4">
+            <Image
+              src="/siu_logo.png"
+              alt="SIU Warehouse logo"
+              width={84}
+              height={84}
+              className="h-16 w-auto"
+              priority
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <div className="text-sm font-medium text-muted-foreground">Customer</div>

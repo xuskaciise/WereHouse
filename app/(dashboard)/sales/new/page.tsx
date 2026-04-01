@@ -13,6 +13,7 @@ import { formatCurrency } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import Image from "next/image"
 
 interface OrderItem {
   productId: string
@@ -479,6 +480,16 @@ export default function NewSalesOrderPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-center border-b pb-4">
+                <div className="mb-3 flex justify-center">
+                  <Image
+                    src="/siu_logo.png"
+                    alt="SIU Warehouse logo"
+                    width={72}
+                    height={72}
+                    className="h-16 w-auto"
+                    priority
+                  />
+                </div>
                 <div className="text-lg font-bold">Siu Warehouse</div>
                 <div className="text-xs text-muted-foreground mt-1">
                   123 Business School Ave.
