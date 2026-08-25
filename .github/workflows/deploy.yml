@@ -64,16 +64,16 @@ jobs:
           git reset --hard origin/main
 
           echo "=== Pull image ==="
-          docker compose --env-file .env.production pull app
+          docker pull ghcr.io/xuskaciise/warehouse:latest
 
           echo "=== Migrate ==="
           docker run --rm \
             --network siu_warehouse_warehouse \
             -v /root/SIU_WAREHOUSE/prisma:/app/prisma \
+            -v /root/SIU_WAREHOUSE/.env.production:/app/env/.env.production:ro \
             -w /app \
-            --env-file /root/SIU_WAREHOUSE/.env.production \
             node:20-alpine \
-            sh -c "npx --yes prisma@5.22.0 migrate deploy"
+            sh -c "set -a; . /app/env/.env.production; set +a; npx --yes prisma@5.22.0 migrate deploy"
 
           echo "=== Up ==="
           docker compose --env-file .env.production up -d --no-build
