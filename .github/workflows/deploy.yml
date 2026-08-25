@@ -73,7 +73,7 @@ jobs:
             -v /root/SIU_WAREHOUSE/.env.production:/app/env/.env.production:ro \
             -w /app \
             node:20-alpine \
-            sh -c "set -a; . /app/env/.env.production; set +a; npx --yes prisma@5.22.0 migrate deploy"
+            sh -c "apk add --no-cache openssl libc6-compat >/dev/null 2>&1; set -a; . /app/env/.env.production; set +a; npx --yes prisma@5.22.0 migrate deploy"
 
           echo "=== Up ==="
           docker compose --env-file .env.production up -d --no-build
