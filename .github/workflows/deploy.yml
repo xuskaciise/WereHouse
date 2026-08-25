@@ -67,8 +67,13 @@ jobs:
           docker compose --env-file .env.production pull app
 
           echo "=== Migrate ==="
-          docker compose --env-file .env.production run --rm \
-            --entrypoint sh app -c "npx prisma migrate deploy"
+          docker run --rm \
+            --network siu_warehouse_warehouse \
+            -v /root/SIU_WAREHOUSE/prisma:/app/prisma \
+            -w /app \
+            --env-file /root/SIU_WAREHOUSE/.env.production \
+            node:20-alpine \
+            sh -c "npx --yes prisma@5.22.0 migrate deploy"
 
           echo "=== Up ==="
           docker compose --env-file .env.production up -d --no-build
