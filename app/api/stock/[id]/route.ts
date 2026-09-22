@@ -1,157 +1,69 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { withAuth } from "@/lib/api"
-import { isAdmin } from "@/lib/auth-guard"
+import { readJson, withAuth } from "@/lib/api"
+import { HttpError, assertOwnership } from "@/lib/auth-guard"
+import { parseQuantity, setStockQuantity } from "@/lib/stock"
 
-export const GET = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
-  try {
-    const { id } = params
-    const stock = await prisma.stock.findUnique({
-      where: { id },
-      include: {
-        product: true,
-        warehouse: true,
-      },
-    })
+const NOT_FOUND = "Stock not found"
 
-    if (!stock) {
-      return NextResponse.json(
-        { error: "Stock not found" },
-        { status: 404 }
-      )
-    }
-    if (!isAdmin(currentUser) && stock.userId !== currentUser.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-    }
-
-    return NextResponse.json(stock)
-  } catch (error) {
-    console.error("Error fetching stock:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch stock" },
-      { status: 500 }
-    )
-  }
+export const GET = withAuth<{ id: string }>(async (_request, { user, params }) => {
+  const stock = await prisma.stock.findUnique({
+    where: { id: params.id },
+    include: { product: true, warehouse: true },
+  })
+  assertOwnership(user, stock, NOT_FOUND)
+  return NextResponse.json(stock)
 })
 
-export const PUT = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
-  try {
-    const { id } = params
-    const body = await request.json()
-    const { quantity, reservedQuantity } = body
+export const PUT = withAuth<{ id: string }>(async (request, { user, params }) => {
+  const existing = await prisma.stock.findUnique({ where: { id: params.id } })
+  assertOwnership(user, existing, NOT_FOUND)
 
-    if (quantity === undefined) {
-      return NextResponse.json(
-        { error: "Quantity is required" },
-        { status: 400 }
-      )
-    }
+  const { quantity, reservedQuantity } = await readJson(request)
+  if (quantity === undefined) throw new HttpError(400, "Quantity is required")
+  const newQuantity = parseQuantity(quantity, { allowZero: true })
 
-    // Get existing stock to calculate movement
-    const existingStock = await prisma.stock.findUnique({
-      where: { id },
+  const stock = await prisma.$transaction(async (tx) => {
+    const { oldQuantity } = await setStockQuantity(tx, {
+      productId: existing.productId,
+      warehouseId: existing.warehouseId,
+      quantity: newQuantity,
+      userId: user.id,
     })
 
-    if (!existingStock) {
-      return NextResponse.json(
-        { error: "Stock not found" },
-        { status: 404 }
-      )
-    }
-    if (!isAdmin(currentUser) && existingStock.userId !== currentUser.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    if (reservedQuantity !== undefined) {
+      const reserved = parseQuantity(reservedQuantity, { allowZero: true })
+      if (reserved > newQuantity) throw new HttpError(400, "Reserved quantity cannot exceed quantity")
+      await tx.stock.update({ where: { id: params.id }, data: { reservedQuantity: reserved } })
     }
 
-    const oldQuantity = existingStock.quantity
-    const newQuantity = parseInt(quantity)
-
-    const stock = await prisma.stock.update({
-      where: { id },
-      data: {
-        quantity: newQuantity,
-        reservedQuantity: reservedQuantity !== undefined ? parseInt(reservedQuantity) : undefined,
-        status: newQuantity === 0 
-          ? "OUT_OF_STOCK" 
-          : newQuantity < 10 
-          ? "LOW_STOCK" 
-          : "IN_STOCK",
-      },
-      include: {
-        product: true,
-        warehouse: true,
-      },
-    })
-
-    // Get current user for movement record
     if (newQuantity !== oldQuantity) {
-      // Create stock movement record
-      await prisma.stockMovement.create({
+      await tx.stockMovement.create({
         data: {
-          productId: stock.productId,
-          warehouseId: stock.warehouseId,
+          productId: existing.productId,
+          warehouseId: existing.warehouseId,
           type: "ADJUSTMENT",
           quantity: newQuantity - oldQuantity,
           reference: "Manual Update",
           notes: "Stock updated via edit",
-          userId: currentUser.id,
+          userId: user.id,
         },
       })
     }
 
-    return NextResponse.json(stock)
-  } catch (error: any) {
-    console.error("Error updating stock:", error)
-    
-    if (error.code === "P2025") {
-      return NextResponse.json(
-        { error: "Stock not found" },
-        { status: 404 }
-      )
-    }
+    return tx.stock.findUnique({
+      where: { id: params.id },
+      include: { product: true, warehouse: true },
+    })
+  })
 
-    return NextResponse.json(
-      { error: "Failed to update stock" },
-      { status: 500 }
-    )
-  }
+  return NextResponse.json(stock)
 })
 
-export const DELETE = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
-  try {
-    const { id } = params
-    const existingStock = await prisma.stock.findUnique({ where: { id } })
-    if (!existingStock) {
-      return NextResponse.json({ error: "Stock not found" }, { status: 404 })
-    }
-    if (!isAdmin(currentUser) && existingStock.userId !== currentUser.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-    }
-    await prisma.stock.delete({
-      where: { id },
-    })
+export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }) => {
+  const existing = await prisma.stock.findUnique({ where: { id: params.id } })
+  assertOwnership(user, existing, NOT_FOUND)
 
-    return NextResponse.json({ message: "Stock deleted successfully" })
-  } catch (error: any) {
-    console.error("Error deleting stock:", error)
-    
-    if (error.code === "P2025") {
-      return NextResponse.json(
-        { error: "Stock not found" },
-        { status: 404 }
-      )
-    }
-
-    // Handle foreign key constraint
-    if (error.code === "P2003") {
-      return NextResponse.json(
-        { error: "Cannot delete stock that has movements. Please remove all related data first." },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: "Failed to delete stock" },
-      { status: 500 }
-    )
-  }
+  await prisma.stock.delete({ where: { id: params.id } })
+  return NextResponse.json({ message: "Stock deleted successfully" })
 })

@@ -1,191 +1,134 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { withAuth } from "@/lib/api"
+import { readJson, withAuth } from "@/lib/api"
+import { HttpError, assertOwnership } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
-import { HttpError, isAdmin } from "@/lib/auth-guard"
 import { validateProductDates } from "@/lib/product-date-validation"
+import { parseQuantity, refreshStockStatus, setStockQuantity } from "@/lib/stock"
 
-export const GET = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
-  try {
-    const { id } = params
-    const product = await prisma.product.findUnique({
-      where: { id },
-      include: {
-        category: true,
-      },
-    })
+const NOT_FOUND = "Product not found"
 
-    if (!product) {
-      return NextResponse.json(
-        { error: "Product not found" },
-        { status: 404 }
-      )
-    }
-    if (!isAdmin(currentUser) && product.userId !== currentUser.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-    }
-
-    return NextResponse.json(product)
-  } catch (error) {
-    if (error instanceof HttpError) throw error
-    console.error("Error fetching product:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch product" },
-      { status: 500 }
-    )
-  }
+export const GET = withAuth<{ id: string }>(async (_request, { user, params }) => {
+  const product = await prisma.product.findUnique({
+    where: { id: params.id },
+    include: { category: true },
+  })
+  assertOwnership(user, product, NOT_FOUND)
+  return NextResponse.json(product)
 })
 
-export const PUT = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
+export const PUT = withAuth<{ id: string }>(async (request, { user, params }) => {
+  const { id } = params
+  const {
+    name,
+    sku,
+    description,
+    categoryId,
+    costPrice,
+    sellingPrice,
+    reorderLevel,
+    issueDate,
+    expireDate,
+    productionDate,
+    expiryDate,
+    stockUpdates,
+  } = await readJson(request)
+
+  if (!name || !sku || !categoryId) {
+    throw new HttpError(400, "Name, SKU, and Category are required")
+  }
+
+  const normalizedProductionDate = productionDate || issueDate || null
+  const normalizedExpiryDate = expiryDate || expireDate || null
+  const dateError = validateProductDates({
+    productionDate: normalizedProductionDate,
+    expiryDate: normalizedExpiryDate,
+  })
+  if (dateError) throw new HttpError(400, dateError)
+
+  const existing = await prisma.product.findUnique({ where: { id } })
+  assertOwnership(user, existing, NOT_FOUND)
+  await assertCanReference(user, { categoryId })
+
+  const updates: { stockId: string; quantity: number }[] = Array.isArray(stockUpdates)
+    ? stockUpdates
+        .filter((u: any) => u?.stockId && u.quantity !== undefined)
+        .map((u: any) => ({ stockId: String(u.stockId), quantity: parseQuantity(u.quantity, { allowZero: true }) }))
+    : []
+
   try {
-    const { id } = params
-    const body = await request.json()
-    const {
-      name,
-      sku,
-      description,
-      categoryId,
-      costPrice,
-      sellingPrice,
-      reorderLevel,
-      issueDate,
-      expireDate,
-      productionDate,
-      expiryDate,
-      stockUpdates,
-    } = body
+    const product = await prisma.$transaction(async (tx) => {
+      const updated = await tx.product.update({
+        where: { id },
+        data: {
+          name,
+          sku,
+          description: description || null,
+          categoryId,
+          costPrice: costPrice || 0,
+          sellingPrice: sellingPrice || 0,
+          reorderLevel: reorderLevel || 10,
+          issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
+          expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
+        },
+        include: { category: true },
+      })
 
-    if (!name || !sku || !categoryId) {
-      return NextResponse.json(
-        { error: "Name, SKU, and Category are required" },
-        { status: 400 }
-      )
-    }
+      for (const update of updates) {
+        // Only stock rows of this product can be edited through this route.
+        const stock = await tx.stock.findFirst({
+          where: { id: update.stockId, productId: id },
+          select: { warehouseId: true },
+        })
+        if (!stock) throw new HttpError(400, "Invalid stock entry for this product")
 
-    const normalizedProductionDate = productionDate || issueDate || null
-    const normalizedExpiryDate = expiryDate || expireDate || null
-    const dateError = validateProductDates({
-      productionDate: normalizedProductionDate,
-      expiryDate: normalizedExpiryDate,
-    })
-
-    if (dateError) {
-      return NextResponse.json({ error: dateError }, { status: 400 })
-    }
-
-    const existingProduct = await prisma.product.findUnique({ where: { id } })
-    if (!existingProduct) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 })
-    }
-    if (!isAdmin(currentUser) && existingProduct.userId !== currentUser.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-    }
-
-    await assertCanReference(currentUser, { categoryId })
-
-    const product = await prisma.product.update({
-      where: { id },
-      data: {
-        name,
-        sku,
-        description: description || null,
-        categoryId,
-        costPrice: costPrice || 0,
-        sellingPrice: sellingPrice || 0,
-        reorderLevel: reorderLevel || 10,
-        issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
-        expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
-      },
-      include: {
-        category: true,
-      },
-    })
-
-    // Update stock quantities if provided
-    if (stockUpdates && Array.isArray(stockUpdates)) {
-      for (const update of stockUpdates) {
-        const { stockId, quantity } = update
-        if (stockId && quantity !== undefined) {
-          try {
-            // Only stock rows of this product may be edited through this route.
-            await prisma.stock.update({
-              where: { id: stockId, productId: id },
-              data: {
-                quantity: parseInt(quantity) || 0,
-                status: parseInt(quantity) > 0 ? "IN_STOCK" : "OUT_OF_STOCK",
-              },
-            })
-          } catch (stockError) {
-            console.error(`Error updating stock ${stockId}:`, stockError)
-            // Continue with other updates even if one fails
-          }
+        const { oldQuantity, newQuantity } = await setStockQuantity(tx, {
+          productId: id,
+          warehouseId: stock.warehouseId,
+          quantity: update.quantity,
+          userId: user.id,
+        })
+        if (newQuantity !== oldQuantity) {
+          await tx.stockMovement.create({
+            data: {
+              productId: id,
+              warehouseId: stock.warehouseId,
+              type: "ADJUSTMENT",
+              quantity: newQuantity - oldQuantity,
+              reference: "Product edit",
+              notes: "Stock updated from product form",
+              userId: user.id,
+            },
+          })
         }
       }
-    }
+
+      // The reorder level may have changed, so recompute every stock status.
+      await refreshStockStatus(tx, id)
+      return updated
+    })
 
     return NextResponse.json(product)
   } catch (error: any) {
-    if (error instanceof HttpError) throw error
-    console.error("Error updating product:", error)
-    
-    if (error.code === "P2025") {
-      return NextResponse.json(
-        { error: "Product not found" },
-        { status: 404 }
-      )
-    }
-
-    if (error.code === "P2002") {
-      return NextResponse.json(
-        { error: "Product with this SKU already exists" },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: "Failed to update product" },
-      { status: 500 }
-    )
+    if (error?.code === "P2002") throw new HttpError(409, "Product with this SKU already exists")
+    throw error
   }
 })
 
-export const DELETE = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
+export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }) => {
+  const existing = await prisma.product.findUnique({ where: { id: params.id } })
+  assertOwnership(user, existing, NOT_FOUND)
+
   try {
-    const { id } = params
-    const existingProduct = await prisma.product.findUnique({ where: { id } })
-    if (!existingProduct) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 })
-    }
-    if (!isAdmin(currentUser) && existingProduct.userId !== currentUser.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-    }
-    await prisma.product.delete({
-      where: { id },
-    })
-
-    return NextResponse.json({ message: "Product deleted successfully" })
+    await prisma.product.delete({ where: { id: params.id } })
   } catch (error: any) {
-    if (error instanceof HttpError) throw error
-    console.error("Error deleting product:", error)
-    
-    if (error.code === "P2025") {
-      return NextResponse.json(
-        { error: "Product not found" },
-        { status: 404 }
+    if (error?.code === "P2003") {
+      throw new HttpError(
+        409,
+        "Cannot delete product that has stock or orders. Please remove all related data first."
       )
     }
-
-    // Handle foreign key constraint (product has stock, orders, etc.)
-    if (error.code === "P2003") {
-      return NextResponse.json(
-        { error: "Cannot delete product that has stock or orders. Please remove all related data first." },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: "Failed to delete product" },
-      { status: 500 }
-    )
+    throw error
   }
+  return NextResponse.json({ message: "Product deleted successfully" })
 })

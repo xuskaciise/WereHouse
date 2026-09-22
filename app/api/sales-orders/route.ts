@@ -1,93 +1,67 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { withAuth } from "@/lib/api"
-import { assertCanReference } from "@/lib/ownership"
+import { readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { assertCanReference } from "@/lib/ownership"
+import { parseOrderItems, parseOrderStatus } from "@/lib/orders"
+import { decrementStock } from "@/lib/stock"
 
-export const GET = withAuth(async (request, { user: currentUser }) => {
-  try {
-    const salesOrders = await prisma.salesOrder.findMany({
-      where: ownershipWhere(currentUser),
-      include: {
-        customer: true,
-        warehouse: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-          },
-        },
-        items: {
-          include: {
-            product: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    })
-    return NextResponse.json(salesOrders)
-  } catch (error) {
-    if (error instanceof HttpError) throw error
-    console.error("Error fetching sales orders:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch sales orders" },
-      { status: 500 }
-    )
-  }
+const salesOrderInclude = {
+  customer: true,
+  warehouse: true,
+  user: { select: { id: true, name: true, username: true } },
+  items: { include: { product: true } },
+} as const
+
+export const GET = withAuth(async (_request, { user }) => {
+  const salesOrders = await prisma.salesOrder.findMany({
+    where: ownershipWhere(user),
+    include: salesOrderInclude,
+    orderBy: { createdAt: "desc" },
+  })
+  return NextResponse.json(salesOrders)
 })
 
-export const POST = withAuth(async (request, { user: currentUser }) => {
-  try {
-    const body = await request.json()
-    const { customerId, warehouseId, expectedDelivery, items, notes, status } = body
+export const POST = withAuth(async (request, { user }) => {
+  const body = await readJson(request)
+  const { customerId, warehouseId, expectedDelivery, notes } = body
+  if (!customerId || !warehouseId) {
+    throw new HttpError(400, "Customer, Warehouse, and at least one item are required")
+  }
+  const items = parseOrderItems(body.items)
+  const status = parseOrderStatus(body.status)
 
-    if (!customerId || !warehouseId || !items || items.length === 0) {
-      return NextResponse.json(
-        { error: "Customer, Warehouse, and at least one item are required" },
-        { status: 400 }
-      )
-    }
+  await assertCanReference(user, {
+    customerId,
+    warehouseId,
+    productIds: items.map((item) => item.productId),
+  })
 
-    await assertCanReference(currentUser, {
-      customerId,
-      warehouseId,
-      productIds: items.map((item: any) => item.productId),
-    })
+  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
+  const tax = subtotal * 0.05 // 5% tax
+  const discount = 0
+  const total = subtotal + tax - discount
 
-    // Calculate totals
-    const subtotal = items.reduce((sum: number, item: any) => {
-      return sum + (item.quantity * item.unitPrice)
-    }, 0)
-    const tax = subtotal * 0.05 // 5% tax
-    const discount = 0
-    const total = subtotal + tax - discount
+  const orderCount = await prisma.salesOrder.count()
+  const orderNumber = `SO-${String(orderCount + 1).padStart(6, "0")}`
 
-    // Generate order number
-    const orderCount = await prisma.salesOrder.count()
-    const orderNumber = `SO-${String(orderCount + 1).padStart(6, "0")}`
-
-    // Use transaction to create order and update customer balance
-    // Increase timeout to 15 seconds to handle multiple stock updates
-    const result = await prisma.$transaction(async (tx) => {
-      // Create sales order
+  const orderId = await prisma.$transaction(
+    async (tx) => {
       const salesOrder = await tx.salesOrder.create({
         data: {
           orderNumber,
           customerId,
           warehouseId,
-          userId: currentUser.id,
+          userId: user.id,
           expectedDeliveryDate: expectedDelivery ? new Date(expectedDelivery) : null,
           subtotal,
           tax,
           discount,
           total,
-          status: status || "PENDING",
+          status,
           notes: notes || null,
           items: {
-            create: items.map((item: any) => ({
+            create: items.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
@@ -97,114 +71,38 @@ export const POST = withAuth(async (request, { user: currentUser }) => {
         },
       })
 
-      // Update customer balance (increase balance when order is created - customer owes more)
-      const customer = await tx.customer.findUnique({
+      // Customer owes more once the order is created.
+      await tx.customer.update({
         where: { id: customerId },
-        select: { balance: true },
+        data: { balance: { increment: total } },
       })
-      
-      if (customer) {
-        await tx.customer.update({
-          where: { id: customerId },
-          data: {
-            balance: (customer.balance || 0) + total,
-          },
-        })
-      }
 
-      // Update stock for each item in the order
+      // Guarded, atomic deduction: fails the whole transaction if any line
+      // does not have enough unreserved stock (no read-then-write race).
       for (const item of items) {
-        const { productId, quantity } = item
-        const soldQuantity = parseInt(quantity)
-
-        // Find stock entry
-        const existingStock = await tx.stock.findUnique({
-          where: {
-            productId_warehouseId: {
-              productId,
-              warehouseId,
-            },
+        await decrementStock(tx, { productId: item.productId, warehouseId, quantity: item.quantity })
+        await tx.stockMovement.create({
+          data: {
+            productId: item.productId,
+            warehouseId,
+            type: "OUT",
+            quantity: item.quantity,
+            reference: orderNumber,
+            referenceId: salesOrder.id,
+            notes: `Sales order ${orderNumber}`,
+            userId: user.id,
           },
         })
-
-        if (existingStock) {
-          // Check if we have enough stock
-          const availableQuantity = existingStock.quantity - existingStock.reservedQuantity
-          if (availableQuantity < soldQuantity) {
-            throw new Error(
-              `Insufficient stock for product. Available: ${availableQuantity}, Requested: ${soldQuantity}`
-            )
-          }
-
-          // Update stock: decrease quantity directly (items are sold)
-          const newQuantity = existingStock.quantity - soldQuantity
-
-          await tx.stock.update({
-            where: { id: existingStock.id },
-            data: {
-              quantity: newQuantity,
-              status: newQuantity === 0 
-                ? "OUT_OF_STOCK" 
-                : newQuantity < 10 
-                ? "LOW_STOCK" 
-                : "IN_STOCK",
-            },
-          })
-
-          // Create stock movement record
-          await tx.stockMovement.create({
-            data: {
-              productId,
-              warehouseId,
-              type: "OUT",
-              quantity: soldQuantity,
-              reference: orderNumber,
-              referenceId: salesOrder.id,
-              notes: `Sales order ${orderNumber}`,
-              userId: currentUser.id,
-            },
-          })
-        } else {
-          throw new Error(`No stock found for product in warehouse`)
-        }
       }
 
-      // Return the created order ID (we'll fetch with relations outside transaction)
       return salesOrder.id
-    }, {
-      maxWait: 10000, // Maximum time to wait for a transaction slot
-      timeout: 15000, // Maximum time the transaction can run
-    })
+    },
+    { maxWait: 10000, timeout: 15000 }
+  )
 
-    // Fetch order with relations outside transaction to avoid timeout
-    const orderWithRelations = await prisma.salesOrder.findUnique({
-      where: { id: result },
-      include: {
-        customer: true,
-        warehouse: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-          },
-        },
-        items: {
-          include: {
-            product: true,
-          },
-        },
-      },
-    })
-
-    return NextResponse.json(orderWithRelations, { status: 201 })
-
-  } catch (error: any) {
-    if (error instanceof HttpError) throw error
-    console.error("Error creating sales order:", error)
-    return NextResponse.json(
-      { error: error.message || "Failed to create sales order" },
-      { status: 500 }
-    )
-  }
+  const order = await prisma.salesOrder.findUnique({
+    where: { id: orderId },
+    include: salesOrderInclude,
+  })
+  return NextResponse.json(order, { status: 201 })
 })

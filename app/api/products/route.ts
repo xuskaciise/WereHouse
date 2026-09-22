@@ -1,124 +1,96 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { withAuth } from "@/lib/api"
-import { assertCanReference } from "@/lib/ownership"
+import { readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { assertCanReference } from "@/lib/ownership"
 import { validateProductDates } from "@/lib/product-date-validation"
+import { incrementStock, parseQuantity } from "@/lib/stock"
 
-export const GET = withAuth(async (request, { user: currentUser }) => {
-  try {
-    const products = await prisma.product.findMany({
-      where: ownershipWhere(currentUser),
-      include: {
-        category: true,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    })
-    return NextResponse.json(products)
-  } catch (error) {
-    if (error instanceof HttpError) throw error
-    console.error("Error fetching products:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch products" },
-      { status: 500 }
-    )
-  }
+export const GET = withAuth(async (_request, { user }) => {
+  const products = await prisma.product.findMany({
+    where: ownershipWhere(user),
+    include: { category: true },
+    orderBy: { createdAt: "desc" },
+  })
+  return NextResponse.json(products)
 })
 
-export const POST = withAuth(async (request, { user: currentUser }) => {
+export const POST = withAuth(async (request, { user }) => {
+  const {
+    name,
+    sku,
+    description,
+    categoryId,
+    costPrice,
+    sellingPrice,
+    reorderLevel,
+    issueDate,
+    expireDate,
+    productionDate,
+    expiryDate,
+    quantity,
+    warehouseId,
+  } = await readJson(request)
+
+  if (!name || !sku || !categoryId) {
+    throw new HttpError(400, "Name, SKU, and Category are required")
+  }
+  const initialQuantity =
+    quantity !== undefined && quantity !== null && quantity !== "" ? parseQuantity(quantity, { allowZero: true }) : 0
+
+  await assertCanReference(user, { categoryId, warehouseId })
+
+  const normalizedProductionDate = productionDate || issueDate || null
+  const normalizedExpiryDate = expiryDate || expireDate || null
+  const dateError = validateProductDates({
+    productionDate: normalizedProductionDate,
+    expiryDate: normalizedExpiryDate,
+  })
+  if (dateError) throw new HttpError(400, dateError)
+
   try {
-    const body = await request.json()
-    const {
-      name,
-      sku,
-      description,
-      categoryId,
-      costPrice,
-      sellingPrice,
-      reorderLevel,
-      issueDate,
-      expireDate,
-      productionDate,
-      expiryDate,
-      quantity,
-      warehouseId,
-    } = body
+    const product = await prisma.$transaction(async (tx) => {
+      const created = await tx.product.create({
+        data: {
+          name,
+          sku,
+          description: description || null,
+          categoryId,
+          costPrice: costPrice || 0,
+          sellingPrice: sellingPrice || 0,
+          reorderLevel: reorderLevel || 10,
+          issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
+          expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
+          userId: user.id,
+        },
+        include: { category: true },
+      })
 
-    if (!name || !sku || !categoryId) {
-      return NextResponse.json(
-        { error: "Name, SKU, and Category are required" },
-        { status: 400 }
-      )
-    }
-
-    await assertCanReference(currentUser, { categoryId, warehouseId })
-
-    const normalizedProductionDate = productionDate || issueDate || null
-    const normalizedExpiryDate = expiryDate || expireDate || null
-    const dateError = validateProductDates({
-      productionDate: normalizedProductionDate,
-      expiryDate: normalizedExpiryDate,
-    })
-
-    if (dateError) {
-      return NextResponse.json({ error: dateError }, { status: 400 })
-    }
-
-    const product = await prisma.product.create({
-      data: {
-        name,
-        sku,
-        description: description || null,
-        categoryId,
-        costPrice: costPrice || 0,
-        sellingPrice: sellingPrice || 0,
-        reorderLevel: reorderLevel || 10,
-        issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
-        expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
-        userId: currentUser.id,
-      },
-      include: {
-        category: true,
-      },
-    })
-
-    // Create stock entry if quantity and warehouse are provided
-    if (quantity && warehouseId && parseInt(quantity) > 0) {
-      try {
-        await prisma.stock.create({
+      if (warehouseId && initialQuantity > 0) {
+        await incrementStock(tx, {
+          productId: created.id,
+          warehouseId,
+          quantity: initialQuantity,
+          userId: user.id,
+        })
+        await tx.stockMovement.create({
           data: {
-            productId: product.id,
-            warehouseId: warehouseId,
-            quantity: parseInt(quantity),
-            reservedQuantity: 0,
-            status: parseInt(quantity) > 0 ? "IN_STOCK" : "OUT_OF_STOCK",
-            userId: currentUser.id,
+            productId: created.id,
+            warehouseId,
+            type: "IN",
+            quantity: initialQuantity,
+            reference: "Initial stock",
+            userId: user.id,
           },
         })
-      } catch (stockError) {
-        console.error("Error creating stock entry:", stockError)
-        // Don't fail the product creation if stock creation fails
       }
-    }
+
+      return created
+    })
 
     return NextResponse.json(product, { status: 201 })
   } catch (error: any) {
-    if (error instanceof HttpError) throw error
-    console.error("Error creating product:", error)
-    
-    // Handle unique constraint violations
-    if (error.code === "P2002") {
-      return NextResponse.json(
-        { error: "Product with this SKU already exists" },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: error.message || "Failed to create product" },
-      { status: 500 }
-    )
+    if (error?.code === "P2002") throw new HttpError(409, "Product with this SKU already exists")
+    throw error
   }
 })
