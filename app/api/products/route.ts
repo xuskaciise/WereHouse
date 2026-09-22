@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
 import { validateProductDates } from "@/lib/product-date-validation"
@@ -48,49 +48,48 @@ export const POST = withAuth(async (request, { user }) => {
   })
   if (dateError) throw new HttpError(400, dateError)
 
-  try {
-    const product = await prisma.$transaction(async (tx) => {
-      const created = await tx.product.create({
-        data: {
-          name,
-          sku,
-          description: description || null,
-          categoryId,
-          costPrice: costPrice || 0,
-          sellingPrice: sellingPrice || 0,
-          reorderLevel: reorderLevel || 10,
-          issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
-          expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
-          userId: user.id,
-        },
-        include: { category: true },
-      })
-
-      if (warehouseId && initialQuantity > 0) {
-        await incrementStock(tx, {
-          productId: created.id,
-          warehouseId,
-          quantity: initialQuantity,
-          userId: user.id,
-        })
-        await tx.stockMovement.create({
+  const product = await withConflictMessages(
+    () =>
+      prisma.$transaction(async (tx) => {
+        const created = await tx.product.create({
           data: {
-            productId: created.id,
-            warehouseId,
-            type: "IN",
-            quantity: initialQuantity,
-            reference: "Initial stock",
+            name,
+            sku,
+            description: description || null,
+            categoryId,
+            costPrice: costPrice || 0,
+            sellingPrice: sellingPrice || 0,
+            reorderLevel: reorderLevel || 10,
+            issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
+            expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
             userId: user.id,
           },
+          include: { category: true },
         })
-      }
 
-      return created
-    })
+        if (warehouseId && initialQuantity > 0) {
+          await incrementStock(tx, {
+            productId: created.id,
+            warehouseId,
+            quantity: initialQuantity,
+            userId: user.id,
+          })
+          await tx.stockMovement.create({
+            data: {
+              productId: created.id,
+              warehouseId,
+              type: "IN",
+              quantity: initialQuantity,
+              reference: "Initial stock",
+              userId: user.id,
+            },
+          })
+        }
 
-    return NextResponse.json(product, { status: 201 })
-  } catch (error: any) {
-    if (error?.code === "P2002") throw new HttpError(409, "Product with this SKU already exists")
-    throw error
-  }
+        return created
+      }),
+    { unique: "Product with this SKU already exists" }
+  )
+
+  return NextResponse.json(product, { status: 201 })
 })

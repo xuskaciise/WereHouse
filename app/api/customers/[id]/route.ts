@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError, assertOwnership } from "@/lib/auth-guard"
 import { withCustomerBalance } from "@/lib/balances"
 
@@ -39,16 +39,8 @@ export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }
   const existing = await prisma.customer.findUnique({ where: { id: params.id } })
   assertOwnership(user, existing, NOT_FOUND)
 
-  try {
-    await prisma.customer.delete({ where: { id: params.id } })
-  } catch (error: any) {
-    if (error?.code === "P2003") {
-      throw new HttpError(
-        409,
-        "Cannot delete customer that has sales orders. Please remove all related sales orders first."
-      )
-    }
-    throw error
-  }
+  await withConflictMessages(() => prisma.customer.delete({ where: { id: params.id } }), {
+    inUse: "Cannot delete customer that has sales orders. Please remove all related sales orders first.",
+  })
   return NextResponse.json({ message: "Customer deleted successfully" })
 })

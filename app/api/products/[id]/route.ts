@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError, assertOwnership } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
 import { validateProductDates } from "@/lib/product-date-validation"
@@ -56,79 +56,70 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
         .map((u: any) => ({ stockId: String(u.stockId), quantity: parseQuantity(u.quantity, { allowZero: true }) }))
     : []
 
-  try {
-    const product = await prisma.$transaction(async (tx) => {
-      const updated = await tx.product.update({
-        where: { id },
-        data: {
-          name,
-          sku,
-          description: description || null,
-          categoryId,
-          costPrice: costPrice || 0,
-          sellingPrice: sellingPrice || 0,
-          reorderLevel: reorderLevel || 10,
-          issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
-          expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
-        },
-        include: { category: true },
-      })
-
-      for (const update of updates) {
-        // Only stock rows of this product can be edited through this route.
-        const stock = await tx.stock.findFirst({
-          where: { id: update.stockId, productId: id },
-          select: { warehouseId: true },
+  const product = await withConflictMessages(
+    () =>
+      prisma.$transaction(async (tx) => {
+        const updated = await tx.product.update({
+          where: { id },
+          data: {
+            name,
+            sku,
+            description: description || null,
+            categoryId,
+            costPrice: costPrice || 0,
+            sellingPrice: sellingPrice || 0,
+            reorderLevel: reorderLevel || 10,
+            issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
+            expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
+          },
+          include: { category: true },
         })
-        if (!stock) throw new HttpError(400, "Invalid stock entry for this product")
 
-        const { oldQuantity, newQuantity } = await setStockQuantity(tx, {
-          productId: id,
-          warehouseId: stock.warehouseId,
-          quantity: update.quantity,
-          userId: user.id,
-        })
-        if (newQuantity !== oldQuantity) {
-          await tx.stockMovement.create({
-            data: {
-              productId: id,
-              warehouseId: stock.warehouseId,
-              type: "ADJUSTMENT",
-              quantity: newQuantity - oldQuantity,
-              reference: "Product edit",
-              notes: "Stock updated from product form",
-              userId: user.id,
-            },
+        for (const update of updates) {
+          // Only stock rows of this product can be edited through this route.
+          const stock = await tx.stock.findFirst({
+            where: { id: update.stockId, productId: id },
+            select: { warehouseId: true },
           })
+          if (!stock) throw new HttpError(400, "Invalid stock entry for this product")
+
+          const { oldQuantity, newQuantity } = await setStockQuantity(tx, {
+            productId: id,
+            warehouseId: stock.warehouseId,
+            quantity: update.quantity,
+            userId: user.id,
+          })
+          if (newQuantity !== oldQuantity) {
+            await tx.stockMovement.create({
+              data: {
+                productId: id,
+                warehouseId: stock.warehouseId,
+                type: "ADJUSTMENT",
+                quantity: newQuantity - oldQuantity,
+                reference: "Product edit",
+                notes: "Stock updated from product form",
+                userId: user.id,
+              },
+            })
+          }
         }
-      }
 
-      // The reorder level may have changed, so recompute every stock status.
-      await refreshStockStatus(tx, id)
-      return updated
-    })
+        // The reorder level may have changed, so recompute every stock status.
+        await refreshStockStatus(tx, id)
+        return updated
+      }),
+    { unique: "Product with this SKU already exists" }
+  )
 
-    return NextResponse.json(product)
-  } catch (error: any) {
-    if (error?.code === "P2002") throw new HttpError(409, "Product with this SKU already exists")
-    throw error
-  }
+  return NextResponse.json(product)
 })
 
 export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }) => {
   const existing = await prisma.product.findUnique({ where: { id: params.id } })
   assertOwnership(user, existing, NOT_FOUND)
 
-  try {
-    await prisma.product.delete({ where: { id: params.id } })
-  } catch (error: any) {
-    if (error?.code === "P2003") {
-      throw new HttpError(
-        409,
-        "Cannot delete product that has stock or orders. Please remove all related data first."
-      )
-    }
-    throw error
-  }
+  await withConflictMessages(() => prisma.product.delete({ where: { id: params.id } }), {
+    inUse: "Cannot delete product that has stock or orders. Please remove all related data first.",
+  })
   return NextResponse.json({ message: "Product deleted successfully" })
 })

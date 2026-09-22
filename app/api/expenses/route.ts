@@ -1,81 +1,44 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { withAuth } from "@/lib/api"
-import { assertCanReference } from "@/lib/ownership"
+import { readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { assertCanReference } from "@/lib/ownership"
 
-export const GET = withAuth(async (request, { user: currentUser }) => {
-  try {
-    const expenses = await prisma.expense.findMany({
-      where: ownershipWhere(currentUser),
-      include: {
-        category: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    })
-    return NextResponse.json(expenses)
-  } catch (error) {
-    if (error instanceof HttpError) throw error
-    console.error("Error fetching expenses:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch expenses" },
-      { status: 500 }
-    )
-  }
+const expenseInclude = {
+  category: true,
+  user: { select: { id: true, name: true, username: true } },
+} as const
+
+export const GET = withAuth(async (_request, { user }) => {
+  const expenses = await prisma.expense.findMany({
+    where: ownershipWhere(user),
+    include: expenseInclude,
+    orderBy: { createdAt: "desc" },
+  })
+  return NextResponse.json(expenses)
 })
 
-export const POST = withAuth(async (request, { user: currentUser }) => {
-  try {
-    const body = await request.json()
-    const { categoryId, amount, description, expenseDate, paymentMethod, reference } = body
+export const POST = withAuth(async (request, { user }) => {
+  const { categoryId, amount, description, expenseDate, paymentMethod, reference } = await readJson(request)
 
-    if (!categoryId || !amount || !description || !paymentMethod) {
-      return NextResponse.json(
-        { error: "Category, Amount, Description, and Payment Method are required" },
-        { status: 400 }
-      )
-    }
-
-    await assertCanReference(currentUser, { expenseCategoryId: categoryId })
-
-    const expense = await prisma.expense.create({
-      data: {
-        categoryId,
-        amount: parseFloat(amount),
-        description,
-        expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
-        paymentMethod,
-        reference: reference || null,
-        userId: currentUser.id,
-      },
-      include: {
-        category: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-          },
-        },
-      },
-    })
-
-    return NextResponse.json(expense, { status: 201 })
-  } catch (error: any) {
-    if (error instanceof HttpError) throw error
-    console.error("Error creating expense:", error)
-    return NextResponse.json(
-      { error: error.message || "Failed to create expense" },
-      { status: 500 }
-    )
+  const parsedAmount = parseFloat(amount)
+  if (!categoryId || !description || !paymentMethod || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+    throw new HttpError(400, "Category, a positive Amount, Description, and Payment Method are required")
   }
+
+  await assertCanReference(user, { expenseCategoryId: categoryId })
+
+  const expense = await prisma.expense.create({
+    data: {
+      categoryId,
+      amount: parsedAmount,
+      description,
+      expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
+      paymentMethod,
+      reference: reference || null,
+      userId: user.id,
+    },
+    include: expenseInclude,
+  })
+  return NextResponse.json(expense, { status: 201 })
 })

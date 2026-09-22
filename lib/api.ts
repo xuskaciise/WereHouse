@@ -74,6 +74,25 @@ export function errorResponse(error: unknown, fallbackMessage = "Something went 
   return NextResponse.json(body, { status: 500 })
 }
 
+/**
+ * Runs a Prisma operation and turns unique (P2002) / foreign-key (P2003)
+ * violations into 409 responses with a friendly, non-internal message.
+ */
+export async function withConflictMessages<T>(
+  operation: () => Promise<T>,
+  messages: { unique?: string; inUse?: string }
+): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2002" && messages.unique) throw new HttpError(409, messages.unique)
+      if (error.code === "P2003" && messages.inUse) throw new HttpError(409, messages.inUse)
+    }
+    throw error
+  }
+}
+
 export async function readJson<T = any>(request: Request): Promise<T> {
   try {
     return (await request.json()) as T
