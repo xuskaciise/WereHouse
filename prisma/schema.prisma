@@ -68,6 +68,7 @@ model Category {
 
   products Product[]
 
+  @@index([userId])
   @@map("categories")
 }
 
@@ -94,6 +95,8 @@ model Product {
   salesOrderItems    SalesOrderItem[]
   stockTransferItems StockTransferItem[]
 
+  @@index([userId])
+  @@index([categoryId])
   @@map("products")
 }
 
@@ -116,6 +119,7 @@ model Supplier {
   purchaseOrders   PurchaseOrder[]
   supplierPayments SupplierPayment[]
 
+  @@index([userId])
   @@map("suppliers")
 }
 
@@ -137,6 +141,7 @@ model Customer {
   salesOrders      SalesOrder[]
   customerPayments CustomerPayment[]
 
+  @@index([userId])
   @@map("customers")
 }
 
@@ -162,6 +167,7 @@ model Warehouse {
   fromStockTransfers StockTransfer[] @relation("FromWarehouse")
   toStockTransfers   StockTransfer[] @relation("ToWarehouse")
 
+  @@index([userId])
   @@map("warehouses")
 }
 
@@ -180,6 +186,8 @@ model Stock {
   user             User?       @relation(fields: [userId], references: [id])
 
   @@unique([productId, warehouseId])
+  @@index([userId])
+  @@index([warehouseId])
   @@map("stock")
 }
 
@@ -204,6 +212,9 @@ model StockMovement {
   user        User         @relation(fields: [userId], references: [id])
   createdAt   DateTime     @default(now())
 
+  @@index([createdAt])
+  @@index([productId, warehouseId])
+  @@index([userId, createdAt])
   @@map("stock_movements")
 }
 
@@ -238,6 +249,10 @@ model PurchaseOrder {
   supplierPayments SupplierPayment[]
   receives         PurchaseReceive[]
 
+  @@index([status])
+  @@index([orderDate])
+  @@index([supplierId])
+  @@index([userId, createdAt])
   @@map("purchase_orders")
 }
 
@@ -254,6 +269,8 @@ model PurchaseOrderItem {
 
   receiveItems PurchaseReceiveItem[]
 
+  @@index([purchaseOrderId])
+  @@index([productId])
   @@map("purchase_order_items")
 }
 
@@ -268,6 +285,7 @@ model PurchaseReceive {
 
   items PurchaseReceiveItem[]
 
+  @@index([purchaseOrderId])
   @@map("purchase_receives")
 }
 
@@ -279,6 +297,7 @@ model PurchaseReceiveItem {
   purchaseOrderItem   PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
   quantityReceived    Int
 
+  @@index([purchaseOrderItemId])
   @@map("purchase_receive_items")
 }
 
@@ -297,6 +316,10 @@ model SupplierPayment {
   user            User           @relation(fields: [userId], references: [id])
   createdAt       DateTime       @default(now())
 
+  @@index([supplierId])
+  @@index([purchaseOrderId])
+  @@index([paymentDate])
+  @@index([userId, createdAt])
   @@map("supplier_payments")
 }
 
@@ -323,6 +346,10 @@ model SalesOrder {
   items            SalesOrderItem[]
   customerPayments CustomerPayment[]
 
+  @@index([status])
+  @@index([orderDate])
+  @@index([customerId])
+  @@index([userId, createdAt])
   @@map("sales_orders")
 }
 
@@ -337,6 +364,8 @@ model SalesOrderItem {
   subtotal     Decimal    @db.Decimal(12, 2)
   createdAt    DateTime   @default(now())
 
+  @@index([salesOrderId])
+  @@index([productId])
   @@map("sales_order_items")
 }
 
@@ -355,6 +384,10 @@ model CustomerPayment {
   user          User        @relation(fields: [userId], references: [id])
   createdAt     DateTime    @default(now())
 
+  @@index([customerId])
+  @@index([salesOrderId])
+  @@index([paymentDate])
+  @@index([userId, createdAt])
   @@map("customer_payments")
 }
 
@@ -410,6 +443,7 @@ model ExpenseCategory {
 
   expenses Expense[]
 
+  @@index([userId])
   @@map("expense_categories")
 }
 
@@ -427,6 +461,8 @@ model Expense {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
+  @@index([expenseDate])
+  @@index([userId, createdAt])
   @@map("expenses")
 }
 
