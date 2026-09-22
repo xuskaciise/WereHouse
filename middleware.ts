@@ -14,7 +14,7 @@ const apiLimiter = new SlidingWindowLimiter(120, 60_000)
 const credentialLimiter = new SlidingWindowLimiter(10, 60_000)
 
 const PUBLIC_PAGES = new Set(["/login"])
-const PUBLIC_API_EXACT = new Set(["/api/register"])
+const PUBLIC_API_EXACT = new Set(["/api/register", "/api/health"])
 const PUBLIC_API_PREFIX = "/api/auth/"
 const CREDENTIAL_ENDPOINTS = new Set(["/api/auth/callback/credentials", "/api/register"])
 

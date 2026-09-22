@@ -21,6 +21,19 @@ ENV NODE_ENV=production
 
 RUN npm run build
 
+# One-off migration image (tag <sha>-migrator). It carries the migrations of
+# the same commit as the app image, so the server never needs a git checkout.
+FROM base AS migrator
+WORKDIR /migrate
+COPY package-lock.json ./
+RUN PRISMA_VERSION="$(node -p "require('./package-lock.json').packages['node_modules/prisma'].version")" \
+  && npm install --no-save --no-package-lock --no-audit --no-fund "prisma@${PRISMA_VERSION}" \
+  && npm cache clean --force \
+  && rm package-lock.json
+COPY prisma ./prisma
+USER node
+CMD ["npx", "--no-install", "prisma", "migrate", "deploy"]
+
 FROM base AS runner
 WORKDIR /app
 

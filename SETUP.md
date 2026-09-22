@@ -62,15 +62,33 @@ Never use `prisma db push` against a shared or production database — it has no
 
 ## 🚢 Production
 
-`deploy.sh` (and the GitHub deploy workflow) run `prisma migrate deploy` through the `migrate` service in `docker-compose.yml` before starting the new app version:
+A push to `main` (or a manual run) of `.github/workflows/deploy.yml`:
+
+1. builds two images and pushes them to GHCR, tagged with the commit SHA:
+   `ghcr.io/xuskaciise/warehouse:<sha>` (app) and `:<sha>-migrator` (Prisma migrations);
+2. waits for approval on the `production` environment (if reviewers are configured);
+3. copies `docker-compose.yml`, `deploy.sh` and `scripts/backup-warehouse-db.sh` to `/root/SIU_WAREHOUSE` (no git checkout on the server);
+4. pulls both images on the VPS with the job's short-lived token (a temporary Docker config, so other projects' registry logins are untouched);
+5. runs `./deploy.sh deploy <sha>` on the VPS:
+   warehouse-only `pg_dump` backup (deploy stops if it fails) → `prisma migrate deploy` (deploy stops if it fails) →
+   switch the app container to the new image → health check on `http://127.0.0.1:3009/api/health` →
+   automatic rollback to the previous image if the health check fails.
+
+Manual operations on the VPS (every compose command needs `IMAGE_TAG`):
 
 ```bash
-docker compose --env-file .env.production run --rm migrate
+cd /root/SIU_WAREHOUSE
+export IMAGE_TAG=$(cat .deployed-image-tag)
+docker compose --env-file .env.production ps
+./deploy.sh rollback                       # previous app image (database unchanged)
+scripts/backup-warehouse-db.sh manual      # ad-hoc backup -> /var/backups/db/warehouse-deploy/
 ```
 
-Required production variables (see `.env.production.template`): `DATABASE_URL`, `AUTH_SECRET`, `AUTH_TRUST_HOST=true` (the app runs behind a reverse proxy) and `AUTH_URL` (public https URL).
+Required production variables (see `.env.production.template`): `DATABASE_URL`, `POSTGRES_*`, `APP_PORT=3009`, `AUTH_SECRET`, `AUTH_TRUST_HOST=true` and `AUTH_URL`. `deploy.sh` refuses to deploy if any is missing.
 
-> **Existing databases created with `db push`:** the migration history starts with a clean `init` migration (passwords are now bcrypt hashes, balances are calculated, money columns are `DECIMAL`). Point production at a new, empty database and run `migrate deploy` + `db:seed`, then re-create users (old plaintext passwords cannot be converted).
+Required GitHub secrets: `VPS_HOST`, `VPS_PORT`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS` (the server's pinned SSH host key line).
+
+> **Existing databases created with `db push`:** `migrate deploy` refuses to run on them (error P3005) until the one-time transition script has converted and baselined the database, so a deploy can never silently damage such a database.
 
 ## 🔐 Secrets handling
 

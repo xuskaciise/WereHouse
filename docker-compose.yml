@@ -1,3 +1,13 @@
+# Production stack for the warehouse app. The project name is pinned to the
+# existing one so container, network and volume names stay the same
+# (siu_warehouse-db-1, siu_warehouse_warehouse, siu_warehouse_postgres_data).
+# Nothing here refers to other projects on the VPS.
+#
+# Images come from GHCR and are pinned to a commit SHA. Every compose command
+# needs IMAGE_TAG, e.g.:
+#   IMAGE_TAG=$(cat .deployed-image-tag) docker compose --env-file .env.production ps
+name: siu_warehouse
+
 services:
   db:
     image: postgres:16-alpine
@@ -20,13 +30,12 @@ services:
       - warehouse
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      # No build args: secrets are provided only at runtime through env_file.
+    # Built and pushed by .github/workflows/deploy.yml; never built on the server.
+    image: ghcr.io/xuskaciise/warehouse:${IMAGE_TAG:?IMAGE_TAG must be set (see deploy.sh)}
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-3000}:3000"
+      # Loopback only: reachable through the host's reverse proxy, not directly.
+      - "127.0.0.1:${APP_PORT:-3009}:3000"
     env_file:
       - .env.production
     environment:
@@ -39,16 +48,14 @@ services:
     networks:
       - warehouse
 
-  # One-off schema migration runner: docker compose --env-file .env.production run --rm migrate
+  # One-off: runs `prisma migrate deploy` from the migrator image of the same
+  # commit. Started only explicitly (deploy.sh), never by `up`.
   migrate:
-    image: node:20-alpine
+    image: ghcr.io/xuskaciise/warehouse:${IMAGE_TAG:?IMAGE_TAG must be set (see deploy.sh)}-migrator
     profiles: ["tools"]
-    working_dir: /app
+    restart: "no"
     env_file:
       - .env.production
-    volumes:
-      - ./prisma:/app/prisma:ro
-    command: sh -c "apk add --no-cache openssl libc6-compat >/dev/null && npx --yes prisma@5.22.0 migrate deploy"
     depends_on:
       db:
         condition: service_healthy
