@@ -43,19 +43,19 @@ EduWarehouse is a warehouse and inventory management system designed for educati
 
 1. Open your web browser
 2. Go to the login page
-3. Enter your **Username** (e.g., admin, manager, sales)
+3. Enter your **Username** (students use their ID number)
 4. Enter your **Password**
-5. Check "Remember me" if you want to stay logged in
-6. Click **"Sign In"**
+5. Click **"Sign In"**
 
-### Demo Credentials
+Your session lasts up to 8 hours; use **Log out** in the top-right menu when you are done.
 
-For testing purposes, you can use these accounts:
-- **Admin**: username: `admin` / password: `admin123`
-- **Manager**: username: `manager` / password: `manager123`
-- **Sales**: username: `sales` / password: `sales123`
-- **Accountant**: username: `accountant` / password: `accountant123`
-- **Student**: username: `student` / password: `student123`
+### Getting an Account
+
+- **Students** register on the **Student Register** tab. The account stays *pending* until an administrator approves it.
+- **Staff accounts** (Warehouse Manager, Sales Officer, Accountant, Admin) are created by an administrator on the **Users** page.
+- The first administrator is created by the system operator with `npm run db:seed`.
+
+There are no shared demo accounts. After 5 failed attempts for the same username, sign-in is blocked for 15 minutes.
 
 ---
 

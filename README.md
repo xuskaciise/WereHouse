@@ -124,7 +124,14 @@ npm run dev
 
 ### Login
 
-For demo purposes, you can log in with any credentials. The system will redirect you to the dashboard.
+Authentication is real (Auth.js, bcrypt-hashed passwords, httpOnly session cookie):
+
+1. Create the first administrator: set `ADMIN_USERNAME` (and optionally `ADMIN_PASSWORD`) in `.env`, then run `npm run db:seed`. If no password is set, a strong one is generated and printed once.
+2. Sign in at `/login` with that account.
+3. Students register themselves on the **Student Register** tab; their account stays **PENDING** until an admin approves it on the **Users** page.
+4. All other roles (Warehouse Manager, Sales Officer, Accountant, Admin) are created or changed only by an admin on the **Users** page.
+
+Pending or rejected accounts cannot sign in. See `SETUP.md` for the full setup (migrations, environment variables).
 
 ## 📊 Database Schema (Future Integration)
 

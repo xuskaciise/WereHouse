@@ -42,8 +42,6 @@ import {
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { formatDate } from "@/lib/utils"
-// Mock users removed - use database API instead
-const mockUsers: any[] = []
 import { User, Role } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
