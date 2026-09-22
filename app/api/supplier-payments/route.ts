@@ -5,14 +5,16 @@ import { assertCanReference } from "@/lib/ownership"
 import { parseMoney } from "@/lib/money"
 import { withNestedSupplierBalance } from "@/lib/balances"
 import { supplierPaymentInclude as paymentInclude } from "@/lib/includes"
+import { dateRangeWhere, listResponse } from "@/lib/pagination"
 
-export const GET = withAuth(async (_request, { user }) => {
-  const payments = await prisma.supplierPayment.findMany({
-    where: ownershipWhere(user),
-    include: paymentInclude,
-    orderBy: { createdAt: "desc" },
+export const GET = withAuth(async (request, { user }) => {
+  const where = { ...ownershipWhere(user), ...dateRangeWhere(request, "paymentDate") }
+  return listResponse(request, {
+    findMany: (page) =>
+      prisma.supplierPayment.findMany({ where, include: paymentInclude, orderBy: { createdAt: "desc" }, ...page }),
+    count: () => prisma.supplierPayment.count({ where }),
+    map: withNestedSupplierBalance,
   })
-  return json(await withNestedSupplierBalance(payments))
 })
 
 export const POST = withAuth(async (request, { user }) => {

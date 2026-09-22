@@ -3,16 +3,16 @@ import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { hashPassword, validatePassword } from "@/lib/password"
 import { parseRole, parseStatus, publicUserSelect } from "@/lib/users"
+import { listResponse } from "@/lib/pagination"
 
 // User management is ADMIN-only. Public student sign-up lives in /api/register.
 
 export const GET = withAuth(
-  async () => {
-    const users = await prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      select: publicUserSelect,
+  async (request) => {
+    return listResponse(request, {
+      findMany: (page) => prisma.user.findMany({ orderBy: { createdAt: "desc" }, select: publicUserSelect, ...page }),
+      count: () => prisma.user.count(),
     })
-    return json(users)
   },
   { roles: ["ADMIN"] }
 )

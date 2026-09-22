@@ -4,6 +4,8 @@ import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
 import { calculateOrderTotals, parseOrderItems, parseOrderStatus } from "@/lib/orders"
 import { decrementStock } from "@/lib/stock"
+import { dateRangeWhere, listResponse } from "@/lib/pagination"
+import type { Prisma } from "@prisma/client"
 
 const salesOrderInclude = {
   customer: true,
@@ -12,13 +14,26 @@ const salesOrderInclude = {
   items: { include: { product: true } },
 } as const
 
-export const GET = withAuth(async (_request, { user }) => {
-  const salesOrders = await prisma.salesOrder.findMany({
-    where: ownershipWhere(user),
-    include: salesOrderInclude,
-    orderBy: { createdAt: "desc" },
+// Lighter shape for reports/lists that do not need line items.
+const salesOrderSummaryInclude = {
+  customer: { select: { id: true, name: true } },
+  warehouse: { select: { id: true, name: true } },
+} as const
+
+// Supports ?page, ?pageSize, ?from, ?to (orderDate), ?status and ?view=summary.
+export const GET = withAuth(async (request, { user }) => {
+  const params = new URL(request.url).searchParams
+  const status = params.get("status")
+  const where: Prisma.SalesOrderWhereInput = {
+    ...ownershipWhere(user),
+    ...dateRangeWhere(request, "orderDate"),
+    ...(status && { status: parseOrderStatus(status) }),
+  }
+  const include = params.get("view") === "summary" ? salesOrderSummaryInclude : salesOrderInclude
+  return listResponse(request, {
+    findMany: (page) => prisma.salesOrder.findMany({ where, include, orderBy: { createdAt: "desc" }, ...page }),
+    count: () => prisma.salesOrder.count({ where }),
   })
-  return json(salesOrders)
 })
 
 export const POST = withAuth(async (request, { user }) => {

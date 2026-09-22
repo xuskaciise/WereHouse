@@ -17,6 +17,21 @@ type SalesOrder = any
 type SupplierPayment = any
 type CustomerPayment = any
 
+const REPORT_PERIODS: Record<string, string> = {
+  "3": "Last 3 months",
+  "6": "Last 6 months",
+  "12": "Last 12 months",
+  all: "All time",
+}
+
+/** YYYY-MM-DD for the first day of the month `months` months ago, or "" for all time. */
+function periodStart(period: string): string {
+  if (period === "all") return ""
+  const date = new Date()
+  date.setMonth(date.getMonth() - Number(period), 1)
+  return date.toISOString().slice(0, 10)
+}
+
 function inDateRange(dateValue: string | Date, start: string, end: string) {
   const date = new Date(dateValue)
   if (Number.isNaN(date.getTime())) return false
@@ -40,6 +55,7 @@ export default function ReportsPage() {
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([])
   const [supplierPayments, setSupplierPayments] = useState<SupplierPayment[]>([])
   const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([])
+  const [period, setPeriod] = useState("12")
 
   const [purchaseStartDate, setPurchaseStartDate] = useState("")
   const [purchaseEndDate, setPurchaseEndDate] = useState("")
@@ -53,16 +69,21 @@ export default function ReportsPage() {
 
   useEffect(() => {
     fetchReportData()
-  }, [])
+  }, [period])
 
+  // The period is filtered on the server (?from=) and orders use the light
+  // "summary" shape, so the report never downloads whole tables.
   const fetchReportData = async () => {
     try {
       setIsLoading(true)
+      const from = periodStart(period)
+      const orderQuery = new URLSearchParams({ view: "summary", ...(from && { from }) })
+      const paymentQuery = new URLSearchParams(from ? { from } : {})
       const [poRes, soRes, spRes, cpRes] = await Promise.all([
-        fetch("/api/purchase-orders"),
-        fetch("/api/sales-orders"),
-        fetch("/api/supplier-payments"),
-        fetch("/api/customer-payments"),
+        fetch(`/api/purchase-orders?${orderQuery}`),
+        fetch(`/api/sales-orders?${orderQuery}`),
+        fetch(`/api/supplier-payments?${paymentQuery}`),
+        fetch(`/api/customer-payments?${paymentQuery}`),
       ])
 
       if (!poRes.ok || !soRes.ok || !spRes.ok || !cpRes.ok) {
@@ -201,11 +222,28 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Reports</h1>
-        <p className="text-muted-foreground">
-          Detailed filterable purchase, sales, and payment tracking reports.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Reports</h1>
+          <p className="text-muted-foreground">
+            Detailed filterable purchase, sales, and payment tracking reports.
+          </p>
+        </div>
+        <div className="w-48 space-y-1">
+          <Label htmlFor="report-period">Report period</Label>
+          <Select value={period} onValueChange={setPeriod}>
+            <SelectTrigger id="report-period">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(REPORT_PERIODS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <Tabs defaultValue="purchases" className="space-y-4">

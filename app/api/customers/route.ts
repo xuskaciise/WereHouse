@@ -2,13 +2,15 @@ import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { withCustomerBalance } from "@/lib/balances"
+import { listResponse } from "@/lib/pagination"
 
-export const GET = withAuth(async (_request, { user }) => {
-  const customers = await prisma.customer.findMany({
-    where: ownershipWhere(user),
-    orderBy: { createdAt: "desc" },
+export const GET = withAuth(async (request, { user }) => {
+  const where = ownershipWhere(user)
+  return listResponse(request, {
+    findMany: (page) => prisma.customer.findMany({ where, orderBy: { createdAt: "desc" }, ...page }),
+    count: () => prisma.customer.count({ where }),
+    map: withCustomerBalance,
   })
-  return json(await withCustomerBalance(customers))
 })
 
 export const POST = withAuth(async (request, { user }) => {

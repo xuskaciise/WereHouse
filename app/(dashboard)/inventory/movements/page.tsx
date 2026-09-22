@@ -29,6 +29,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { formatDateTime } from "@/lib/utils"
 import { MovementType } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
+import { PaginationControls } from "@/components/ui/pagination-controls"
+
+const PAGE_SIZE = 25
 
 export default function StockMovementsPage() {
   const { toast } = useToast()
@@ -38,20 +41,39 @@ export default function StockMovementsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [query, setQuery] = useState("")
 
   useEffect(() => {
-    fetchStockMovements()
     fetchProducts()
     fetchWarehouses()
   }, [])
 
+  // Debounce the search box; searching always restarts at page 1.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(1)
+      setQuery(searchTerm.trim())
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchTerm])
+
+  useEffect(() => {
+    fetchStockMovements()
+  }, [page, query])
+
+  // Server-side pagination and search (see GET /api/stock-movements).
   const fetchStockMovements = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch("/api/stock-movements")
+      const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
+      if (query) params.set("q", query)
+      const response = await fetch(`/api/stock-movements?${params}`)
       if (response.ok) {
         const data = await response.json()
         setStockMovements(data)
+        setTotal(Number(response.headers.get("X-Total-Count")) || 0)
       } else {
         toast({
           title: "Error",
@@ -95,14 +117,7 @@ export default function StockMovementsPage() {
     }
   }
 
-  const filteredMovements = stockMovements.filter((movement) => {
-    if (!movement.product) return false
-    return (
-      movement.product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      movement.product.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      movement.reference?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  })
+  const filteredMovements = stockMovements.filter((movement) => movement.product)
 
   const getTypeBadge = (type: MovementType) => {
     switch (type) {
@@ -164,7 +179,7 @@ export default function StockMovementsPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search product or SKU..."
+                placeholder="Search product, SKU or reference..."
                 className="pl-9"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -231,6 +246,7 @@ export default function StockMovementsPage() {
               </TableBody>
             </Table>
           )}
+          <PaginationControls page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
         </CardContent>
       </Card>
     </div>

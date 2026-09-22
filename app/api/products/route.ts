@@ -5,14 +5,15 @@ import { assertCanReference } from "@/lib/ownership"
 import { parseMoney } from "@/lib/money"
 import { validateProductDates } from "@/lib/product-date-validation"
 import { incrementStock, parseQuantity } from "@/lib/stock"
+import { listResponse } from "@/lib/pagination"
 
-export const GET = withAuth(async (_request, { user }) => {
-  const products = await prisma.product.findMany({
-    where: ownershipWhere(user),
-    include: { category: true },
-    orderBy: { createdAt: "desc" },
+export const GET = withAuth(async (request, { user }) => {
+  const where = ownershipWhere(user)
+  return listResponse(request, {
+    findMany: (page) =>
+      prisma.product.findMany({ where, include: { category: true }, orderBy: { createdAt: "desc" }, ...page }),
+    count: () => prisma.product.count({ where }),
   })
-  return json(products)
 })
 
 export const POST = withAuth(async (request, { user }) => {

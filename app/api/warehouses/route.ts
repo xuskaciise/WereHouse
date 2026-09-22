@@ -1,13 +1,15 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { listResponse } from "@/lib/pagination"
 
-export const GET = withAuth(async (_request, { user }) => {
-  const warehouses = await prisma.warehouse.findMany({
-    where: ownershipWhere(user),
-    orderBy: { createdAt: "desc" },
+export const GET = withAuth(async (request, { user }) => {
+  const where = ownershipWhere(user)
+  return listResponse(request, {
+    findMany: (page) =>
+      prisma.warehouse.findMany({ where, orderBy: { createdAt: "desc" }, ...page }),
+    count: () => prisma.warehouse.count({ where }),
   })
-  return json(warehouses)
 })
 
 export const POST = withAuth(async (request, { user }) => {
