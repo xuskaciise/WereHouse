@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main] # main is covered by the deploy workflow's build
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      # Build-time placeholder only; the build never connects to a database.
+      DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Lint (ESLint + API route guard check)
+        run: npm run lint
+      - name: Build
+        run: npm run build
