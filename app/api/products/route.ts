@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth, withConflictMessages } from "@/lib/api"
+import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
+import { parseMoney } from "@/lib/money"
 import { validateProductDates } from "@/lib/product-date-validation"
 import { incrementStock, parseQuantity } from "@/lib/stock"
 
@@ -12,7 +12,7 @@ export const GET = withAuth(async (_request, { user }) => {
     include: { category: true },
     orderBy: { createdAt: "desc" },
   })
-  return NextResponse.json(products)
+  return json(products)
 })
 
 export const POST = withAuth(async (request, { user }) => {
@@ -57,9 +57,9 @@ export const POST = withAuth(async (request, { user }) => {
             sku,
             description: description || null,
             categoryId,
-            costPrice: costPrice || 0,
-            sellingPrice: sellingPrice || 0,
-            reorderLevel: reorderLevel || 10,
+            costPrice: parseMoney(costPrice ?? 0, { field: "Cost price", allowZero: true }),
+            sellingPrice: parseMoney(sellingPrice ?? 0, { field: "Selling price", allowZero: true }),
+            reorderLevel: reorderLevel === undefined || reorderLevel === null || reorderLevel === "" ? 10 : parseQuantity(reorderLevel, { allowZero: true }),
             issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
             expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
             userId: user.id,
@@ -91,5 +91,5 @@ export const POST = withAuth(async (request, { user }) => {
     { unique: "Product with this SKU already exists" }
   )
 
-  return NextResponse.json(product, { status: 201 })
+  return json(product, { status: 201 })
 })

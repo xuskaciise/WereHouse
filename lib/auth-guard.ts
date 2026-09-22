@@ -2,6 +2,7 @@ import { cache } from "react"
 import type { Role } from "@prisma/client"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { HttpError } from "@/lib/http-error"
 
 export interface SessionUser {
   id: string
@@ -10,15 +11,7 @@ export interface SessionUser {
   role: Role
 }
 
-export class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string
-  ) {
-    super(message)
-    this.name = "HttpError"
-  }
-}
+export { HttpError }
 
 /**
  * Returns the signed-in user, re-read from the database on every request so

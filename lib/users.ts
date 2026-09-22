@@ -1,6 +1,6 @@
 import { Prisma, Role, UserStatus } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
-import { HttpError } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/http-error"
 
 export const publicUserSelect = {
   id: true,

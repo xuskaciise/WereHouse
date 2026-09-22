@@ -1,9 +1,8 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
-import { parseOrderItems, parseOrderStatus } from "@/lib/orders"
+import { calculateOrderTotals, parseOrderItems, parseOrderStatus } from "@/lib/orders"
 import { decrementStock } from "@/lib/stock"
 
 const salesOrderInclude = {
@@ -19,7 +18,7 @@ export const GET = withAuth(async (_request, { user }) => {
     include: salesOrderInclude,
     orderBy: { createdAt: "desc" },
   })
-  return NextResponse.json(salesOrders)
+  return json(salesOrders)
 })
 
 export const POST = withAuth(async (request, { user }) => {
@@ -37,10 +36,7 @@ export const POST = withAuth(async (request, { user }) => {
     productIds: items.map((item) => item.productId),
   })
 
-  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
-  const tax = subtotal * 0.05 // 5% tax
-  const discount = 0
-  const total = subtotal + tax - discount
+  const { subtotal, tax, discount, total } = calculateOrderTotals(items, "0.05") // 5% tax
 
   const orderCount = await prisma.salesOrder.count()
   const orderNumber = `SO-${String(orderCount + 1).padStart(6, "0")}`
@@ -65,7 +61,7 @@ export const POST = withAuth(async (request, { user }) => {
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
-              subtotal: item.quantity * item.unitPrice,
+              subtotal: item.subtotal,
             })),
           },
         },
@@ -101,5 +97,5 @@ export const POST = withAuth(async (request, { user }) => {
     where: { id: orderId },
     include: salesOrderInclude,
   })
-  return NextResponse.json(order, { status: 201 })
+  return json(order, { status: 201 })
 })

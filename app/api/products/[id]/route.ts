@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth, withConflictMessages } from "@/lib/api"
+import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError, assertOwnership } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
+import { parseMoney } from "@/lib/money"
 import { validateProductDates } from "@/lib/product-date-validation"
 import { parseQuantity, refreshStockStatus, setStockQuantity } from "@/lib/stock"
 
@@ -14,7 +14,7 @@ export const GET = withAuth<{ id: string }>(async (_request, { user, params }) =
     include: { category: true },
   })
   assertOwnership(user, product, NOT_FOUND)
-  return NextResponse.json(product)
+  return json(product)
 })
 
 export const PUT = withAuth<{ id: string }>(async (request, { user, params }) => {
@@ -66,9 +66,9 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
             sku,
             description: description || null,
             categoryId,
-            costPrice: costPrice || 0,
-            sellingPrice: sellingPrice || 0,
-            reorderLevel: reorderLevel || 10,
+            costPrice: parseMoney(costPrice ?? 0, { field: "Cost price", allowZero: true }),
+            sellingPrice: parseMoney(sellingPrice ?? 0, { field: "Selling price", allowZero: true }),
+            reorderLevel: reorderLevel === undefined || reorderLevel === null || reorderLevel === "" ? 10 : parseQuantity(reorderLevel, { allowZero: true }),
             issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
             expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
           },
@@ -111,7 +111,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
     { unique: "Product with this SKU already exists" }
   )
 
-  return NextResponse.json(product)
+  return json(product)
 })
 
 export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }) => {
@@ -121,5 +121,5 @@ export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }
   await withConflictMessages(() => prisma.product.delete({ where: { id: params.id } }), {
     inUse: "Cannot delete product that has stock or orders. Please remove all related data first.",
   })
-  return NextResponse.json({ message: "Product deleted successfully" })
+  return json({ message: "Product deleted successfully" })
 })

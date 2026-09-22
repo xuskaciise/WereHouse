@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server"
 import type { OrderStatus, Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { incrementStock } from "@/lib/stock"
 
@@ -147,5 +146,5 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
     where: baseWhere,
     include: orderDetailInclude,
   })
-  return NextResponse.json(updated)
+  return json(updated)
 })

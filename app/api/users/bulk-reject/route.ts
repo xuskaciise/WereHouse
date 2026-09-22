@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { withAuth } from "@/lib/api"
+import { json, withAuth } from "@/lib/api"
 
 // Rejects every PENDING or APPROVED non-admin user. ADMIN-only. Admin
 // accounts are excluded so this can never lock every administrator out.
@@ -13,7 +12,7 @@ export const POST = withAuth(
       },
       data: { status: "REJECTED" },
     })
-    return NextResponse.json({ success: true, count: result.count })
+    return json({ success: true, count: result.count })
   },
   { roles: ["ADMIN"] }
 )

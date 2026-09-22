@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server"
 import { Prisma, type Role } from "@prisma/client"
 import { HttpError, requireAuth, requireRole, type SessionUser } from "@/lib/auth-guard"
+import { toJsonSafe } from "@/lib/money"
+
+/**
+ * JSON response helper for route handlers. Prisma Decimal money values are
+ * sent as numbers (the UI does arithmetic on them), after all server-side
+ * calculations have been done in Decimal.
+ */
+export function json(data: unknown, init?: ResponseInit): NextResponse {
+  return NextResponse.json(toJsonSafe(data), init)
+}
 
 // Every app/api/**/route.ts handler must be wrapped in withAuth() or
 // publicRoute(); scripts/check-route-guards.mjs enforces this in `npm run lint`.

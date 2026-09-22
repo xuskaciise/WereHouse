@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { publicRoute, readJson, withConflictMessages } from "@/lib/api"
+import { json, publicRoute, readJson, withConflictMessages } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { hashPassword, validatePassword } from "@/lib/password"
 
@@ -27,7 +26,7 @@ export const POST = publicRoute(async (request) => {
     { unique: "This ID number is already registered" }
   )
 
-  return NextResponse.json(
+  return json(
     { message: "Account created. An administrator must approve it before you can sign in." },
     { status: 201 }
   )

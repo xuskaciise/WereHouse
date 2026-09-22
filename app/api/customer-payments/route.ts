@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
+import { parseMoney } from "@/lib/money"
 import { withNestedCustomerBalance } from "@/lib/balances"
 import { customerPaymentInclude as paymentInclude } from "@/lib/includes"
 
@@ -12,17 +12,17 @@ export const GET = withAuth(async (_request, { user }) => {
     include: paymentInclude,
     orderBy: { createdAt: "desc" },
   })
-  return NextResponse.json(await withNestedCustomerBalance(payments))
+  return json(await withNestedCustomerBalance(payments))
 })
 
 export const POST = withAuth(async (request, { user }) => {
   const { customerId, salesOrderId, amount, paymentDate, paymentMethod, reference, notes } =
     await readJson(request)
 
-  const parsedAmount = parseFloat(amount)
-  if (!customerId || !paymentMethod || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-    throw new HttpError(400, "Customer, a positive Amount, and Payment Method are required")
+  if (!customerId || !paymentMethod) {
+    throw new HttpError(400, "Customer, Amount, and Payment Method are required")
   }
+  const parsedAmount = parseMoney(amount)
 
   await assertCanReference(user, { customerId })
   if (salesOrderId) {
@@ -49,5 +49,5 @@ export const POST = withAuth(async (request, { user }) => {
   })
 
   const [withBalance] = await withNestedCustomerBalance([payment])
-  return NextResponse.json(withBalance, { status: 201 })
+  return json(withBalance, { status: 201 })
 })

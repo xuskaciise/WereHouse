@@ -14,17 +14,17 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(cuid())
-  email     String?    @unique
-  name      String
-  username  String     @unique
+  id           String     @id @default(cuid())
+  email        String?    @unique
+  name         String
+  username     String     @unique
   passwordHash String? // bcrypt hash, never plaintext
-  role      Role       @default(STUDENT)
-  status    UserStatus @default(PENDING)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  role         Role       @default(STUDENT)
+  status       UserStatus @default(PENDING)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  stockMovements     StockMovement[]
+  stockMovements    StockMovement[]
   purchaseOrders    PurchaseOrder[]
   salesOrders       SalesOrder[]
   supplierPayments  SupplierPayment[]
@@ -58,13 +58,13 @@ enum UserStatus {
 }
 
 model Category {
-  id          String    @id @default(cuid())
-  name        String    @unique
+  id          String   @id @default(cuid())
+  name        String   @unique
   description String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   userId      String?
-  user        User?     @relation(fields: [userId], references: [id])
+  user        User?    @relation(fields: [userId], references: [id])
 
   products Product[]
 
@@ -72,21 +72,21 @@ model Category {
 }
 
 model Product {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   name         String
-  sku          String   @unique
+  sku          String    @unique
   description  String?
   categoryId   String
-  category     Category @relation(fields: [categoryId], references: [id])
-  costPrice    Float    @default(0)
-  sellingPrice Float    @default(0)
-  reorderLevel Int      @default(10)
+  category     Category  @relation(fields: [categoryId], references: [id])
+  costPrice    Decimal   @default(0) @db.Decimal(12, 2)
+  sellingPrice Decimal   @default(0) @db.Decimal(12, 2)
+  reorderLevel Int       @default(10)
   issueDate    DateTime?
   expireDate   DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   userId       String?
-  user         User?    @relation(fields: [userId], references: [id])
+  user         User?     @relation(fields: [userId], references: [id])
 
   stock              Stock[]
   stockMovements     StockMovement[]
@@ -98,20 +98,20 @@ model Product {
 }
 
 model Supplier {
-  id           String   @id @default(cuid())
-  name         String
-  email        String
-  phone        String?
-  address      String?
-  city         String?
-  state        String?
-  zipCode      String?
-  country      String?
+  id            String   @id @default(cuid())
+  name          String
+  email         String
+  phone         String?
+  address       String?
+  city          String?
+  state         String?
+  zipCode       String?
+  country       String?
   contactPerson String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  userId       String?
-  user         User?    @relation(fields: [userId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
 
   purchaseOrders   PurchaseOrder[]
   supplierPayments SupplierPayment[]
@@ -166,18 +166,18 @@ model Warehouse {
 }
 
 model Stock {
-  id              String       @id @default(cuid())
-  productId       String
-  product         Product      @relation(fields: [productId], references: [id])
-  warehouseId     String
-  warehouse       Warehouse    @relation(fields: [warehouseId], references: [id])
-  quantity        Int          @default(0)
-  reservedQuantity Int          @default(0)
-  status          StockStatus  @default(IN_STOCK)
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  userId          String?
-  user            User?        @relation(fields: [userId], references: [id])
+  id               String      @id @default(cuid())
+  productId        String
+  product          Product     @relation(fields: [productId], references: [id])
+  warehouseId      String
+  warehouse        Warehouse   @relation(fields: [warehouseId], references: [id])
+  quantity         Int         @default(0)
+  reservedQuantity Int         @default(0)
+  status           StockStatus @default(IN_STOCK)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  userId           String?
+  user             User?       @relation(fields: [userId], references: [id])
 
   @@unique([productId, warehouseId])
   @@map("stock")
@@ -190,19 +190,19 @@ enum StockStatus {
 }
 
 model StockMovement {
-  id          String        @id @default(cuid())
-  productId  String
-  product    Product       @relation(fields: [productId], references: [id])
+  id          String       @id @default(cuid())
+  productId   String
+  product     Product      @relation(fields: [productId], references: [id])
   warehouseId String
-  warehouse  Warehouse     @relation(fields: [warehouseId], references: [id])
-  type       MovementType
-  quantity   Int
-  reference  String?
+  warehouse   Warehouse    @relation(fields: [warehouseId], references: [id])
+  type        MovementType
+  quantity    Int
+  reference   String?
   referenceId String?
-  notes      String?
-  userId     String
-  user       User          @relation(fields: [userId], references: [id])
-  createdAt  DateTime      @default(now())
+  notes       String?
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  createdAt   DateTime     @default(now())
 
   @@map("stock_movements")
 }
@@ -215,28 +215,28 @@ enum MovementType {
 }
 
 model PurchaseOrder {
-  id                  String              @id @default(cuid())
-  orderNumber         String              @unique
-  supplierId          String
-  supplier            Supplier            @relation(fields: [supplierId], references: [id])
-  warehouseId         String
-  warehouse           Warehouse           @relation(fields: [warehouseId], references: [id])
-  orderDate           DateTime            @default(now())
+  id                   String      @id @default(cuid())
+  orderNumber          String      @unique
+  supplierId           String
+  supplier             Supplier    @relation(fields: [supplierId], references: [id])
+  warehouseId          String
+  warehouse            Warehouse   @relation(fields: [warehouseId], references: [id])
+  orderDate            DateTime    @default(now())
   expectedDeliveryDate DateTime?
-  status              OrderStatus         @default(PENDING)
-  subtotal            Float               @default(0)
-  tax                 Float               @default(0)
-  discount            Float               @default(0)
-  total               Float               @default(0)
-  notes               String?
-  userId              String
-  user                User                @relation(fields: [userId], references: [id])
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  status               OrderStatus @default(PENDING)
+  subtotal             Decimal     @default(0) @db.Decimal(12, 2)
+  tax                  Decimal     @default(0) @db.Decimal(12, 2)
+  discount             Decimal     @default(0) @db.Decimal(12, 2)
+  total                Decimal     @default(0) @db.Decimal(12, 2)
+  notes                String?
+  userId               String
+  user                 User        @relation(fields: [userId], references: [id])
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
 
-  items              PurchaseOrderItem[]
-  supplierPayments   SupplierPayment[]
-  receives           PurchaseReceive[]
+  items            PurchaseOrderItem[]
+  supplierPayments SupplierPayment[]
+  receives         PurchaseReceive[]
 
   @@map("purchase_orders")
 }
@@ -248,144 +248,144 @@ model PurchaseOrderItem {
   productId       String
   product         Product       @relation(fields: [productId], references: [id])
   quantity        Int
-  unitPrice       Float
-  subtotal        Float
+  unitPrice       Decimal       @db.Decimal(12, 2)
+  subtotal        Decimal       @db.Decimal(12, 2)
   createdAt       DateTime      @default(now())
 
-  receiveItems    PurchaseReceiveItem[]
+  receiveItems PurchaseReceiveItem[]
 
   @@map("purchase_order_items")
 }
 
 model PurchaseReceive {
-  id                String   @id @default(cuid())
-  purchaseOrderId   String
-  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  userId            String
-  user              User     @relation(fields: [userId], references: [id])
-  notes             String?
-  createdAt         DateTime @default(now())
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  notes           String?
+  createdAt       DateTime      @default(now())
 
-  items             PurchaseReceiveItem[]
+  items PurchaseReceiveItem[]
 
   @@map("purchase_receives")
 }
 
 model PurchaseReceiveItem {
-  id                   String            @id @default(cuid())
-  purchaseReceiveId    String
-  purchaseReceive      PurchaseReceive   @relation(fields: [purchaseReceiveId], references: [id], onDelete: Cascade)
-  purchaseOrderItemId  String
-  purchaseOrderItem    PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
-  quantityReceived     Int
+  id                  String            @id @default(cuid())
+  purchaseReceiveId   String
+  purchaseReceive     PurchaseReceive   @relation(fields: [purchaseReceiveId], references: [id], onDelete: Cascade)
+  purchaseOrderItemId String
+  purchaseOrderItem   PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
+  quantityReceived    Int
 
   @@map("purchase_receive_items")
 }
 
 model SupplierPayment {
-  id              String        @id @default(cuid())
+  id              String         @id @default(cuid())
   supplierId      String
-  supplier        Supplier      @relation(fields: [supplierId], references: [id])
+  supplier        Supplier       @relation(fields: [supplierId], references: [id])
   purchaseOrderId String?
   purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
-  amount          Float
-  paymentDate     DateTime      @default(now())
+  amount          Decimal        @db.Decimal(12, 2)
+  paymentDate     DateTime       @default(now())
   paymentMethod   String
   reference       String?
   notes           String?
   userId          String
-  user            User          @relation(fields: [userId], references: [id])
-  createdAt       DateTime      @default(now())
+  user            User           @relation(fields: [userId], references: [id])
+  createdAt       DateTime       @default(now())
 
   @@map("supplier_payments")
 }
 
 model SalesOrder {
-  id                  String            @id @default(cuid())
-  orderNumber         String            @unique
-  customerId          String
-  customer            Customer          @relation(fields: [customerId], references: [id])
-  warehouseId         String
-  warehouse           Warehouse         @relation(fields: [warehouseId], references: [id])
-  orderDate           DateTime          @default(now())
+  id                   String      @id @default(cuid())
+  orderNumber          String      @unique
+  customerId           String
+  customer             Customer    @relation(fields: [customerId], references: [id])
+  warehouseId          String
+  warehouse            Warehouse   @relation(fields: [warehouseId], references: [id])
+  orderDate            DateTime    @default(now())
   expectedDeliveryDate DateTime?
-  status              OrderStatus       @default(PENDING)
-  subtotal            Float             @default(0)
-  tax                 Float             @default(0)
-  discount            Float             @default(0)
-  total               Float             @default(0)
-  notes               String?
-  userId              String
-  user                User              @relation(fields: [userId], references: [id])
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  status               OrderStatus @default(PENDING)
+  subtotal             Decimal     @default(0) @db.Decimal(12, 2)
+  tax                  Decimal     @default(0) @db.Decimal(12, 2)
+  discount             Decimal     @default(0) @db.Decimal(12, 2)
+  total                Decimal     @default(0) @db.Decimal(12, 2)
+  notes                String?
+  userId               String
+  user                 User        @relation(fields: [userId], references: [id])
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
 
-  items              SalesOrderItem[]
-  customerPayments   CustomerPayment[]
+  items            SalesOrderItem[]
+  customerPayments CustomerPayment[]
 
   @@map("sales_orders")
 }
 
 model SalesOrderItem {
-  id           String      @id @default(cuid())
+  id           String     @id @default(cuid())
   salesOrderId String
-  salesOrder   SalesOrder  @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
   productId    String
-  product      Product     @relation(fields: [productId], references: [id])
+  product      Product    @relation(fields: [productId], references: [id])
   quantity     Int
-  unitPrice    Float
-  subtotal     Float
-  createdAt    DateTime    @default(now())
+  unitPrice    Decimal    @db.Decimal(12, 2)
+  subtotal     Decimal    @db.Decimal(12, 2)
+  createdAt    DateTime   @default(now())
 
   @@map("sales_order_items")
 }
 
 model CustomerPayment {
-  id           String      @id @default(cuid())
-  customerId   String
-  customer     Customer    @relation(fields: [customerId], references: [id])
-  salesOrderId String?
-  salesOrder   SalesOrder? @relation(fields: [salesOrderId], references: [id])
-  amount       Float
-  paymentDate  DateTime    @default(now())
+  id            String      @id @default(cuid())
+  customerId    String
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  salesOrderId  String?
+  salesOrder    SalesOrder? @relation(fields: [salesOrderId], references: [id])
+  amount        Decimal     @db.Decimal(12, 2)
+  paymentDate   DateTime    @default(now())
   paymentMethod String
-  reference    String?
-  notes        String?
-  userId       String
-  user         User        @relation(fields: [userId], references: [id])
-  createdAt    DateTime    @default(now())
+  reference     String?
+  notes         String?
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  createdAt     DateTime    @default(now())
 
   @@map("customer_payments")
 }
 
 model StockTransfer {
-  id              String            @id @default(cuid())
-  transferNumber  String            @unique
+  id              String      @id @default(cuid())
+  transferNumber  String      @unique
   fromWarehouseId String
-  fromWarehouse   Warehouse         @relation("FromWarehouse", fields: [fromWarehouseId], references: [id])
+  fromWarehouse   Warehouse   @relation("FromWarehouse", fields: [fromWarehouseId], references: [id])
   toWarehouseId   String
-  toWarehouse     Warehouse         @relation("ToWarehouse", fields: [toWarehouseId], references: [id])
-  transferDate    DateTime          @default(now())
-  status          OrderStatus       @default(PENDING)
+  toWarehouse     Warehouse   @relation("ToWarehouse", fields: [toWarehouseId], references: [id])
+  transferDate    DateTime    @default(now())
+  status          OrderStatus @default(PENDING)
   notes           String?
   userId          String
-  user            User              @relation(fields: [userId], references: [id])
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  user            User        @relation(fields: [userId], references: [id])
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
-  items           StockTransferItem[]
+  items StockTransferItem[]
 
   @@map("stock_transfers")
 }
 
 model StockTransferItem {
-  id             String        @id @default(cuid())
+  id              String        @id @default(cuid())
   stockTransferId String
-  stockTransfer  StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
-  productId      String
-  product        Product       @relation(fields: [productId], references: [id])
-  quantity       Int
-  createdAt      DateTime      @default(now())
+  stockTransfer   StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product       @relation(fields: [productId], references: [id])
+  quantity        Int
+  createdAt       DateTime      @default(now())
 
   @@map("stock_transfer_items")
 }
@@ -400,15 +400,15 @@ enum OrderStatus {
 }
 
 model ExpenseCategory {
-  id          String    @id @default(cuid())
-  name        String    @unique
+  id          String   @id @default(cuid())
+  name        String   @unique
   description String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   userId      String?
-  user        User?     @relation(fields: [userId], references: [id])
+  user        User?    @relation(fields: [userId], references: [id])
 
-  expenses    Expense[]
+  expenses Expense[]
 
   @@map("expense_categories")
 }
@@ -417,7 +417,7 @@ model Expense {
   id            String          @id @default(cuid())
   categoryId    String
   category      ExpenseCategory @relation(fields: [categoryId], references: [id])
-  amount        Float
+  amount        Decimal         @db.Decimal(12, 2)
   description   String
   expenseDate   DateTime        @default(now())
   paymentMethod String

@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { withSupplierBalance } from "@/lib/balances"
 
@@ -9,7 +8,7 @@ export const GET = withAuth(async (_request, { user }) => {
     where: ownershipWhere(user),
     orderBy: { createdAt: "desc" },
   })
-  return NextResponse.json(await withSupplierBalance(suppliers))
+  return json(await withSupplierBalance(suppliers))
 })
 
 export const POST = withAuth(async (request, { user }) => {
@@ -33,5 +32,5 @@ export const POST = withAuth(async (request, { user }) => {
     },
   })
 
-  return NextResponse.json({ ...supplier, balance: 0 }, { status: 201 })
+  return json({ ...supplier, balance: 0 }, { status: 201 })
 })

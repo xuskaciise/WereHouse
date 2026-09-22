@@ -1,11 +1,13 @@
 import { OrderStatus } from "@prisma/client"
-import { HttpError } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/http-error"
+import { type Money, ZERO, parseMoney, roundMoney, sumMoney } from "@/lib/money"
 import { parseQuantity } from "@/lib/stock"
 
 export interface OrderItemInput {
   productId: string
   quantity: number
-  unitPrice: number
+  unitPrice: Money
+  subtotal: Money
 }
 
 export function parseOrderItems(items: unknown): OrderItemInput[] {
@@ -16,12 +18,19 @@ export function parseOrderItems(items: unknown): OrderItemInput[] {
     if (!item || typeof item.productId !== "string" || !item.productId) {
       throw new HttpError(400, "Each item needs a product")
     }
-    const unitPrice = Number(item.unitPrice)
-    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-      throw new HttpError(400, "Unit price must be a number of 0 or more")
-    }
-    return { productId: item.productId, quantity: parseQuantity(item.quantity), unitPrice }
+    const quantity = parseQuantity(item.quantity)
+    const unitPrice = parseMoney(item.unitPrice, { field: "Unit price", allowZero: true })
+    return { productId: item.productId, quantity, unitPrice, subtotal: roundMoney(unitPrice.times(quantity)) }
   })
+}
+
+/** Order totals in Decimal. `taxRate` is a fraction, e.g. "0.08" for 8%. */
+export function calculateOrderTotals(items: OrderItemInput[], taxRate: string) {
+  const subtotal = sumMoney(items.map((item) => item.subtotal))
+  const tax = roundMoney(subtotal.times(taxRate))
+  const discount = ZERO
+  const total = subtotal.plus(tax).minus(discount)
+  return { subtotal, tax, discount, total }
 }
 
 const ORDER_STATUSES = new Set<string>(Object.values(OrderStatus))

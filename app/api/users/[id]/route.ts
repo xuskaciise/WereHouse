@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server"
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { hashPassword, validatePassword } from "@/lib/password"
 import { assertAdminRemains, parseRole, parseStatus, publicUserSelect } from "@/lib/users"
@@ -15,7 +14,7 @@ export const GET = withAuth<{ id: string }>(async (_request, { params }) => {
     select: publicUserSelect,
   })
   if (!user) throw new HttpError(404, "User not found")
-  return NextResponse.json(user)
+  return json(user)
 }, ADMIN_ONLY)
 
 export const PUT = withAuth<{ id: string }>(async (request, { params }) => {
@@ -52,7 +51,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { params }) => {
     data,
     select: publicUserSelect,
   })
-  return NextResponse.json(user)
+  return json(user)
 }, ADMIN_ONLY)
 
 export const PATCH = withAuth<{ id: string }>(async (request, { params }) => {
@@ -66,7 +65,7 @@ export const PATCH = withAuth<{ id: string }>(async (request, { params }) => {
     data: { status },
     select: publicUserSelect,
   })
-  return NextResponse.json(user)
+  return json(user)
 }, ADMIN_ONLY)
 
 export const DELETE = withAuth<{ id: string }>(async (_request, { user: currentUser, params }) => {
@@ -76,5 +75,5 @@ export const DELETE = withAuth<{ id: string }>(async (_request, { user: currentU
   await assertAdminRemains(params.id, { deleted: true })
 
   await prisma.user.delete({ where: { id: params.id } })
-  return NextResponse.json({ message: "User deleted successfully" })
+  return json({ message: "User deleted successfully" })
 }, ADMIN_ONLY)

@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
+import { parseMoney } from "@/lib/money"
 
 const expenseInclude = {
   category: true,
@@ -15,16 +15,16 @@ export const GET = withAuth(async (_request, { user }) => {
     include: expenseInclude,
     orderBy: { createdAt: "desc" },
   })
-  return NextResponse.json(expenses)
+  return json(expenses)
 })
 
 export const POST = withAuth(async (request, { user }) => {
   const { categoryId, amount, description, expenseDate, paymentMethod, reference } = await readJson(request)
 
-  const parsedAmount = parseFloat(amount)
-  if (!categoryId || !description || !paymentMethod || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-    throw new HttpError(400, "Category, a positive Amount, Description, and Payment Method are required")
+  if (!categoryId || !description || !paymentMethod) {
+    throw new HttpError(400, "Category, Amount, Description, and Payment Method are required")
   }
+  const parsedAmount = parseMoney(amount)
 
   await assertCanReference(user, { expenseCategoryId: categoryId })
 
@@ -40,5 +40,5 @@ export const POST = withAuth(async (request, { user }) => {
     },
     include: expenseInclude,
   })
-  return NextResponse.json(expense, { status: 201 })
+  return json(expense, { status: 201 })
 })

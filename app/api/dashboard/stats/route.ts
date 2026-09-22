@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { withAuth } from "@/lib/api"
+import { json, withAuth } from "@/lib/api"
 import { ownershipWhere } from "@/lib/auth-guard"
 
 export const GET = withAuth(async (request, { user: currentUser }) => {
@@ -17,16 +16,16 @@ export const GET = withAuth(async (request, { user: currentUser }) => {
       },
     })
     const totalStockValue = stockItems.reduce((sum, item) => {
-      return sum + (item.quantity * (item.product.costPrice || 0))
+      return sum + (item.quantity * Number(item.product.costPrice))
     }, 0)
 
     // Get total sales (sum of all sales orders)
     const salesOrders = await prisma.salesOrder.findMany({ where })
-    const totalSales = salesOrders.reduce((sum, order) => sum + order.total, 0)
+    const totalSales = salesOrders.reduce((sum, order) => sum + Number(order.total), 0)
 
     // Get total purchases (sum of all purchase orders)
     const purchaseOrders = await prisma.purchaseOrder.findMany({ where })
-    const totalPurchases = purchaseOrders.reduce((sum, order) => sum + order.total, 0)
+    const totalPurchases = purchaseOrders.reduce((sum, order) => sum + Number(order.total), 0)
 
     // Get low stock alert count (products below reorder level)
     const lowStockItems = stockItems.filter(
@@ -83,14 +82,14 @@ export const GET = withAuth(async (request, { user: currentUser }) => {
           const orderDate = new Date(order.orderDate)
           return orderDate >= monthStart && orderDate <= monthEnd
         })
-        .reduce((sum, order) => sum + order.total, 0)
+        .reduce((sum, order) => sum + Number(order.total), 0)
 
       const monthPurchases = purchaseOrders
         .filter((order) => {
           const orderDate = new Date(order.orderDate)
           return orderDate >= monthStart && orderDate <= monthEnd
         })
-        .reduce((sum, order) => sum + order.total, 0)
+        .reduce((sum, order) => sum + Number(order.total), 0)
 
       const monthName = monthDate.toLocaleString("default", { month: "short" })
       chartData.push({
@@ -100,7 +99,7 @@ export const GET = withAuth(async (request, { user: currentUser }) => {
       })
     }
 
-    return NextResponse.json({
+    return json({
       totalProducts,
       totalStockValue,
       totalSales,
@@ -112,7 +111,7 @@ export const GET = withAuth(async (request, { user: currentUser }) => {
     })
   } catch (error) {
     console.error("Error fetching dashboard stats:", error)
-    return NextResponse.json(
+    return json(
       { error: "Failed to fetch dashboard statistics" },
       { status: 500 }
     )

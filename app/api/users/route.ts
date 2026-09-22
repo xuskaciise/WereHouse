@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { hashPassword, validatePassword } from "@/lib/password"
 import { parseRole, parseStatus, publicUserSelect } from "@/lib/users"
@@ -13,7 +12,7 @@ export const GET = withAuth(
       orderBy: { createdAt: "desc" },
       select: publicUserSelect,
     })
-    return NextResponse.json(users)
+    return json(users)
   },
   { roles: ["ADMIN"] }
 )
@@ -44,7 +43,7 @@ export const POST = withAuth(
       select: publicUserSelect,
     })
 
-    return NextResponse.json(user, { status: 201 })
+    return json(user, { status: 201 })
   },
   { roles: ["ADMIN"] }
 )

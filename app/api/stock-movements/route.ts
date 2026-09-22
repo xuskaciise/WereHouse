@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { withAuth } from "@/lib/api"
+import { json, withAuth } from "@/lib/api"
 import { ownershipWhere } from "@/lib/auth-guard"
 
 export const GET = withAuth(async (request, { user: currentUser }) => {
@@ -22,10 +21,10 @@ export const GET = withAuth(async (request, { user: currentUser }) => {
         createdAt: "desc",
       },
     })
-    return NextResponse.json(stockMovements)
+    return json(stockMovements)
   } catch (error) {
     console.error("Error fetching stock movements:", error)
-    return NextResponse.json(
+    return json(
       { error: "Failed to fetch stock movements" },
       { status: 500 }
     )

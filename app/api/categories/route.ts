@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth, withConflictMessages } from "@/lib/api"
+import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 
 export const GET = withAuth(async (_request, { user }) => {
@@ -8,7 +7,7 @@ export const GET = withAuth(async (_request, { user }) => {
     where: ownershipWhere(user),
     orderBy: { createdAt: "desc" },
   })
-  return NextResponse.json(categories)
+  return json(categories)
 })
 
 export const POST = withAuth(async (request, { user }) => {
@@ -22,5 +21,5 @@ export const POST = withAuth(async (request, { user }) => {
       }),
     { unique: "Category with this name already exists" }
   )
-  return NextResponse.json(category, { status: 201 })
+  return json(category, { status: 201 })
 })

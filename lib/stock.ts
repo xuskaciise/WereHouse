@@ -1,5 +1,5 @@
-import type { Prisma, StockStatus } from "@prisma/client"
-import { HttpError } from "@/lib/auth-guard"
+import type { Prisma } from "@prisma/client"
+import { HttpError } from "@/lib/http-error"
 
 // All stock quantity changes go through these helpers. They use single,
 // guarded SQL statements (or a row lock for "set") so concurrent requests can
@@ -13,24 +13,21 @@ interface StockKey {
   warehouseId: string
 }
 
-/** Same rule as the Low Stock page and the dashboard: quantity <= reorderLevel. */
-export function stockStatusFor(quantity: number, reorderLevel: number): StockStatus {
-  if (quantity <= 0) return "OUT_OF_STOCK"
-  if (quantity <= reorderLevel) return "LOW_STOCK"
-  return "IN_STOCK"
-}
-
 export function parseQuantity(value: unknown, { allowZero = false } = {}): number {
   const n = typeof value === "string" && value.trim() !== "" ? Number(value) : value
   if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || (!allowZero && n === 0)) {
-    throw new HttpError(400, allowZero ? "Quantity must be a whole number of 0 or more" : "Quantity must be a whole number greater than 0")
+    throw new HttpError(
+      400,
+      allowZero ? "Quantity must be a whole number of 0 or more" : "Quantity must be a whole number greater than 0"
+    )
   }
   return n
 }
 
 /**
  * Recomputes the status column from the current quantity and the product's
- * own reorder level, in one statement (no stale reads).
+ * own reorder level, in one statement (no stale reads). Same rule as the Low
+ * Stock page and the dashboard: LOW_STOCK when quantity <= reorderLevel.
  */
 export async function refreshStockStatus(tx: Tx, productId: string, warehouseId?: string): Promise<void> {
   if (warehouseId) {

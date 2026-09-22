@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, assertOwnership } from "@/lib/auth-guard"
 import { parseQuantity, setStockQuantity } from "@/lib/stock"
 
@@ -12,7 +11,7 @@ export const GET = withAuth<{ id: string }>(async (_request, { user, params }) =
     include: { product: true, warehouse: true },
   })
   assertOwnership(user, stock, NOT_FOUND)
-  return NextResponse.json(stock)
+  return json(stock)
 })
 
 export const PUT = withAuth<{ id: string }>(async (request, { user, params }) => {
@@ -57,7 +56,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
     })
   })
 
-  return NextResponse.json(stock)
+  return json(stock)
 })
 
 export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }) => {
@@ -65,5 +64,5 @@ export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }
   assertOwnership(user, existing, NOT_FOUND)
 
   await prisma.stock.delete({ where: { id: params.id } })
-  return NextResponse.json({ message: "Stock deleted successfully" })
+  return json({ message: "Stock deleted successfully" })
 })

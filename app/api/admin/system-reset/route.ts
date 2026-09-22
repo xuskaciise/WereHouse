@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { verifyPassword } from "@/lib/password"
 
@@ -49,7 +48,7 @@ export const POST = withAuth(
     await prisma.$executeRaw`TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE`
 
     console.warn(`System data reset performed by user ${user.id}`)
-    return NextResponse.json({
+    return json({
       success: true,
       message: "System data reset completed successfully. Users were preserved.",
     })

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { type Money, ZERO } from "@/lib/money"
 
 // Supplier/customer balances are always derived from the source records
 // (single source of truth), never stored:
@@ -6,19 +7,13 @@ import { prisma } from "@/lib/prisma"
 //   customer balance = SUM(non-cancelled sales order totals)    - SUM(customer payments)
 // Each is computed with two grouped aggregate queries, however many rows.
 
-type Amount = { toString(): string } | number | null | undefined
-
-function toNumber(value: Amount): number {
-  return value == null ? 0 : Number(value)
-}
-
 function unique(ids: string[]): string[] {
   return Array.from(new Set(ids.filter(Boolean)))
 }
 
-export async function getSupplierBalances(supplierIds: string[]): Promise<Map<string, number>> {
+export async function getSupplierBalances(supplierIds: string[]): Promise<Map<string, Money>> {
   const ids = unique(supplierIds)
-  const balances = new Map(ids.map((id) => [id, 0]))
+  const balances = new Map<string, Money>(ids.map((id) => [id, ZERO]))
   if (ids.length === 0) return balances
 
   const [orders, payments] = await Promise.all([
@@ -35,18 +30,17 @@ export async function getSupplierBalances(supplierIds: string[]): Promise<Map<st
   ])
 
   for (const row of orders) {
-    balances.set(row.supplierId, (balances.get(row.supplierId) ?? 0) + toNumber(row._sum.total))
+    balances.set(row.supplierId, (balances.get(row.supplierId) ?? ZERO).plus(row._sum.total ?? ZERO))
   }
   for (const row of payments) {
-    balances.set(row.supplierId, (balances.get(row.supplierId) ?? 0) - toNumber(row._sum.amount))
+    balances.set(row.supplierId, (balances.get(row.supplierId) ?? ZERO).minus(row._sum.amount ?? ZERO))
   }
-  for (const [id, value] of balances) balances.set(id, Math.round(value * 100) / 100)
   return balances
 }
 
-export async function getCustomerBalances(customerIds: string[]): Promise<Map<string, number>> {
+export async function getCustomerBalances(customerIds: string[]): Promise<Map<string, Money>> {
   const ids = unique(customerIds)
-  const balances = new Map(ids.map((id) => [id, 0]))
+  const balances = new Map<string, Money>(ids.map((id) => [id, ZERO]))
   if (ids.length === 0) return balances
 
   const [orders, payments] = await Promise.all([
@@ -63,33 +57,32 @@ export async function getCustomerBalances(customerIds: string[]): Promise<Map<st
   ])
 
   for (const row of orders) {
-    balances.set(row.customerId, (balances.get(row.customerId) ?? 0) + toNumber(row._sum.total))
+    balances.set(row.customerId, (balances.get(row.customerId) ?? ZERO).plus(row._sum.total ?? ZERO))
   }
   for (const row of payments) {
-    balances.set(row.customerId, (balances.get(row.customerId) ?? 0) - toNumber(row._sum.amount))
+    balances.set(row.customerId, (balances.get(row.customerId) ?? ZERO).minus(row._sum.amount ?? ZERO))
   }
-  for (const [id, value] of balances) balances.set(id, Math.round(value * 100) / 100)
   return balances
 }
 
 export async function withSupplierBalance<T extends { id: string }>(suppliers: T[]) {
   const balances = await getSupplierBalances(suppliers.map((s) => s.id))
-  return suppliers.map((s) => ({ ...s, balance: balances.get(s.id) ?? 0 }))
+  return suppliers.map((s) => ({ ...s, balance: balances.get(s.id) ?? ZERO }))
 }
 
 export async function withCustomerBalance<T extends { id: string }>(customers: T[]) {
   const balances = await getCustomerBalances(customers.map((c) => c.id))
-  return customers.map((c) => ({ ...c, balance: balances.get(c.id) ?? 0 }))
+  return customers.map((c) => ({ ...c, balance: balances.get(c.id) ?? ZERO }))
 }
 
 /** Adds `balance` to the nested `supplier` of each row (e.g. payments). */
 export async function withNestedSupplierBalance<T extends { supplier: { id: string } }>(rows: T[]) {
   const balances = await getSupplierBalances(rows.map((r) => r.supplier.id))
-  return rows.map((r) => ({ ...r, supplier: { ...r.supplier, balance: balances.get(r.supplier.id) ?? 0 } }))
+  return rows.map((r) => ({ ...r, supplier: { ...r.supplier, balance: balances.get(r.supplier.id) ?? ZERO } }))
 }
 
 /** Adds `balance` to the nested `customer` of each row (e.g. payments). */
 export async function withNestedCustomerBalance<T extends { customer: { id: string } }>(rows: T[]) {
   const balances = await getCustomerBalances(rows.map((r) => r.customer.id))
-  return rows.map((r) => ({ ...r, customer: { ...r.customer, balance: balances.get(r.customer.id) ?? 0 } }))
+  return rows.map((r) => ({ ...r, customer: { ...r.customer, balance: balances.get(r.customer.id) ?? ZERO } }))
 }

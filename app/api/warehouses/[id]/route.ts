@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth, withConflictMessages } from "@/lib/api"
+import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError, assertOwnership } from "@/lib/auth-guard"
 
 const NOT_FOUND = "Warehouse not found"
@@ -8,7 +7,7 @@ const NOT_FOUND = "Warehouse not found"
 export const GET = withAuth<{ id: string }>(async (_request, { user, params }) => {
   const warehouse = await prisma.warehouse.findUnique({ where: { id: params.id } })
   assertOwnership(user, warehouse, NOT_FOUND)
-  return NextResponse.json(warehouse)
+  return json(warehouse)
 })
 
 export const PUT = withAuth<{ id: string }>(async (request, { user, params }) => {
@@ -35,7 +34,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
       }),
     { unique: "Warehouse with this code already exists" }
   )
-  return NextResponse.json(warehouse)
+  return json(warehouse)
 })
 
 export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }) => {
@@ -45,5 +44,5 @@ export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }
   await withConflictMessages(() => prisma.warehouse.delete({ where: { id: params.id } }), {
     inUse: "Cannot delete warehouse that has stock or orders. Please remove all related data first.",
   })
-  return NextResponse.json({ message: "Warehouse deleted successfully" })
+  return json({ message: "Warehouse deleted successfully" })
 })

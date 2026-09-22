@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
 import { decrementStock, incrementStock, parseQuantity, setStockQuantity } from "@/lib/stock"
@@ -55,5 +54,5 @@ export const POST = withAuth(async (request, { user }) => {
     })
   })
 
-  return NextResponse.json(stock, { status: 201 })
+  return json(stock, { status: 201 })
 })

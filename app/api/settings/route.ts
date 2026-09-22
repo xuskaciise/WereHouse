@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { readJson, withAuth } from "@/lib/api"
+import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 
 const DEFAULT_SETTINGS: Record<string, string> = {
@@ -29,7 +28,7 @@ export const GET = withAuth(async () => {
   for (const setting of settings) {
     if (setting.value) result[setting.key] = setting.value
   }
-  return NextResponse.json(result)
+  return json(result)
 })
 
 // Only ADMIN may change company-wide settings; unknown keys are rejected.
@@ -59,7 +58,7 @@ export const PUT = withAuth(
       )
     )
 
-    return NextResponse.json({ message: "Settings updated successfully" })
+    return json({ message: "Settings updated successfully" })
   },
   { roles: ["ADMIN"] }
 )
