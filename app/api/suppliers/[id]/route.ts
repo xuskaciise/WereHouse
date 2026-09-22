@@ -2,13 +2,15 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { readJson, withAuth } from "@/lib/api"
 import { HttpError, assertOwnership } from "@/lib/auth-guard"
+import { withSupplierBalance } from "@/lib/balances"
 
 const NOT_FOUND = "Supplier not found"
 
 export const GET = withAuth<{ id: string }>(async (_request, { user, params }) => {
   const supplier = await prisma.supplier.findUnique({ where: { id: params.id } })
   assertOwnership(user, supplier, NOT_FOUND)
-  return NextResponse.json(supplier)
+  const [withBalance] = await withSupplierBalance([supplier])
+  return NextResponse.json(withBalance)
 })
 
 export const PUT = withAuth<{ id: string }>(async (request, { user, params }) => {

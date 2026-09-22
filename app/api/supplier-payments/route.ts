@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
+import { withNestedSupplierBalance } from "@/lib/balances"
 import { supplierPaymentInclude as paymentInclude } from "@/lib/includes"
 
 export const GET = withAuth(async (_request, { user }) => {
@@ -11,7 +12,7 @@ export const GET = withAuth(async (_request, { user }) => {
     include: paymentInclude,
     orderBy: { createdAt: "desc" },
   })
-  return NextResponse.json(payments)
+  return NextResponse.json(await withNestedSupplierBalance(payments))
 })
 
 export const POST = withAuth(async (request, { user }) => {
@@ -32,29 +33,22 @@ export const POST = withAuth(async (request, { user }) => {
     if (!order) throw new HttpError(400, "Purchase order not found for this supplier")
   }
 
-  const payment = await prisma.$transaction(async (tx) => {
-    const created = await tx.supplierPayment.create({
-      data: {
-        supplierId,
-        purchaseOrderId: purchaseOrderId || null,
-        amount: parsedAmount,
-        paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
-        paymentMethod,
-        reference: reference || null,
-        notes: notes || null,
-        userId: user.id,
-      },
-      include: paymentInclude,
-    })
-
-    // Paying a supplier reduces what we owe them.
-    await tx.supplier.update({
-      where: { id: supplierId },
-      data: { balance: { decrement: parsedAmount } },
-    })
-
-    return created
+  // The supplier balance is derived from orders and payments (lib/balances.ts),
+  // so recording the payment is all that is needed.
+  const payment = await prisma.supplierPayment.create({
+    data: {
+      supplierId,
+      purchaseOrderId: purchaseOrderId || null,
+      amount: parsedAmount,
+      paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+      paymentMethod,
+      reference: reference || null,
+      notes: notes || null,
+      userId: user.id,
+    },
+    include: paymentInclude,
   })
 
-  return NextResponse.json(payment, { status: 201 })
+  const [withBalance] = await withNestedSupplierBalance([payment])
+  return NextResponse.json(withBalance, { status: 201 })
 })

@@ -11,3 +11,9 @@ export const supplierPaymentInclude = {
   purchaseOrder: true,
   user: { select: userSummarySelect },
 } satisfies Prisma.SupplierPaymentInclude
+
+export const customerPaymentInclude = {
+  customer: true,
+  salesOrder: true,
+  user: { select: userSummarySelect },
+} satisfies Prisma.CustomerPaymentInclude

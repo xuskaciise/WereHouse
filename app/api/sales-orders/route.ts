@@ -71,11 +71,8 @@ export const POST = withAuth(async (request, { user }) => {
         },
       })
 
-      // Customer owes more once the order is created.
-      await tx.customer.update({
-        where: { id: customerId },
-        data: { balance: { increment: total } },
-      })
+      // The customer balance is derived from orders and payments
+      // (lib/balances.ts), so nothing else needs updating here.
 
       // Guarded, atomic deduction: fails the whole transaction if any line
       // does not have enough unreserved stock (no read-then-write race).

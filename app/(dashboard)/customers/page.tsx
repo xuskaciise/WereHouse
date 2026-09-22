@@ -115,11 +115,8 @@ export default function CustomersPage() {
     setIsDialogOpen(true)
   }
 
-  // Calculate balance for each customer (this would come from sales orders in a real app)
-  const getCustomerBalance = (customer: any) => {
-    // For now, return 0. In a real app, this would calculate from unpaid sales orders
-    return 0
-  }
+  // Balance is calculated by the API: sales order totals minus customer payments.
+  const getCustomerBalance = (customer: any) => Number(customer.balance) || 0
 
   return (
     <div className="space-y-6">

@@ -1,308 +1,82 @@
 import { NextResponse } from "next/server"
+import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
-import { withAuth } from "@/lib/api"
-import { assertCanReference } from "@/lib/ownership"
+import { readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { assertCanReference } from "@/lib/ownership"
+import { parseOrderItems } from "@/lib/orders"
 
-export const GET = withAuth(async (request, { user: currentUser }) => {
-  try {
-    const where = ownershipWhere(currentUser)
-    // Try to fetch with supplier balance first
-    let purchaseOrders
-    try {
-      purchaseOrders = await prisma.purchaseOrder.findMany({
-        where,
-        include: {
-          supplier: true,
-          warehouse: true,
-          user: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-            },
-          },
-          items: {
-            include: {
-              product: true,
-              receiveItems: true,
-            },
-          },
-          receives: {
-            orderBy: { createdAt: "desc" },
-            include: {
-              user: {
-                select: { id: true, name: true, username: true },
-              },
-              items: true,
-            },
-          },
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-      })
-    } catch (dbError: any) {
-      // If balance column doesn't exist, fetch without it
-      if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
-        purchaseOrders = await prisma.purchaseOrder.findMany({
-          where,
-          include: {
-            supplier: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                phone: true,
-                address: true,
-                city: true,
-                state: true,
-                zipCode: true,
-                country: true,
-                contactPerson: true,
-                createdAt: true,
-                updatedAt: true,
-              },
-            },
-            warehouse: true,
-            user: {
-              select: {
-                id: true,
-                name: true,
-                username: true,
-              },
-            },
-            items: {
-              include: {
-                product: true,
-                receiveItems: true,
-              },
-            },
-            receives: {
-              orderBy: { createdAt: "desc" },
-              include: {
-                user: {
-                  select: { id: true, name: true, username: true },
-                },
-                items: true,
-              },
-            },
-          },
-          orderBy: {
-            createdAt: "desc",
-          },
-        })
-      } else {
-        throw dbError
-      }
-    }
-    return NextResponse.json(purchaseOrders)
-  } catch (error) {
-    if (error instanceof HttpError) throw error
-    console.error("Error fetching purchase orders:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch purchase orders" },
-      { status: 500 }
-    )
-  }
+const purchaseOrderInclude = {
+  supplier: true,
+  warehouse: true,
+  user: { select: { id: true, name: true, username: true } },
+  items: { include: { product: true, receiveItems: true } },
+  receives: {
+    orderBy: { createdAt: "desc" as const },
+    include: {
+      user: { select: { id: true, name: true, username: true } },
+      items: true,
+    },
+  },
+} satisfies Prisma.PurchaseOrderInclude
+
+export const GET = withAuth(async (_request, { user }) => {
+  const purchaseOrders = await prisma.purchaseOrder.findMany({
+    where: ownershipWhere(user),
+    include: purchaseOrderInclude,
+    orderBy: { createdAt: "desc" },
+  })
+  return NextResponse.json(purchaseOrders)
 })
 
-export const POST = withAuth(async (request, { user: currentUser }) => {
-  try {
-    const body = await request.json()
-    const { supplierId, warehouseId, expectedDelivery, items, notes } = body
+export const POST = withAuth(async (request, { user }) => {
+  const body = await readJson(request)
+  const { supplierId, warehouseId, expectedDelivery, notes } = body
+  if (!supplierId || !warehouseId) {
+    throw new HttpError(400, "Supplier, Warehouse, and at least one item are required")
+  }
+  const items = parseOrderItems(body.items)
 
-    if (!supplierId || !warehouseId || !items || items.length === 0) {
-      return NextResponse.json(
-        { error: "Supplier, Warehouse, and at least one item are required" },
-        { status: 400 }
-      )
-    }
+  await assertCanReference(user, {
+    supplierId,
+    warehouseId,
+    productIds: items.map((item) => item.productId),
+  })
 
-    await assertCanReference(currentUser, {
+  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
+  const tax = subtotal * 0.08 // 8% tax
+  const discount = 0
+  const total = subtotal + tax - discount
+
+  const orderCount = await prisma.purchaseOrder.count()
+  const orderNumber = `PO-${String(orderCount + 1).padStart(6, "0")}`
+
+  // Stock is only updated when goods are received (see .../receive), and the
+  // supplier balance is derived from orders and payments (lib/balances.ts).
+  const purchaseOrder = await prisma.purchaseOrder.create({
+    data: {
+      orderNumber,
       supplierId,
       warehouseId,
-      productIds: items.map((item: any) => item.productId),
-    })
+      userId: user.id,
+      expectedDeliveryDate: expectedDelivery ? new Date(expectedDelivery) : null,
+      subtotal,
+      tax,
+      discount,
+      total,
+      status: "PENDING",
+      notes: notes || null,
+      items: {
+        create: items.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          subtotal: item.quantity * item.unitPrice,
+        })),
+      },
+    },
+    include: purchaseOrderInclude,
+  })
 
-    // Calculate totals
-    const subtotal = items.reduce((sum: number, item: any) => {
-      return sum + (item.quantity * item.unitPrice)
-    }, 0)
-    const tax = subtotal * 0.08 // 8% tax
-    const discount = 0
-    const total = subtotal + tax - discount
-
-    // Generate order number (do this outside transaction to avoid long transaction)
-    const orderCount = await prisma.purchaseOrder.count()
-    const orderNumber = `PO-${String(orderCount + 1).padStart(6, "0")}`
-
-    // Use transaction to create order and update supplier balance
-    // Increased timeout to 30 seconds for complex operations
-    const result = await prisma.$transaction(async (tx) => {
-      // Create purchase order
-      const purchaseOrder = await tx.purchaseOrder.create({
-        data: {
-          orderNumber,
-          supplierId,
-          warehouseId,
-          userId: currentUser.id,
-          expectedDeliveryDate: expectedDelivery ? new Date(expectedDelivery) : null,
-          subtotal,
-          tax,
-          discount,
-          total,
-          status: "PENDING",
-          notes: notes || null,
-          items: {
-            create: items.map((item: any) => ({
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              subtotal: item.quantity * item.unitPrice,
-            })),
-          },
-        },
-      })
-
-      // Stock is updated only when goods are received (see POST .../receive), not on PO creation.
-
-      // Update supplier balance (increase balance when order is created - we owe supplier more)
-      // Use savepoint to prevent balance update failure from aborting the transaction
-      try {
-        // Create a savepoint
-        await tx.$executeRaw`SAVEPOINT balance_update`
-        
-        // Check if balance column exists and update
-        const columnExists = await tx.$queryRaw<Array<{ exists: boolean }>>`
-          SELECT EXISTS (
-            SELECT 1 
-            FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-            AND table_name = 'suppliers' 
-            AND column_name = 'balance'
-          ) as exists
-        `
-        
-        if (columnExists[0]?.exists) {
-          await tx.$executeRaw`
-            UPDATE suppliers 
-            SET balance = COALESCE(balance, 0) + ${total}
-            WHERE id = ${supplierId}
-          `
-        }
-        
-        // Release savepoint if successful
-        await tx.$executeRaw`RELEASE SAVEPOINT balance_update`
-      } catch (balanceError: any) {
-        // Rollback to savepoint if balance update fails
-        try {
-          await tx.$executeRaw`ROLLBACK TO SAVEPOINT balance_update`
-        } catch (rollbackError) {
-          // Ignore rollback errors
-        }
-        // Balance will be calculated on-the-fly from purchase orders and payments
-        console.log("Skipping balance update:", balanceError.message)
-      }
-
-      return purchaseOrder
-    }, {
-      maxWait: 10000, // Maximum time to wait for a transaction slot
-      timeout: 30000, // Maximum time the transaction can run (30 seconds)
-    })
-
-    // Fetch order with relations outside transaction to avoid timeout
-    // Handle missing balance column gracefully
-    let orderWithRelations
-    try {
-      orderWithRelations = await prisma.purchaseOrder.findUnique({
-        where: { id: result.id },
-        include: {
-          supplier: true,
-          warehouse: true,
-          user: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-            },
-          },
-          items: {
-            include: {
-              product: true,
-              receiveItems: true,
-            },
-          },
-          receives: {
-            orderBy: { createdAt: "desc" },
-            include: {
-              user: {
-                select: { id: true, name: true, username: true },
-              },
-              items: true,
-            },
-          },
-        },
-      })
-    } catch (dbError: any) {
-      // If balance column doesn't exist, fetch without it
-      if (dbError.message?.includes("balance") || dbError.message?.includes("does not exist")) {
-        orderWithRelations = await prisma.purchaseOrder.findUnique({
-          where: { id: result.id },
-          include: {
-            supplier: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                phone: true,
-                address: true,
-                city: true,
-                state: true,
-                zipCode: true,
-                country: true,
-                contactPerson: true,
-                createdAt: true,
-                updatedAt: true,
-              },
-            },
-            warehouse: true,
-            user: {
-              select: {
-                id: true,
-                name: true,
-                username: true,
-              },
-            },
-            items: {
-              include: {
-                product: true,
-                receiveItems: true,
-              },
-            },
-            receives: {
-              orderBy: { createdAt: "desc" },
-              include: {
-                user: {
-                  select: { id: true, name: true, username: true },
-                },
-                items: true,
-              },
-            },
-          },
-        })
-      } else {
-        throw dbError
-      }
-    }
-
-    return NextResponse.json(orderWithRelations, { status: 201 })
-  } catch (error: any) {
-    if (error instanceof HttpError) throw error
-    console.error("Error creating purchase order:", error)
-    return NextResponse.json(
-      { error: error.message || "Failed to create purchase order" },
-      { status: 500 }
-    )
-  }
+  return NextResponse.json(purchaseOrder, { status: 201 })
 })
