@@ -62,6 +62,25 @@ services:
     networks:
       - warehouse
 
+  # ONE-TIME: converts the old db-push database to the migrated schema
+  # (prisma/transition/). Run via `./deploy.sh transition --dry-run|--apply`.
+  # Plain node image + the files in ./prisma, so it works before the new app
+  # images exist on the server. Only reaches this project's db.
+  transition:
+    image: node:20-alpine
+    profiles: ["tools"]
+    restart: "no"
+    entrypoint: ["sh", "/src/prisma/transition/run.sh"]
+    env_file:
+      - .env.production
+    volumes:
+      - ./prisma:/src/prisma:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - warehouse
+
 volumes:
   postgres_data:
 

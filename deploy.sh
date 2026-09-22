@@ -5,6 +5,7 @@
 #   ./deploy.sh pull   <sha> <github-user>   # token on stdin; pulls both images
 #   ./deploy.sh deploy <sha>                 # backup -> migrate -> switch -> health check
 #   ./deploy.sh rollback                     # switch the app back to the :rollback image
+#   ./deploy.sh transition --dry-run|--apply # ONE-TIME old db-push schema -> migrated schema
 #
 # Only touches the siu_warehouse compose project (db, app, migrate) and the
 # ghcr.io/xuskaciise/warehouse images. Other projects on the VPS are never
@@ -95,10 +96,7 @@ cmd_deploy() {
 
   log "Database"
   # Start the db only if it is not running; never recreate it during a deploy.
-  if ! docker ps -q --filter label=com.docker.compose.project=siu_warehouse \
-      --filter label=com.docker.compose.service=db --filter status=running | grep -q .; then
-    compose up -d --wait db
-  fi
+  db_running || compose up -d --wait db
 
   log "Backup (warehouse only)"
   local backup
@@ -109,6 +107,10 @@ cmd_deploy() {
   local migrate_log
   migrate_log="$(mktemp)"
   if ! compose run --rm -T --no-deps migrate 2>&1 | tee "$migrate_log"; then
+    if grep -q "P3005" "$migrate_log"; then
+      echo "The database still has the old db-push schema. Run the one-time transition first:" >&2
+      echo "  ./deploy.sh transition --dry-run   then   ./deploy.sh transition --apply" >&2
+    fi
     rm -f "$migrate_log"
     die "migration failed - deploy aborted, app not switched. Backup: $backup"
   fi
@@ -156,6 +158,51 @@ cmd_deploy() {
   log "Deployed $sha"
 }
 
+db_running() {
+  docker ps -q --filter label=com.docker.compose.project=siu_warehouse \
+    --filter label=com.docker.compose.service=db --filter status=running | grep -q .
+}
+
+# One-time conversion of the old db-push database (prisma/transition/).
+#   --dry-run : runs everything inside a transaction and rolls back (app keeps running)
+#   --apply   : verified backup -> stop app -> transition; restarts the old app if it fails
+cmd_transition() {
+  local mode="${1:-}"
+  [[ "$mode" == "--dry-run" || "$mode" == "--apply" ]] || die "usage: deploy.sh transition --dry-run|--apply"
+  check_env
+  # The transition service does not use the app images; compose only needs a
+  # value to parse the file.
+  export IMAGE_TAG="${IMAGE_TAG:-transition-not-used}"
+  [[ -f prisma/transition/run.sh && -d prisma/migrations ]] || die "prisma/transition and prisma/migrations must be copied to $(pwd) first"
+  db_running || die "the warehouse db container is not running"
+
+  if [[ "$mode" == "--dry-run" ]]; then
+    log "Transition DRY RUN (no changes)"
+    compose run --rm -T --no-deps transition --dry-run
+    return
+  fi
+
+  log "Backup (warehouse only)"
+  local backup
+  backup="$(scripts/backup-warehouse-db.sh pre-transition)" || die "backup failed - nothing changed"
+  echo "backup: $backup"
+
+  log "Stopping the app (maintenance)"
+  local app
+  app="$(current_app_container)"
+  [[ -n "$app" ]] && docker stop "$app" >/dev/null
+
+  log "Transition"
+  if compose run --rm -T --no-deps transition; then
+    log "Transition committed. The app stays stopped until the new version is deployed."
+    echo "backup taken before the transition: $backup"
+  else
+    local rc=$?
+    [[ -n "$app" ]] && docker start "$app" >/dev/null && echo "old app restarted"
+    die "transition did not complete (exit $rc) - database unchanged. Backup: $backup"
+  fi
+}
+
 cmd_rollback() {
   check_env
   docker image inspect "$IMAGE:rollback" >/dev/null 2>&1 || die "no $IMAGE:rollback image available"
@@ -169,5 +216,6 @@ case "${1:-}" in
   pull) shift; cmd_pull "$@" ;;
   deploy) shift; cmd_deploy "$@" ;;
   rollback) shift; cmd_rollback "$@" ;;
-  *) die "usage: deploy.sh {pull <sha> <github-user> | deploy <sha> | rollback}" ;;
+  transition) shift; cmd_transition "$@" ;;
+  *) die "usage: deploy.sh {pull <sha> <github-user> | deploy <sha> | rollback | transition --dry-run|--apply}" ;;
 esac

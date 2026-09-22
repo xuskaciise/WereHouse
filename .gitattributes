@@ -1,0 +1,8 @@
+# Files that run on Linux (VPS / containers) must keep LF line endings even
+# when checked out on Windows; a CRLF shell script fails with "\r: not found".
+*.sh                  text eol=lf
+*.mjs                 text eol=lf
+prisma/migrations/**  text eol=lf
+prisma/transition/**  text eol=lf
+docker-compose.yml    text eol=lf
+Dockerfile            text eol=lf

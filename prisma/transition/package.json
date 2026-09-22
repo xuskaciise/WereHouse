@@ -1,0 +1,10 @@
+{
+  "name": "warehouse-transition",
+  "private": true,
+  "description": "One-time transition of the old db-push database to the Prisma Migrate schema. See transition-from-db-push.mjs.",
+  "type": "module",
+  "dependencies": {
+    "bcryptjs": "3.0.3",
+    "pg": "8.23.0"
+  }
+}
