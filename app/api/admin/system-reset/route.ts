@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
-import { withAuth } from "@/lib/api"
+import { readJson, withAuth } from "@/lib/api"
+import { HttpError } from "@/lib/auth-guard"
 import { verifyPassword } from "@/lib/password"
 
+// Business data wiped by a reset. Users and settings are preserved.
+// Hard-coded identifiers only; nothing user-supplied reaches the SQL.
 const TABLES_TO_TRUNCATE = [
-  // Child tables first to keep cross-database compatibility
+  "purchase_receive_items",
+  "purchase_receives",
   "purchase_order_items",
   "sales_order_items",
   "customer_payments",
@@ -13,80 +18,41 @@ const TABLES_TO_TRUNCATE = [
   "stock_transfers",
   "stock_movements",
   "stock",
-  // Core business tables requested for reset
   "purchase_orders",
   "sales_orders",
   "expenses",
+  "expense_categories",
   "products",
   "categories",
   "customers",
+  "suppliers",
   "warehouses",
 ]
 
-// ADMIN-only (checked against the server session by withAuth), plus the
-// admin must re-enter their password.
-export const POST = withAuth(async (request, { user: currentUser }) => {
-  try {
-    const body = await request.json().catch(() => ({}))
+// ADMIN-only (checked against the server session by withAuth), and the admin
+// must re-enter their password.
+export const POST = withAuth(
+  async (request, { user }) => {
+    const body = await readJson(request)
     const password = typeof body?.password === "string" ? body.password : ""
+    if (!password) throw new HttpError(400, "Admin password is required")
 
-    if (!password) {
-      return NextResponse.json(
-        { success: false, error: "Admin password is required" },
-        { status: 400 }
-      )
-    }
-
-    const adminUser = await prisma.user.findUnique({
-      where: { id: currentUser.id },
+    const admin = await prisma.user.findUnique({
+      where: { id: user.id },
       select: { passwordHash: true },
     })
-    if (!(await verifyPassword(password, adminUser?.passwordHash))) {
-      return NextResponse.json(
-        { success: false, error: "Invalid admin password" },
-        { status: 401 }
-      )
+    if (!(await verifyPassword(password, admin?.passwordHash))) {
+      throw new HttpError(401, "Invalid admin password")
     }
 
-    // Use DB-specific strategy without poisoning a transaction state:
-    // PostgreSQL marks the whole transaction as aborted after one SQL error.
-    let resetCompleted = false
+    const tableList = Prisma.raw(TABLES_TO_TRUNCATE.map((t) => `"${t}"`).join(", "))
+    await prisma.$executeRaw`TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE`
 
-    // Strategy 1: MySQL-compatible flow (as requested)
-    try {
-      await prisma.$executeRawUnsafe("SET FOREIGN_KEY_CHECKS = 0")
-      try {
-        for (const table of TABLES_TO_TRUNCATE) {
-          await prisma.$executeRawUnsafe(`TRUNCATE TABLE \`${table}\``)
-        }
-        resetCompleted = true
-      } finally {
-        await prisma.$executeRawUnsafe("SET FOREIGN_KEY_CHECKS = 1")
-      }
-    } catch {
-      // Ignore and fallback to PostgreSQL-compatible truncate below.
-    }
-
-    // Strategy 2: PostgreSQL flow (project default)
-    if (!resetCompleted) {
-      const tableList = TABLES_TO_TRUNCATE.map((table) => `"${table}"`).join(", ")
-      await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE`)
-      resetCompleted = true
-    }
-
-    if (!resetCompleted) {
-      throw new Error("System reset was not completed")
-    }
-
+    console.warn(`System data reset performed by user ${user.id}`)
     return NextResponse.json({
       success: true,
       message: "System data reset completed successfully. Users were preserved.",
     })
-  } catch (error: any) {
-    console.error("System reset failed:", error)
-    return NextResponse.json(
-      { success: false, error: error.message || "Failed to reset system data" },
-      { status: 500 }
-    )
-  }
-}, { roles: ["ADMIN"] })
+  },
+  { roles: ["ADMIN"] }
+)
