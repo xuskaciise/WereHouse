@@ -31,3 +31,26 @@ jobs:
         run: npm run lint
       - name: Build
         run: npm run build
+
+  # Builds both production image targets exactly as the deploy workflow does,
+  # but never pushes or deploys, so Dockerfile problems show up before merging.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build app image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runner
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build migrator image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: migrator
+          push: false
+          cache-from: type=gha
