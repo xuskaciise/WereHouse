@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { hashPassword, validatePassword } from "@/lib/password"
 
 export async function GET(
   request: Request,
@@ -62,7 +63,11 @@ export async function PUT(
 
     // Only update password if provided (and not empty)
     if (password && password.trim() !== "") {
-      updateData.password = password // In production, hash this password with bcrypt!
+      const passwordError = validatePassword(password)
+      if (passwordError) {
+        return NextResponse.json({ error: passwordError }, { status: 400 })
+      }
+      updateData.passwordHash = await hashPassword(password)
     }
 
     // Update status if provided
@@ -76,7 +81,7 @@ export async function PUT(
     })
 
     // Don't return password in response
-    const { password: _, ...userWithoutPassword } = user
+    const { passwordHash: _, ...userWithoutPassword } = user
     return NextResponse.json(userWithoutPassword)
   } catch (error: any) {
     console.error("Error updating user:", error)

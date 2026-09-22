@@ -18,12 +18,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { useCurrentUser } from "@/components/providers/current-user-provider"
 
 export default function SettingsPage() {
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [currentUser, setCurrentUser] = useState<{ id?: string; role?: string; user_type?: string } | null>(null)
+  const currentUser = useCurrentUser()
   const [resetConfirmText, setResetConfirmText] = useState("")
   const [resetPassword, setResetPassword] = useState("")
   const [isResettingSystem, setIsResettingSystem] = useState(false)
@@ -43,12 +44,6 @@ export default function SettingsPage() {
   })
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const userData = localStorage.getItem("user") || sessionStorage.getItem("user")
-      if (userData) {
-        setCurrentUser(JSON.parse(userData))
-      }
-    }
     fetchSettings()
   }, [])
 
@@ -107,10 +102,8 @@ export default function SettingsPage() {
     }
   }
 
-  const normalizeRole = (value?: string) => (value || "").trim().toLowerCase()
-  const isAdminUser =
-    normalizeRole(currentUser?.role).includes("admin") ||
-    normalizeRole(currentUser?.user_type).includes("admin")
+  // UI hint only; the server enforces admin access on the reset endpoint.
+  const isAdminUser = currentUser.role === "ADMIN"
 
   const isTruncateConfirmed = resetConfirmText.trim().toUpperCase() === "TRUNCATE"
 
@@ -151,9 +144,6 @@ export default function SettingsPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": currentUser?.id || "",
-          "x-user-role": currentUser?.role || "",
-          "x-user-type": currentUser?.user_type || "",
         },
         body: JSON.stringify({
           password: resetPassword,

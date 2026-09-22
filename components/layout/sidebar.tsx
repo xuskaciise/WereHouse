@@ -21,6 +21,7 @@ import {
   ChevronRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useCurrentUser } from "@/components/providers/current-user-provider"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   Collapsible,
@@ -90,17 +91,8 @@ const navigationSections: NavSection[] = [
 
 export function Sidebar() {
   const pathname = usePathname()
-  const [user, setUser] = useState<{ username: string; role: string } | null>(null)
+  const user = useCurrentUser()
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({})
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const userData = localStorage.getItem("user") || sessionStorage.getItem("user")
-      if (userData) {
-        setUser(JSON.parse(userData))
-      }
-    }
-  }, [])
 
   // Initialize open menus based on active routes
   useEffect(() => {
@@ -120,17 +112,14 @@ export function Sidebar() {
   }, [pathname])
 
   const getUserInitials = () => {
-    if (!user) return "U"
     return user.username.substring(0, 2).toUpperCase()
   }
 
   const getUserDisplayName = () => {
-    if (!user) return "User"
     return user.username.charAt(0).toUpperCase() + user.username.slice(1)
   }
 
   const getRoleDisplayName = () => {
-    if (!user) return "User Role"
     return user.role.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())
   }
 
@@ -155,7 +144,7 @@ export function Sidebar() {
             <div className="space-y-1">
               {section.items.map((item) => {
                 // Hide admin-only items if user is not admin
-                if (item.adminOnly && user?.role !== "ADMIN") {
+                if (item.adminOnly && user.role !== "ADMIN") {
                   return null
                 }
 

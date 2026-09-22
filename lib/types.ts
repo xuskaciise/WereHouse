@@ -21,7 +21,6 @@ export interface User {
   email: string | null
   name: string
   username: string
-  password: string | null
   role: Role
   createdAt: Date
   updatedAt: Date

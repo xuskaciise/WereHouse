@@ -1,33 +1,19 @@
-import { prisma } from "@/lib/prisma"
+import { getCurrentUser, type SessionUser } from "@/lib/auth-guard"
 
-export interface RequestUser {
-  id: string
-  role: string
-}
+export type RequestUser = SessionUser
 
 export function isAdminRole(role?: string | null): boolean {
   return (role || "").toUpperCase() === "ADMIN"
 }
 
-export async function getRequestUser(request: Request): Promise<RequestUser | null> {
-  const userId = request.headers.get("x-user-id")?.trim()
-  if (!userId) return null
-
-  const dbUser = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, role: true },
-  })
-
-  if (!dbUser) return null
-
-  return {
-    id: dbUser.id,
-    role: dbUser.role,
-  }
+// The user now comes from the signed Auth.js session cookie, never from
+// client-supplied headers. The request argument is kept for call-site
+// compatibility.
+export async function getRequestUser(_request?: Request): Promise<RequestUser | null> {
+  return getCurrentUser()
 }
 
 export function ownershipWhere(user: RequestUser | null, field = "userId") {
   if (!user || isAdminRole(user.role)) return {}
   return { [field]: user.id }
 }
-

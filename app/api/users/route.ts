@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { hashPassword, validatePassword } from "@/lib/password"
 
 export async function GET() {
   try {
@@ -90,10 +91,15 @@ export async function POST(request: Request) {
       )
     }
 
+    const passwordError = validatePassword(password)
+    if (passwordError) {
+      return NextResponse.json({ error: passwordError }, { status: 400 })
+    }
+
     const userData: any = {
       name,
       username,
-      password, // In production, hash this password with bcrypt!
+      passwordHash: await hashPassword(password),
       role: role || "STUDENT",
       status: "PENDING", // New users should be PENDING by default
     }
@@ -123,7 +129,7 @@ export async function POST(request: Request) {
     }
 
     // Don't return password in response
-    const { password: _, ...userWithoutPassword } = user
+    const { passwordHash: _, ...userWithoutPassword } = user
     return NextResponse.json(userWithoutPassword, { status: 201 })
   } catch (error: any) {
     console.error("Error creating user:", error)

@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { signOut } from "next-auth/react"
 import { Search, Bell, HelpCircle } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -14,30 +13,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { useCurrentUser } from "@/components/providers/current-user-provider"
 
 export function Navbar() {
-  const router = useRouter()
-  const [user, setUser] = useState<{ name?: string; username?: string; role: string } | null>(null)
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const userData = localStorage.getItem("user") || sessionStorage.getItem("user")
-      if (userData) {
-        setUser(JSON.parse(userData))
-      }
-    }
-  }, [])
+  const user = useCurrentUser()
 
   const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("user")
-      sessionStorage.removeItem("user")
-      router.replace("/login")
-    }
+    signOut({ redirectTo: "/login" })
   }
 
   const getUserInitials = () => {
-    if (!user) return "U"
     const fullName = user.name?.trim()
     if (fullName) {
       const parts = fullName.split(/\s+/).filter(Boolean)
@@ -50,14 +35,12 @@ export function Navbar() {
   }
 
   const getUserDisplayName = () => {
-    if (!user) return "User"
     if (user.name?.trim()) return user.name
     if (user.username?.trim()) return user.username
     return "User"
   }
 
   const getRoleDisplayName = () => {
-    if (!user) return "User"
     return user.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
   }
 

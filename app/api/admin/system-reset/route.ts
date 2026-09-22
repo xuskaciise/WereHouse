@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { getCurrentUser } from "@/lib/auth-guard"
+import { verifyPassword } from "@/lib/password"
 
 const TABLES_TO_TRUNCATE = [
   // Child tables first to keep cross-database compatibility
@@ -21,24 +23,6 @@ const TABLES_TO_TRUNCATE = [
   "warehouses",
 ]
 
-function isAdminFromHeader(value: string | null): boolean {
-  return (value || "").trim().toLowerCase() === "admin"
-}
-
-async function getRequestAdminUser(request: Request) {
-  const userId = request.headers.get("x-user-id")
-  if (!userId) {
-    return null
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, role: true, password: true },
-  })
-
-  return user
-}
-
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
@@ -51,22 +35,20 @@ export async function POST(request: Request) {
       )
     }
 
-    const roleHeader = request.headers.get("x-user-role")
-    const userTypeHeader = request.headers.get("x-user-type")
-    const adminByHeader = isAdminFromHeader(roleHeader) || isAdminFromHeader(userTypeHeader)
-    const adminUser = await getRequestAdminUser(request)
-    const adminByDb = (adminUser?.role || "").toLowerCase() === "admin"
-
-    if (!adminByHeader || !adminByDb || !adminUser) {
+    // Admin identity comes only from the server-verified session.
+    const currentUser = await getCurrentUser()
+    if (!currentUser || currentUser.role !== "ADMIN") {
       return NextResponse.json(
         { success: false, error: "Forbidden: admin access required" },
         { status: 403 }
       )
     }
 
-    // Current project stores plain passwords. If hashing is later introduced,
-    // this check should be replaced with bcrypt/argon verification.
-    if (!adminUser.password || adminUser.password !== password) {
+    const adminUser = await prisma.user.findUnique({
+      where: { id: currentUser.id },
+      select: { passwordHash: true },
+    })
+    if (!(await verifyPassword(password, adminUser?.passwordHash))) {
       return NextResponse.json(
         { success: false, error: "Invalid admin password" },
         { status: 401 }

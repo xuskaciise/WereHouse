@@ -18,7 +18,7 @@ model User {
   email     String?    @unique
   name      String
   username  String     @unique
-  password  String?
+  passwordHash String? // bcrypt hash, never plaintext
   role      Role       @default(STUDENT)
   status    UserStatus @default(PENDING)
   createdAt DateTime   @default(now())

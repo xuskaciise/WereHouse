@@ -46,23 +46,17 @@ import { formatDate } from "@/lib/utils"
 const mockUsers: any[] = []
 import { User, Role } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
-import { bulkApproveUsers, bulkRejectUsers } from "@/app/actions/users"
+import { useCurrentUser } from "@/components/providers/current-user-provider"
 
 export default function UsersPage() {
   const { toast } = useToast()
   const [users, setUsers] = useState<any[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
-  const [currentUser, setCurrentUser] = useState<{ role: string } | null>(null)
+  const currentUser = useCurrentUser()
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const userData = localStorage.getItem("user") || sessionStorage.getItem("user")
-      if (userData) {
-        setCurrentUser(JSON.parse(userData))
-      }
-    }
     fetchUsers()
   }, [])
 
@@ -95,7 +89,7 @@ export default function UsersPage() {
   }
 
   // Check if current user is admin
-  const isAdmin = currentUser?.role === "ADMIN"
+  const isAdmin = currentUser.role === "ADMIN"
 
   // Count users that can be approved (PENDING + REJECTED)
   const usersToApproveCount = users.filter((u) => u.status === "PENDING" || u.status === "REJECTED").length
@@ -121,25 +115,13 @@ export default function UsersPage() {
         return
       }
 
-      // Try API route first, fallback to server action
-      let result
-      try {
-        const response = await fetch("/api/users/bulk-approve", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        })
-        
-        if (response.ok) {
-          result = await response.json()
-        } else {
-          throw new Error("API route failed")
-        }
-      } catch (apiError) {
-        console.log("API route failed, trying server action:", apiError)
-        result = await bulkApproveUsers()
-      }
+      const response = await fetch("/api/users/bulk-approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+      const result = await response.json().catch(() => ({ success: false }))
 
       console.log("bulkApproveUsers result:", result)
       
@@ -185,25 +167,13 @@ export default function UsersPage() {
         return
       }
 
-      // Try API route first, fallback to server action
-      let result
-      try {
-        const response = await fetch("/api/users/bulk-reject", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        })
-        
-        if (response.ok) {
-          result = await response.json()
-        } else {
-          throw new Error("API route failed")
-        }
-      } catch (apiError) {
-        console.log("API route failed, trying server action:", apiError)
-        result = await bulkRejectUsers()
-      }
+      const response = await fetch("/api/users/bulk-reject", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+      const result = await response.json().catch(() => ({ success: false }))
 
       console.log("bulkRejectUsers result:", result)
       

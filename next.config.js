@@ -1,5 +1,3 @@
-const path = require("path")
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -12,7 +10,7 @@ const nextConfig = {
     unoptimized: true,
   },
   outputFileTracingIncludes: {
-    "/*": [path.join(__dirname, "node_modules/.prisma/client/**/*")],
+    "/*": ["./node_modules/.prisma/client/**/*"],
   },
   experimental: {
     optimizePackageImports: ["lucide-react"],
