@@ -12,8 +12,10 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-ARG DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder?schema=public"
-ENV DATABASE_URL=${DATABASE_URL}
+# The build never talks to the database. Use a fixed placeholder (never a
+# build ARG) so real credentials cannot end up in image layers or history.
+# The real DATABASE_URL / AUTH_SECRET are injected at runtime via env_file.
+ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder?schema=public"
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 

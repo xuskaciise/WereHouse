@@ -23,8 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        DATABASE_URL: ${DATABASE_URL}
+      # No build args: secrets are provided only at runtime through env_file.
     restart: unless-stopped
     ports:
       - "${APP_PORT:-3000}:3000"
