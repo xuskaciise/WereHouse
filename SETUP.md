@@ -7,7 +7,7 @@
 Create a `.env.local` file in the root directory:
 
 ```env
-DATABASE_URL="postgresql://neondb_owner:npg_NxX1Z4ApkITS@ep-broad-morning-aij4n46h-pooler.c-4.us-east-1.aws.neon.tech/wearhouse?sslmode=require&channel_binding=require"
+DATABASE_URL="postgresql://<db-user>:<db-password>@<db-host>:5432/<db-name>?sslmode=require"
 ```
 
 ### 2. Install Dependencies
@@ -93,3 +93,10 @@ Example API routes are available at:
 - Never commit `.env.local` to git
 - Always run `db:generate` after schema changes
 - Use `db:push` for development, `db:migrate` for production
+
+## 🔐 Secrets handling
+
+- Real credentials must only live in `.env` (local) or `.env.production` (server) — both are git-ignored and excluded from the Docker build context. Use `.env.example` / `.env.production.template` as the reference.
+- On the server, restrict the file: `chmod 600 .env.production` (owner read/write only), or inject the variables through your hosting platform's secret store instead of a file.
+- The database credentials that were previously committed to this repository have been **rotated** and are no longer valid. They still exist in old git history, which is why rotation (not deletion) was the fix.
+- If a credential is ever exposed again: rotate it first, then update `.env` / `.env.production`.

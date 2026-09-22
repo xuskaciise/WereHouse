@@ -19,7 +19,7 @@ This will install:
 Create a `.env.local` file in the root directory:
 
 ```env
-DATABASE_URL="postgresql://neondb_owner:npg_NxX1Z4ApkITS@ep-broad-morning-aij4n46h-pooler.c-4.us-east-1.aws.neon.tech/wearhouse?sslmode=require&channel_binding=require"
+DATABASE_URL="postgresql://<db-user>:<db-password>@<db-host>:5432/<db-name>?sslmode=require"
 ```
 
 **Important**: Never commit `.env.local` to git! It's already in `.gitignore`.

@@ -7,6 +7,7 @@ build
 *.md
 .env
 .env.production
+.env.*
 .env.local
 .env.development
 .env.test
