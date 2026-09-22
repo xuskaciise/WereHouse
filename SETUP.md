@@ -1,98 +1,76 @@
 # 🚀 Backend Setup Guide
 
-## Quick Start
+## Quick Start (local development)
 
-### 1. Create Environment File
+### 1. Create the environment file
 
-Create a `.env.local` file in the root directory:
+Copy `.env.example` to `.env` and fill in the values:
 
 ```env
 DATABASE_URL="postgresql://<db-user>:<db-password>@<db-host>:5432/<db-name>?sslmode=require"
+AUTH_SECRET="<generate-a-random-32-byte-secret>"   # npx auth secret  (or: openssl rand -base64 32)
+ADMIN_USERNAME="admin"                              # used by the seed script
+ADMIN_PASSWORD=""                                   # leave empty to generate a strong random one
 ```
 
-### 2. Install Dependencies
+### 2. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Generate Prisma Client
+### 3. Apply database migrations
+
+The schema is managed with **Prisma Migrate** (migrations live in `prisma/migrations` and are committed to git):
 
 ```bash
-npm run db:generate
+npm run db:migrate      # = prisma migrate dev  (development: applies + creates new migrations)
 ```
 
-### 4. Push Schema to Database
-
-This will create all tables in your Neon PostgreSQL database:
+### 4. Create the first administrator
 
 ```bash
-npm run db:push
-```
-
-### 5. (Optional) Seed Database
-
-Populate the database with initial data:
-
-```bash
-npm install tsx --save-dev
 npm run db:seed
 ```
 
-### 6. Start Development Server
+The seed creates (or re-approves) the ADMIN user named by `ADMIN_USERNAME`. If `ADMIN_PASSWORD` is empty, a strong random password is generated and printed **once** — store it in a password manager. Running the seed again never creates duplicates and never changes an existing password.
+
+### 5. Start the development server
 
 ```bash
 npm run dev
 ```
 
+Open http://localhost:3000 and sign in with the admin account.
+
 ## 📋 Available Commands
 
 - `npm run db:generate` - Generate Prisma Client
-- `npm run db:push` - Push schema to database (quick development)
-- `npm run db:migrate` - Create migration (for production)
+- `npm run db:migrate` - Create/apply migrations in development (`prisma migrate dev`)
+- `npm run db:deploy` - Apply pending migrations in production (`prisma migrate deploy`)
+- `npm run db:seed` - Create the first ADMIN user (idempotent)
 - `npm run db:studio` - Open Prisma Studio (database GUI)
-- `npm run db:seed` - Seed database with initial data
+- `npm run lint` - ESLint + check that every API route uses `withAuth()` / `publicRoute()`
 
-## 🗄️ Database Schema
+## 🔄 Changing the schema
 
-The Prisma schema includes:
+1. Edit `prisma/schema.prisma`
+2. Run `npm run db:migrate -- --name <short-description>`
+3. Commit the generated folder in `prisma/migrations/`
 
-- **users** - User accounts with roles
-- **categories** - Product categories
-- **products** - Product catalog
-- **suppliers** - Supplier information
-- **customers** - Customer information
-- **warehouses** - Warehouse locations
-- **stock** - Current stock levels
-- **stock_movements** - Inventory movement history
-- **purchase_orders** - Purchase order management
-- **sales_orders** - Sales order management
-- **payments** - Customer and supplier payments
-- **stock_transfers** - Inter-warehouse transfers
-- **expenses** - Business expenses
+Never use `prisma db push` against a shared or production database — it has no migration history.
 
-## 🔌 API Routes
+## 🚢 Production
 
-Example API routes are available at:
+`deploy.sh` (and the GitHub deploy workflow) run `prisma migrate deploy` through the `migrate` service in `docker-compose.yml` before starting the new app version:
 
-- `GET /api/users` - Get all users
-- `POST /api/users` - Create a user
-- `GET /api/users/[id]` - Get user by ID
-- `PUT /api/users/[id]` - Update user
-- `DELETE /api/users/[id]` - Delete user
+```bash
+docker compose --env-file .env.production run --rm migrate
+```
 
-## 📝 Next Steps
+Required production variables (see `.env.production.template`): `DATABASE_URL`, `AUTH_SECRET`, `AUTH_TRUST_HOST=true` (the app runs behind a reverse proxy) and `AUTH_URL` (public https URL).
 
-1. **Replace Mock Data** - Update pages to use API routes or Server Actions
-2. **Add Authentication** - Implement secure login with NextAuth.js
-3. **Add Validation** - Use Zod for API and form validation
-4. **Add More API Routes** - Create routes for products, orders, etc.
-
-## ⚠️ Important
-
-- Never commit `.env.local` to git
-- Always run `db:generate` after schema changes
-- Use `db:push` for development, `db:migrate` for production
+> **Existing databases created with `db push`:** the migration history starts with a clean `init` migration (passwords are now bcrypt hashes, balances are calculated, money columns are `DECIMAL`). Point production at a new, empty database and run `migrate deploy` + `db:seed`, then re-create users (old plaintext passwords cannot be converted).
 
 ## 🔐 Secrets handling
 

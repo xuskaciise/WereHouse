@@ -16,10 +16,12 @@ git checkout "${GIT_BRANCH}"
 git pull "origin" "${GIT_BRANCH}"
 
 docker compose --env-file .env.production build --pull
-docker compose --env-file .env.production up -d --remove-orphans
 
-# First deploy / schema changes (pick one workflow):
-#   docker compose --env-file .env.production run --rm app npx prisma migrate deploy
-#   docker compose --env-file .env.production run --rm app npx prisma db push
+# Apply pending Prisma migrations before the new app version starts.
+# (Never use `prisma db push` against production: it has no migration history.)
+docker compose --env-file .env.production up -d db
+docker compose --env-file .env.production run --rm migrate
+
+docker compose --env-file .env.production up -d --remove-orphans
 
 echo "Deploy finished. Listening on host port 3001 (map to CloudPanel reverse proxy)."

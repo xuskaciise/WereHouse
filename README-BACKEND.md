@@ -16,13 +16,13 @@ This will install:
 
 ### 2. Environment Variables
 
-Create a `.env.local` file in the root directory:
+Create a `.env` file in the root directory (see `.env.example`):
 
 ```env
 DATABASE_URL="postgresql://<db-user>:<db-password>@<db-host>:5432/<db-name>?sslmode=require"
 ```
 
-**Important**: Never commit `.env.local` to git! It's already in `.gitignore`.
+**Important**: Never commit `.env` to git! It's already in `.gitignore`. You also need `AUTH_SECRET` (see `.env.example`).
 
 ### 3. Generate Prisma Client
 
@@ -32,23 +32,21 @@ npm run db:generate
 
 This generates the Prisma Client based on your schema.
 
-### 4. Push Schema to Database
-
-```bash
-npm run db:push
-```
-
-This will create all tables in your Neon PostgreSQL database based on the Prisma schema.
-
-### 5. (Optional) Run Migrations
-
-If you prefer using migrations:
+### 4. Apply Migrations
 
 ```bash
 npm run db:migrate
 ```
 
-This creates a migration file and applies it to the database.
+Applies the committed migrations in `prisma/migrations` (Prisma Migrate). Production uses `npm run db:deploy` (`prisma migrate deploy`). `prisma db push` is no longer used.
+
+### 5. Create the First Admin
+
+```bash
+npm run db:seed
+```
+
+Creates the ADMIN user from `ADMIN_USERNAME` / `ADMIN_PASSWORD` (a random password is generated and printed once when `ADMIN_PASSWORD` is empty). Safe to run more than once.
 
 ### 6. (Optional) Open Prisma Studio
 
@@ -108,19 +106,18 @@ const newUser = await prisma.user.create({
 1. **Create API Routes** - Add API routes in `app/api/` for database operations
 2. **Create Server Actions** - Use Next.js Server Actions for mutations
 3. **Replace Mock Data** - Update pages to fetch from database instead of mock data
-4. **Add Authentication** - Integrate NextAuth.js for secure authentication
 5. **Add Validation** - Use Zod for form and API validation
 
 ## 🛠️ Available Scripts
 
 - `npm run db:generate` - Generate Prisma Client
-- `npm run db:push` - Push schema changes to database (development)
-- `npm run db:migrate` - Create and apply migrations (production)
+- `npm run db:migrate` - Create and apply migrations (development)
+- `npm run db:deploy` - Apply pending migrations (production)
+- `npm run db:seed` - Create the first ADMIN user
 - `npm run db:studio` - Open Prisma Studio GUI
 
 ## ⚠️ Important Notes
 
 - Always run `npm run db:generate` after changing the Prisma schema
-- Use `db:push` for quick development changes
-- Use `db:migrate` for production deployments
-- Never commit `.env.local` with real credentials
+- Every schema change needs a committed migration (`npm run db:migrate -- --name <change>`)
+- Never commit `.env` / `.env.local` with real credentials

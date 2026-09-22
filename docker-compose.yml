@@ -39,6 +39,22 @@ services:
     networks:
       - warehouse
 
+  # One-off schema migration runner: docker compose --env-file .env.production run --rm migrate
+  migrate:
+    image: node:20-alpine
+    profiles: ["tools"]
+    working_dir: /app
+    env_file:
+      - .env.production
+    volumes:
+      - ./prisma:/app/prisma:ro
+    command: sh -c "apk add --no-cache openssl libc6-compat >/dev/null && npx --yes prisma@5.22.0 migrate deploy"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - warehouse
+
 volumes:
   postgres_data:
 
