@@ -394,7 +394,7 @@ export default function NewPurchaseOrderPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-blue-800">
-                Ensure the "Warehouse" selection matches your storage capacity
+                Ensure the &quot;Warehouse&quot; selection matches your storage capacity
                 to avoid delivery bottlenecks.
               </p>
             </CardContent>

@@ -165,7 +165,7 @@ export default function CustomersPage() {
                 {customers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      No customers found. Click "Add Customer" to create your first customer.
+                      No customers found. Click &quot;Add Customer&quot; to create your first customer.
                     </TableCell>
                   </TableRow>
                 ) : (

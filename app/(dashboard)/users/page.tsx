@@ -533,7 +533,7 @@ export default function UsersPage() {
                 {users.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                    No users found. Click "Add New User" to create your first user.
+                    No users found. Click &quot;Add New User&quot; to create your first user.
                   </TableCell>
                 </TableRow>
               ) : (

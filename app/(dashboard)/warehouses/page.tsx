@@ -248,7 +248,7 @@ export default function WarehousesPage() {
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">
-              No warehouses found. Click "Add Warehouse" to create your first warehouse.
+              No warehouses found. Click &quot;Add Warehouse&quot; to create your first warehouse.
             </p>
           </CardContent>
         </Card>

@@ -273,7 +273,7 @@ export default function ProductsPage() {
                 {filteredProducts.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                      No products found. Click "Add New Product" to create your first product.
+                      No products found. Click &quot;Add New Product&quot; to create your first product.
                     </TableCell>
                   </TableRow>
                 ) : (

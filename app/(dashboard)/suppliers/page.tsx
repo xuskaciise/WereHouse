@@ -162,7 +162,7 @@ export default function SuppliersPage() {
                 {suppliers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                      No suppliers found. Click "Add Supplier" to create your first supplier.
+                      No suppliers found. Click &quot;Add Supplier&quot; to create your first supplier.
                     </TableCell>
                   </TableRow>
                 ) : (

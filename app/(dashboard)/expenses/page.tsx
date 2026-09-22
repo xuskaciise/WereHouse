@@ -148,7 +148,7 @@ export default function ExpensesPage() {
                     {expenses.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                          No expenses found. Click "Add Expense" to record your first expense.
+                          No expenses found. Click &quot;Add Expense&quot; to record your first expense.
                         </TableCell>
                       </TableRow>
                     ) : (

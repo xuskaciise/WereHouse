@@ -166,7 +166,7 @@ export default function PurchasesPage() {
                 {purchaseOrders.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      No purchase orders found. Click "New Purchase Order" to create your first order.
+                      No purchase orders found. Click &quot;New Purchase Order&quot; to create your first order.
                     </TableCell>
                   </TableRow>
                 ) : (

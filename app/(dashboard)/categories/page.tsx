@@ -163,7 +163,7 @@ export default function CategoriesPage() {
                 {categories.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                      No categories found. Click "Add Category" to create your first category.
+                      No categories found. Click &quot;Add Category&quot; to create your first category.
                     </TableCell>
                   </TableRow>
                 ) : (

@@ -121,7 +121,7 @@ export default function SalesPage() {
               ) : salesOrders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                    No sales orders found. Click "New Sales Order" to create your first order.
+                    No sales orders found. Click &quot;New Sales Order&quot; to create your first order.
                   </TableCell>
                 </TableRow>
               ) : (
