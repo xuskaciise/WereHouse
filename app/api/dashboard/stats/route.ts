@@ -1,119 +1,89 @@
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { json, withAuth } from "@/lib/api"
-import { ownershipWhere } from "@/lib/auth-guard"
+import { isAdmin, ownershipWhere } from "@/lib/auth-guard"
 
-export const GET = withAuth(async (request, { user: currentUser }) => {
-  try {
-    const where = ownershipWhere(currentUser)
-    // Get total products count
-    const totalProducts = await prisma.product.count({ where })
+const CHART_MONTHS = 6
 
-    // Get total stock value (sum of quantity * costPrice for all stock)
-    const stockItems = await prisma.stock.findMany({
-      where,
-      include: {
-        product: true,
-      },
-    })
-    const totalStockValue = stockItems.reduce((sum, item) => {
-      return sum + (item.quantity * Number(item.product.costPrice))
-    }, 0)
+// All figures are computed in the database with aggregates; no table is
+// loaded into memory, so the cost stays flat as data grows.
+export const GET = withAuth(async (_request, { user }) => {
+  const where = ownershipWhere(user)
+  const stockOwner = isAdmin(user) ? Prisma.empty : Prisma.sql`AND s."userId" = ${user.id}`
+  const orderOwner = isAdmin(user) ? Prisma.empty : Prisma.sql`AND "userId" = ${user.id}`
 
-    // Get total sales (sum of all sales orders)
-    const salesOrders = await prisma.salesOrder.findMany({ where })
-    const totalSales = salesOrders.reduce((sum, order) => sum + Number(order.total), 0)
+  const now = new Date()
+  const chartStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (CHART_MONTHS - 1), 1))
 
-    // Get total purchases (sum of all purchase orders)
-    const purchaseOrders = await prisma.purchaseOrder.findMany({ where })
-    const totalPurchases = purchaseOrders.reduce((sum, order) => sum + Number(order.total), 0)
-
-    // Get low stock alert count (products below reorder level)
-    const lowStockItems = stockItems.filter(
-      (item) => item.quantity <= (item.product.reorderLevel || 0)
-    )
-    const lowStockCount = lowStockItems.length
-
-    // Get recent stock movements (last 5)
-    const recentMovements = await prisma.stockMovement.findMany({
+  const [
+    totalProducts,
+    stockSummary,
+    salesSum,
+    purchaseSum,
+    recentMovements,
+    recentSales,
+    monthlySales,
+    monthlyPurchases,
+  ] = await Promise.all([
+    prisma.product.count({ where }),
+    prisma.$queryRaw<{ stockValue: Prisma.Decimal | null; lowStockCount: bigint }[]>`
+      SELECT
+        SUM(s."quantity" * p."costPrice") AS "stockValue",
+        COUNT(*) FILTER (WHERE s."quantity" <= p."reorderLevel") AS "lowStockCount"
+      FROM "stock" s
+      JOIN "products" p ON p."id" = s."productId"
+      WHERE TRUE ${stockOwner}`,
+    prisma.salesOrder.aggregate({ where, _sum: { total: true } }),
+    prisma.purchaseOrder.aggregate({ where, _sum: { total: true } }),
+    prisma.stockMovement.findMany({
       where,
       include: {
         product: true,
         warehouse: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-          },
-        },
+        user: { select: { id: true, name: true, username: true } },
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: { createdAt: "desc" },
       take: 5,
-    })
-
-    // Get recent sales orders (last 5)
-    const recentSales = await prisma.salesOrder.findMany({
+    }),
+    prisma.salesOrder.findMany({
       where,
-      include: {
-        customer: true,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
+      include: { customer: true },
+      orderBy: { createdAt: "desc" },
       take: 5,
-    })
+    }),
+    prisma.$queryRaw<{ month: string; total: Prisma.Decimal }[]>`
+      SELECT to_char(date_trunc('month', "orderDate"), 'YYYY-MM') AS month, SUM("total") AS total
+      FROM "sales_orders"
+      WHERE "orderDate" >= ${chartStart} ${orderOwner}
+      GROUP BY 1`,
+    prisma.$queryRaw<{ month: string; total: Prisma.Decimal }[]>`
+      SELECT to_char(date_trunc('month', "orderDate"), 'YYYY-MM') AS month, SUM("total") AS total
+      FROM "purchase_orders"
+      WHERE "orderDate" >= ${chartStart} ${orderOwner}
+      GROUP BY 1`,
+  ])
 
-    // Calculate chart data for last 6 months
-    const now = new Date()
-    const sixMonthsAgo = new Date()
-    sixMonthsAgo.setMonth(now.getMonth() - 6)
+  const salesByMonth = new Map(monthlySales.map((row) => [row.month, Number(row.total)]))
+  const purchasesByMonth = new Map(monthlyPurchases.map((row) => [row.month, Number(row.total)]))
 
-    const chartData = []
-    for (let i = 5; i >= 0; i--) {
-      const monthDate = new Date()
-      monthDate.setMonth(now.getMonth() - i)
-      const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)
-      const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0)
-
-      const monthSales = salesOrders
-        .filter((order) => {
-          const orderDate = new Date(order.orderDate)
-          return orderDate >= monthStart && orderDate <= monthEnd
-        })
-        .reduce((sum, order) => sum + Number(order.total), 0)
-
-      const monthPurchases = purchaseOrders
-        .filter((order) => {
-          const orderDate = new Date(order.orderDate)
-          return orderDate >= monthStart && orderDate <= monthEnd
-        })
-        .reduce((sum, order) => sum + Number(order.total), 0)
-
-      const monthName = monthDate.toLocaleString("default", { month: "short" })
-      chartData.push({
-        month: monthName,
-        sales: monthSales,
-        purchases: monthPurchases,
-      })
+  const chartData = Array.from({ length: CHART_MONTHS }, (_, i) => {
+    const month = new Date(Date.UTC(chartStart.getUTCFullYear(), chartStart.getUTCMonth() + i, 1))
+    const key = `${month.getUTCFullYear()}-${String(month.getUTCMonth() + 1).padStart(2, "0")}`
+    return {
+      month: month.toLocaleString("en-US", { month: "short", timeZone: "UTC" }),
+      sales: salesByMonth.get(key) ?? 0,
+      purchases: purchasesByMonth.get(key) ?? 0,
     }
+  })
 
-    return json({
-      totalProducts,
-      totalStockValue,
-      totalSales,
-      totalPurchases,
-      lowStockCount,
-      recentMovements,
-      recentSales,
-      chartData,
-    })
-  } catch (error) {
-    console.error("Error fetching dashboard stats:", error)
-    return json(
-      { error: "Failed to fetch dashboard statistics" },
-      { status: 500 }
-    )
-  }
+  return json({
+    totalProducts,
+    totalStockValue: Number(stockSummary[0]?.stockValue ?? 0),
+    totalSales: salesSum._sum.total ?? 0,
+    totalPurchases: purchaseSum._sum.total ?? 0,
+    lowStockCount: Number(stockSummary[0]?.lowStockCount ?? 0),
+    recentMovements,
+    recentSales,
+    chartData,
+  })
 })
