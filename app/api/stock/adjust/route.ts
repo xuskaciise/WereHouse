@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { withAuth } from "@/lib/api"
+import { HttpError } from "@/lib/auth-guard"
+import { assertCanReference } from "@/lib/ownership"
 
-export async function POST(request: Request) {
+export const POST = withAuth(async (request, { user: currentUser }) => {
   try {
     const body = await request.json()
     const { productId, warehouseId, adjustmentType, quantity, notes } = body
@@ -13,17 +16,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // Get current user (for now, use a default user - in production, get from session)
-    const defaultUser = await prisma.user.findFirst({
-      where: { role: "ADMIN" },
-    })
-
-    if (!defaultUser) {
-      return NextResponse.json(
-        { error: "No user found. Please create a user first." },
-        { status: 400 }
-      )
-    }
+    await assertCanReference(currentUser, { warehouseId, productIds: [productId] })
 
     // Get existing stock record
     const existingStock = await prisma.stock.findUnique({
@@ -81,6 +74,7 @@ export async function POST(request: Request) {
         warehouseId,
         quantity: newQuantity,
         reservedQuantity: 0,
+        userId: currentUser.id,
         status: newQuantity === 0 
           ? "OUT_OF_STOCK" 
           : newQuantity < 10 
@@ -98,16 +92,17 @@ export async function POST(request: Request) {
         quantity: movementQuantity,
         reference: "Manual Adjustment",
         notes: notes || null,
-        userId: defaultUser.id,
+        userId: currentUser.id,
       },
     })
 
     return NextResponse.json(updatedStock, { status: 201 })
   } catch (error: any) {
+    if (error instanceof HttpError) throw error
     console.error("Error adjusting stock:", error)
     return NextResponse.json(
       { error: error.message || "Failed to adjust stock" },
       { status: 500 }
     )
   }
-}
+})

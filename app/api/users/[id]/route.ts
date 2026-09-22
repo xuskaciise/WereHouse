@@ -1,220 +1,80 @@
 import { NextResponse } from "next/server"
+import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
+import { readJson, withAuth } from "@/lib/api"
+import { HttpError } from "@/lib/auth-guard"
 import { hashPassword, validatePassword } from "@/lib/password"
+import { assertAdminRemains, parseRole, parseStatus, publicUserSelect } from "@/lib/users"
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params
-    const user = await prisma.user.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        email: true,
-        role: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
-        // Don't include password in response
-      },
-    })
+// All user management is ADMIN-only and verified against the server session.
+const ADMIN_ONLY = { roles: ["ADMIN" as const] }
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      )
-    }
+export const GET = withAuth<{ id: string }>(async (_request, { params }) => {
+  const user = await prisma.user.findUnique({
+    where: { id: params.id },
+    select: publicUserSelect,
+  })
+  if (!user) throw new HttpError(404, "User not found")
+  return NextResponse.json(user)
+}, ADMIN_ONLY)
 
-    return NextResponse.json(user)
-  } catch (error) {
-    console.error("Error fetching user:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch user" },
-      { status: 500 }
-    )
+export const PUT = withAuth<{ id: string }>(async (request, { params }) => {
+  const body = await readJson(request)
+  const data: Prisma.UserUpdateInput = {}
+
+  if (body.name !== undefined) {
+    if (typeof body.name !== "string" || !body.name.trim()) throw new HttpError(400, "Name is required")
+    data.name = body.name.trim()
   }
-}
-
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params
-    const body = await request.json()
-    const { name, username, password, role, email, status } = body
-
-    // Build update data object
-    const updateData: any = {
-      name,
-      username,
-      role,
+  if (body.username !== undefined) {
+    if (typeof body.username !== "string" || !body.username.trim()) {
+      throw new HttpError(400, "Username is required")
     }
-
-    // Only update email if provided
-    if (email !== undefined) {
-      updateData.email = email || null
-    }
-
-    // Only update password if provided (and not empty)
-    if (password && password.trim() !== "") {
-      const passwordError = validatePassword(password)
-      if (passwordError) {
-        return NextResponse.json({ error: passwordError }, { status: 400 })
-      }
-      updateData.passwordHash = await hashPassword(password)
-    }
-
-    // Update status if provided
-    if (status !== undefined) {
-      updateData.status = status
-    }
-
-    const user = await prisma.user.update({
-      where: { id },
-      data: updateData,
-    })
-
-    // Don't return password in response
-    const { passwordHash: _, ...userWithoutPassword } = user
-    return NextResponse.json(userWithoutPassword)
-  } catch (error: any) {
-    console.error("Error updating user:", error)
-    
-    if (error.code === "P2025") {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      )
-    }
-
-    if (error.code === "P2002") {
-      return NextResponse.json(
-        { error: "User with this username or email already exists" },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: "Failed to update user" },
-      { status: 500 }
-    )
+    data.username = body.username.trim()
   }
-}
-
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params
-    const body = await request.json()
-    const { status } = body
-
-    if (!status || !["PENDING", "APPROVED", "REJECTED"].includes(status)) {
-      return NextResponse.json(
-        { error: "Valid status (PENDING, APPROVED, REJECTED) is required" },
-        { status: 400 }
-      )
-    }
-
-    let user
-    try {
-      user = await prisma.user.update({
-        where: { id },
-        data: { status },
-        select: {
-          id: true,
-          name: true,
-          username: true,
-          email: true,
-          role: true,
-          status: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      })
-    } catch (prismaError: any) {
-      // If status field is not recognized, use raw SQL
-      if (prismaError.message?.includes("status") || prismaError.message?.includes("Unknown argument")) {
-        console.log("Using raw SQL for status update")
-        await prisma.$executeRaw`
-          UPDATE users 
-          SET status = ${status}::"UserStatus"
-          WHERE id = ${id}
-        `
-        // Fetch the updated user
-        user = await prisma.user.findUnique({
-          where: { id },
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            email: true,
-            role: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        })
-        if (!user) {
-          return NextResponse.json(
-            { error: "User not found" },
-            { status: 404 }
-          )
-        }
-      } else {
-        throw prismaError
-      }
-    }
-
-    return NextResponse.json(user)
-  } catch (error: any) {
-    console.error("Error updating user status:", error)
-    
-    if (error.code === "P2025") {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: error.message || "Failed to update user status" },
-      { status: 500 }
-    )
+  if (body.email !== undefined) {
+    data.email = typeof body.email === "string" && body.email.trim() ? body.email.trim() : null
   }
-}
-
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params
-    await prisma.user.delete({
-      where: { id },
-    })
-
-    return NextResponse.json({ message: "User deleted successfully" })
-  } catch (error: any) {
-    console.error("Error deleting user:", error)
-    
-    if (error.code === "P2025") {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: "Failed to delete user" },
-      { status: 500 }
-    )
+  const role = body.role === undefined ? undefined : parseRole(body.role)
+  const status = body.status === undefined ? undefined : parseStatus(body.status)
+  if (role) data.role = role
+  if (status) data.status = status
+  if (typeof body.password === "string" && body.password.trim() !== "") {
+    const passwordError = validatePassword(body.password)
+    if (passwordError) throw new HttpError(400, passwordError)
+    data.passwordHash = await hashPassword(body.password)
   }
-}
+
+  await assertAdminRemains(params.id, { role, status })
+
+  const user = await prisma.user.update({
+    where: { id: params.id },
+    data,
+    select: publicUserSelect,
+  })
+  return NextResponse.json(user)
+}, ADMIN_ONLY)
+
+export const PATCH = withAuth<{ id: string }>(async (request, { params }) => {
+  const body = await readJson(request)
+  const status = parseStatus(body.status)
+
+  await assertAdminRemains(params.id, { status })
+
+  const user = await prisma.user.update({
+    where: { id: params.id },
+    data: { status },
+    select: publicUserSelect,
+  })
+  return NextResponse.json(user)
+}, ADMIN_ONLY)
+
+export const DELETE = withAuth<{ id: string }>(async (_request, { user: currentUser, params }) => {
+  if (params.id === currentUser.id) {
+    throw new HttpError(400, "You cannot delete your own account")
+  }
+  await assertAdminRemains(params.id, { deleted: true })
+
+  await prisma.user.delete({ where: { id: params.id } })
+  return NextResponse.json({ message: "User deleted successfully" })
+}, ADMIN_ONLY)

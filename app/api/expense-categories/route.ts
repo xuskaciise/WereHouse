@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, ownershipWhere } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { ownershipWhere } from "@/lib/auth-guard"
 
-export async function GET(request: Request) {
+export const GET = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
     const categories = await prisma.expenseCategory.findMany({
       where: ownershipWhere(currentUser),
       orderBy: {
@@ -19,14 +19,10 @@ export async function GET(request: Request) {
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: Request) {
+export const POST = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
     const body = await request.json()
     const { name, description } = body
 
@@ -61,4 +57,4 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
-}
+})

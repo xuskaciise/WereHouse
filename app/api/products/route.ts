@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, ownershipWhere } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { assertCanReference } from "@/lib/ownership"
+import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { validateProductDates } from "@/lib/product-date-validation"
 
-export async function GET(request: Request) {
+export const GET = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
     const products = await prisma.product.findMany({
       where: ownershipWhere(currentUser),
       include: {
@@ -17,20 +18,17 @@ export async function GET(request: Request) {
     })
     return NextResponse.json(products)
   } catch (error) {
+    if (error instanceof HttpError) throw error
     console.error("Error fetching products:", error)
     return NextResponse.json(
       { error: "Failed to fetch products" },
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: Request) {
+export const POST = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
     const body = await request.json()
     const {
       name,
@@ -54,6 +52,8 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+
+    await assertCanReference(currentUser, { categoryId, warehouseId })
 
     const normalizedProductionDate = productionDate || issueDate || null
     const normalizedExpiryDate = expiryDate || expireDate || null
@@ -105,6 +105,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(product, { status: 201 })
   } catch (error: any) {
+    if (error instanceof HttpError) throw error
     console.error("Error creating product:", error)
     
     // Handle unique constraint violations
@@ -120,4 +121,4 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
-}
+})

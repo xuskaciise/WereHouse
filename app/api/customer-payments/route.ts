@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, ownershipWhere } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { assertCanReference } from "@/lib/ownership"
 
-export async function GET(request: Request) {
+export const GET = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
     const payments = await prisma.customerPayment.findMany({
       where: ownershipWhere(currentUser),
       include: {
@@ -24,20 +25,17 @@ export async function GET(request: Request) {
     })
     return NextResponse.json(payments)
   } catch (error) {
+    if (error instanceof HttpError) throw error
     console.error("Error fetching customer payments:", error)
     return NextResponse.json(
       { error: "Failed to fetch customer payments" },
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: Request) {
+export const POST = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
     const body = await request.json()
     const { customerId, salesOrderId, amount, paymentDate, paymentMethod, reference, notes } = body
 
@@ -46,6 +44,15 @@ export async function POST(request: Request) {
         { error: "Customer, Amount, and Payment Method are required" },
         { status: 400 }
       )
+    }
+
+    await assertCanReference(currentUser, { customerId })
+    if (salesOrderId) {
+      const order = await prisma.salesOrder.findFirst({
+        where: { id: salesOrderId, customerId, ...ownershipWhere(currentUser) },
+        select: { id: true },
+      })
+      if (!order) throw new HttpError(400, "Sales order not found for this customer")
     }
 
     // Use transaction to update customer balance and create payment
@@ -93,10 +100,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result, { status: 201 })
   } catch (error: any) {
+    if (error instanceof HttpError) throw error
     console.error("Error creating customer payment:", error)
     return NextResponse.json(
       { error: error.message || "Failed to create customer payment" },
       { status: 500 }
     )
   }
-}
+})

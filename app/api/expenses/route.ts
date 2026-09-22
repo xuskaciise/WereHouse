@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, ownershipWhere } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { assertCanReference } from "@/lib/ownership"
+import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 
-export async function GET(request: Request) {
+export const GET = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
     const expenses = await prisma.expense.findMany({
       where: ownershipWhere(currentUser),
       include: {
@@ -23,20 +24,17 @@ export async function GET(request: Request) {
     })
     return NextResponse.json(expenses)
   } catch (error) {
+    if (error instanceof HttpError) throw error
     console.error("Error fetching expenses:", error)
     return NextResponse.json(
       { error: "Failed to fetch expenses" },
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: Request) {
+export const POST = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
     const body = await request.json()
     const { categoryId, amount, description, expenseDate, paymentMethod, reference } = body
 
@@ -46,6 +44,8 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+
+    await assertCanReference(currentUser, { expenseCategoryId: categoryId })
 
     const expense = await prisma.expense.create({
       data: {
@@ -71,10 +71,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json(expense, { status: 201 })
   } catch (error: any) {
+    if (error instanceof HttpError) throw error
     console.error("Error creating expense:", error)
     return NextResponse.json(
       { error: error.message || "Failed to create expense" },
       { status: 500 }
     )
   }
-}
+})

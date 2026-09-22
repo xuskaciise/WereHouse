@@ -1,63 +1,65 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { readJson, withAuth } from "@/lib/api"
+import { HttpError } from "@/lib/auth-guard"
 
-export async function GET() {
-  try {
-    const settings = await prisma.setting.findMany()
-    
-    // Convert array to object for easier access
-    const settingsObj: Record<string, string> = {}
-    settings.forEach((setting) => {
-      settingsObj[setting.key] = setting.value
-    })
+const DEFAULT_SETTINGS: Record<string, string> = {
+  companyName: "Siu Warehouse",
+  companyAddress: "",
+  companyPhone: "",
+  companyEmail: "",
+  companyWebsite: "",
+  defaultCurrency: "USD",
+  defaultTaxRate: "8",
+  salesTaxRate: "5",
+  purchaseTaxRate: "8",
+  lowStockThreshold: "10",
+  dateFormat: "MM/DD/YYYY",
+  timezone: "UTC",
+}
+const MAX_VALUE_LENGTH = 500
 
-    // Set defaults if not found
-    const defaultSettings = {
-      companyName: settingsObj.companyName || "Siu Warehouse",
-      companyAddress: settingsObj.companyAddress || "",
-      companyPhone: settingsObj.companyPhone || "",
-      companyEmail: settingsObj.companyEmail || "",
-      companyWebsite: settingsObj.companyWebsite || "",
-      defaultCurrency: settingsObj.defaultCurrency || "USD",
-      defaultTaxRate: settingsObj.defaultTaxRate || "8",
-      salesTaxRate: settingsObj.salesTaxRate || "5",
-      purchaseTaxRate: settingsObj.purchaseTaxRate || "8",
-      lowStockThreshold: settingsObj.lowStockThreshold || "10",
-      dateFormat: settingsObj.dateFormat || "MM/DD/YYYY",
-      timezone: settingsObj.timezone || "UTC",
+// Any signed-in user may read settings.
+export const GET = withAuth(async () => {
+  const settings = await prisma.setting.findMany({
+    where: { key: { in: Object.keys(DEFAULT_SETTINGS) } },
+  })
+
+  const result = { ...DEFAULT_SETTINGS }
+  for (const setting of settings) {
+    if (setting.value) result[setting.key] = setting.value
+  }
+  return NextResponse.json(result)
+})
+
+// Only ADMIN may change company-wide settings; unknown keys are rejected.
+export const PUT = withAuth(
+  async (request) => {
+    const body = await readJson<Record<string, unknown>>(request)
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new HttpError(400, "Invalid settings payload")
     }
 
-    return NextResponse.json(defaultSettings)
-  } catch (error) {
-    console.error("Error fetching settings:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch settings" },
-      { status: 500 }
-    )
-  }
-}
+    const entries = Object.entries(body)
+    for (const [key, value] of entries) {
+      if (!(key in DEFAULT_SETTINGS)) throw new HttpError(400, `Unknown setting: ${key}`)
+      if (typeof value !== "string" && typeof value !== "number") {
+        throw new HttpError(400, `Invalid value for ${key}`)
+      }
+      if (String(value).length > MAX_VALUE_LENGTH) throw new HttpError(400, `Value for ${key} is too long`)
+    }
 
-export async function PUT(request: Request) {
-  try {
-    const body = await request.json()
-    
-    // Use transaction to update all settings
-    await prisma.$transaction(async (tx) => {
-      for (const [key, value] of Object.entries(body)) {
-        await tx.setting.upsert({
+    await prisma.$transaction(
+      entries.map(([key, value]) =>
+        prisma.setting.upsert({
           where: { key },
           update: { value: String(value) },
           create: { key, value: String(value) },
         })
-      }
-    })
+      )
+    )
 
     return NextResponse.json({ message: "Settings updated successfully" })
-  } catch (error: any) {
-    console.error("Error updating settings:", error)
-    return NextResponse.json(
-      { error: error.message || "Failed to update settings" },
-      { status: 500 }
-    )
-  }
-}
+  },
+  { roles: ["ADMIN"] }
+)

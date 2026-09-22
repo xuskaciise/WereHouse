@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, isAdminRole } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { assertCanReference } from "@/lib/ownership"
+import { HttpError, isAdmin } from "@/lib/auth-guard"
 import { validateProductDates } from "@/lib/product-date-validation"
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const { id } = await params
+    const { id } = params
     const product = await prisma.product.findUnique({
       where: { id },
       include: {
@@ -24,28 +21,24 @@ export async function GET(
         { status: 404 }
       )
     }
-    if (!isAdminRole(currentUser.role) && product.userId !== currentUser.id) {
+    if (!isAdmin(currentUser) && product.userId !== currentUser.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
     return NextResponse.json(product)
   } catch (error) {
+    if (error instanceof HttpError) throw error
     console.error("Error fetching product:", error)
     return NextResponse.json(
       { error: "Failed to fetch product" },
       { status: 500 }
     )
   }
-}
+})
 
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const PUT = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const { id } = await params
+    const { id } = params
     const body = await request.json()
     const {
       name,
@@ -84,9 +77,11 @@ export async function PUT(
     if (!existingProduct) {
       return NextResponse.json({ error: "Product not found" }, { status: 404 })
     }
-    if (!isAdminRole(currentUser.role) && existingProduct.userId !== currentUser.id) {
+    if (!isAdmin(currentUser) && existingProduct.userId !== currentUser.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
+
+    await assertCanReference(currentUser, { categoryId })
 
     const product = await prisma.product.update({
       where: { id },
@@ -112,8 +107,9 @@ export async function PUT(
         const { stockId, quantity } = update
         if (stockId && quantity !== undefined) {
           try {
+            // Only stock rows of this product may be edited through this route.
             await prisma.stock.update({
-              where: { id: stockId },
+              where: { id: stockId, productId: id },
               data: {
                 quantity: parseInt(quantity) || 0,
                 status: parseInt(quantity) > 0 ? "IN_STOCK" : "OUT_OF_STOCK",
@@ -129,6 +125,7 @@ export async function PUT(
 
     return NextResponse.json(product)
   } catch (error: any) {
+    if (error instanceof HttpError) throw error
     console.error("Error updating product:", error)
     
     if (error.code === "P2025") {
@@ -150,21 +147,16 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const { id } = await params
+    const { id } = params
     const existingProduct = await prisma.product.findUnique({ where: { id } })
     if (!existingProduct) {
       return NextResponse.json({ error: "Product not found" }, { status: 404 })
     }
-    if (!isAdminRole(currentUser.role) && existingProduct.userId !== currentUser.id) {
+    if (!isAdmin(currentUser) && existingProduct.userId !== currentUser.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
     await prisma.product.delete({
@@ -173,6 +165,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: "Product deleted successfully" })
   } catch (error: any) {
+    if (error instanceof HttpError) throw error
     console.error("Error deleting product:", error)
     
     if (error.code === "P2025") {
@@ -195,4 +188,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

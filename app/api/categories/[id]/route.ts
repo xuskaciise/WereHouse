@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, isAdminRole } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { isAdmin } from "@/lib/auth-guard"
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const { id } = await params
+    const { id } = params
     const category = await prisma.category.findUnique({
       where: { id },
     })
@@ -20,7 +16,7 @@ export async function GET(
         { status: 404 }
       )
     }
-    if (!isAdminRole(currentUser.role) && category.userId !== currentUser.id) {
+    if (!isAdmin(currentUser) && category.userId !== currentUser.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
@@ -32,16 +28,11 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const PUT = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const { id } = await params
+    const { id } = params
     const body = await request.json()
     const { name, description } = body
 
@@ -56,7 +47,7 @@ export async function PUT(
     if (!existingCategory) {
       return NextResponse.json({ error: "Category not found" }, { status: 404 })
     }
-    if (!isAdminRole(currentUser.role) && existingCategory.userId !== currentUser.id) {
+    if (!isAdmin(currentUser) && existingCategory.userId !== currentUser.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
@@ -91,21 +82,16 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const { id } = await params
+    const { id } = params
     const existingCategory = await prisma.category.findUnique({ where: { id } })
     if (!existingCategory) {
       return NextResponse.json({ error: "Category not found" }, { status: 404 })
     }
-    if (!isAdminRole(currentUser.role) && existingCategory.userId !== currentUser.id) {
+    if (!isAdmin(currentUser) && existingCategory.userId !== currentUser.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
     await prisma.category.delete({
@@ -136,4 +122,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

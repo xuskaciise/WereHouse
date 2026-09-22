@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, ownershipWhere } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { ownershipWhere } from "@/lib/auth-guard"
 
-export async function GET(request: Request) {
+export const GET = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
     const where = ownershipWhere(currentUser)
     // Get total products count
     const totalProducts = await prisma.product.count({ where })
@@ -117,4 +117,4 @@ export async function GET(request: Request) {
       { status: 500 }
     )
   }
-}
+})

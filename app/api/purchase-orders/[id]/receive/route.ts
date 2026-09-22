@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, ownershipWhere } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { ownershipWhere } from "@/lib/auth-guard"
 import type { Prisma } from "@prisma/client"
 import type { OrderStatus } from "@prisma/client"
 
@@ -61,17 +62,10 @@ const orderDetailInclude = {
   },
 } satisfies Prisma.PurchaseOrderInclude
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const POST = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
 
-    const { id: purchaseOrderId } = await params
+    const { id: purchaseOrderId } = params
     if (!purchaseOrderId) {
       return NextResponse.json({ error: "Invalid purchase order id" }, { status: 400 })
     }
@@ -241,4 +235,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

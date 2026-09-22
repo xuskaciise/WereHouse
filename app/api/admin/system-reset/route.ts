@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getCurrentUser } from "@/lib/auth-guard"
+import { withAuth } from "@/lib/api"
 import { verifyPassword } from "@/lib/password"
 
 const TABLES_TO_TRUNCATE = [
@@ -23,7 +23,9 @@ const TABLES_TO_TRUNCATE = [
   "warehouses",
 ]
 
-export async function POST(request: Request) {
+// ADMIN-only (checked against the server session by withAuth), plus the
+// admin must re-enter their password.
+export const POST = withAuth(async (request, { user: currentUser }) => {
   try {
     const body = await request.json().catch(() => ({}))
     const password = typeof body?.password === "string" ? body.password : ""
@@ -32,15 +34,6 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: "Admin password is required" },
         { status: 400 }
-      )
-    }
-
-    // Admin identity comes only from the server-verified session.
-    const currentUser = await getCurrentUser()
-    if (!currentUser || currentUser.role !== "ADMIN") {
-      return NextResponse.json(
-        { success: false, error: "Forbidden: admin access required" },
-        { status: 403 }
       )
     }
 
@@ -96,5 +89,4 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
-}
-
+}, { roles: ["ADMIN"] })

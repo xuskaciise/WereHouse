@@ -459,7 +459,7 @@ export default function SettingsPage() {
         </Card>
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={isSaving}>
+          <Button type="submit" disabled={isSaving || !isAdminUser} title={isAdminUser ? undefined : "Only administrators can change settings"}>
             {isSaving ? "Saving..." : "Save Changes"}
           </Button>
         </div>

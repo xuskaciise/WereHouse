@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, ownershipWhere } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { ownershipWhere } from "@/lib/auth-guard"
 
-export async function GET(request: Request) {
+export const GET = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
     const stock = await prisma.stock.findMany({
       where: ownershipWhere(currentUser),
       include: {
@@ -23,4 +23,4 @@ export async function GET(request: Request) {
       { status: 500 }
     )
   }
-}
+})

@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, isAdminRole } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { isAdmin } from "@/lib/auth-guard"
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const GET = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const { id } = await params
+    const { id } = params
     const customer = await prisma.customer.findUnique({
       where: { id },
     })
@@ -20,7 +16,7 @@ export async function GET(
         { status: 404 }
       )
     }
-    if (!isAdminRole(currentUser.role) && customer.userId !== currentUser.id) {
+    if (!isAdmin(currentUser) && customer.userId !== currentUser.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
@@ -32,16 +28,11 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const PUT = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const { id } = await params
+    const { id } = params
     const body = await request.json()
     const { name, email, phone, address, city, state } = body
 
@@ -56,7 +47,7 @@ export async function PUT(
     if (!existingCustomer) {
       return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     }
-    if (!isAdminRole(currentUser.role) && existingCustomer.userId !== currentUser.id) {
+    if (!isAdmin(currentUser) && existingCustomer.userId !== currentUser.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
@@ -95,21 +86,16 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export const DELETE = withAuth<{ id: string }>(async (request, { user: currentUser, params }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const { id } = await params
+    const { id } = params
     const existingCustomer = await prisma.customer.findUnique({ where: { id } })
     if (!existingCustomer) {
       return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     }
-    if (!isAdminRole(currentUser.role) && existingCustomer.userId !== currentUser.id) {
+    if (!isAdmin(currentUser) && existingCustomer.userId !== currentUser.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
     await prisma.customer.delete({
@@ -140,4 +126,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

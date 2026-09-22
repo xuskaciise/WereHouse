@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { getRequestUser, ownershipWhere } from "@/lib/rbac"
+import { withAuth } from "@/lib/api"
+import { assertCanReference } from "@/lib/ownership"
+import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 
-export async function GET(request: Request) {
+export const GET = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
     const where = ownershipWhere(currentUser)
     // Try to fetch with supplier balance first
     let purchaseOrders
@@ -97,20 +98,17 @@ export async function GET(request: Request) {
     }
     return NextResponse.json(purchaseOrders)
   } catch (error) {
+    if (error instanceof HttpError) throw error
     console.error("Error fetching purchase orders:", error)
     return NextResponse.json(
       { error: "Failed to fetch purchase orders" },
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: Request) {
+export const POST = withAuth(async (request, { user: currentUser }) => {
   try {
-    const currentUser = await getRequestUser(request)
-    if (!currentUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
     const body = await request.json()
     const { supplierId, warehouseId, expectedDelivery, items, notes } = body
 
@@ -120,6 +118,12 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+
+    await assertCanReference(currentUser, {
+      supplierId,
+      warehouseId,
+      productIds: items.map((item: any) => item.productId),
+    })
 
     // Calculate totals
     const subtotal = items.reduce((sum: number, item: any) => {
@@ -294,10 +298,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json(orderWithRelations, { status: 201 })
   } catch (error: any) {
+    if (error instanceof HttpError) throw error
     console.error("Error creating purchase order:", error)
     return NextResponse.json(
       { error: error.message || "Failed to create purchase order" },
       { status: 500 }
     )
   }
-}
+})

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { publicRoute } from "@/lib/api"
 import { hashPassword, validatePassword } from "@/lib/password"
 
 // Public student self-registration. The role and status are fixed server-side:
 // every sign-up is a STUDENT account that stays PENDING until an admin approves it.
-export async function POST(request: Request) {
+export const POST = publicRoute(async (request) => {
   try {
     const body = await request.json().catch(() => null)
     const name = typeof body?.name === "string" ? body.name.trim() : ""
@@ -40,4 +41,4 @@ export async function POST(request: Request) {
     console.error("Error registering user:", error)
     return NextResponse.json({ error: "Failed to create account" }, { status: 500 })
   }
-}
+})
