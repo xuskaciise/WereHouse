@@ -17,7 +17,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      {/* Browser extensions (e.g. ColorZilla's cz-shortcut-listen) inject
+          attributes on <body>; this only ignores attribute mismatches on
+          this element, not in its children. */}
+      <body className={inter.className} suppressHydrationWarning>
         {children}
         <Toaster />
       </body>
