@@ -1,4 +1,4 @@
-import { OrderStatus } from "@prisma/client"
+import { OrderStatus, Prisma } from "@prisma/client"
 import { HttpError } from "@/lib/http-error"
 import { type Money, ZERO, parseMoney, roundMoney, sumMoney } from "@/lib/money"
 import { parseQuantity } from "@/lib/stock"
@@ -39,4 +39,33 @@ export function parseOrderStatus(value: unknown, fallback: OrderStatus = "PENDIN
   if (value === undefined || value === null || value === "") return fallback
   if (typeof value !== "string" || !ORDER_STATUSES.has(value)) throw new HttpError(400, "Invalid order status")
   return value as OrderStatus
+}
+
+function isOrderNumberConflict(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002" &&
+    JSON.stringify(error.meta ?? {}).includes("orderNumber")
+  )
+}
+
+/**
+ * Creates an order with the next sequential number (e.g. SO-000042). If two
+ * requests race for the same number, the unique index rejects one and it is
+ * retried with the next number instead of failing.
+ */
+export async function createWithOrderNumber<T>(
+  prefix: "PO" | "SO",
+  currentCount: () => Promise<number>,
+  create: (orderNumber: string) => Promise<T>
+): Promise<T> {
+  const MAX_ATTEMPTS = 5
+  for (let attempt = 0; ; attempt++) {
+    const next = (await currentCount()) + 1 + attempt
+    try {
+      return await create(`${prefix}-${String(next).padStart(6, "0")}`)
+    } catch (error) {
+      if (!isOrderNumberConflict(error) || attempt + 1 >= MAX_ATTEMPTS) throw error
+    }
+  }
 }

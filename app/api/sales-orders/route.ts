@@ -1,8 +1,8 @@
-import { prisma } from "@/lib/prisma"
+import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
-import { calculateOrderTotals, parseOrderItems, parseOrderStatus } from "@/lib/orders"
+import { calculateOrderTotals, createWithOrderNumber, parseOrderItems, parseOrderStatus } from "@/lib/orders"
 import { decrementStock } from "@/lib/stock"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 import type { Prisma } from "@prisma/client"
@@ -53,59 +53,61 @@ export const POST = withAuth(async (request, { user }) => {
 
   const { subtotal, tax, discount, total } = calculateOrderTotals(items, "0.05") // 5% tax
 
-  const orderCount = await prisma.salesOrder.count()
-  const orderNumber = `SO-${String(orderCount + 1).padStart(6, "0")}`
+  const orderId = await createWithOrderNumber(
+    "SO",
+    () => prisma.salesOrder.count(),
+    (orderNumber) =>
+      prisma.$transaction(
+        async (tx) => {
+          const salesOrder = await tx.salesOrder.create({
+            data: {
+              orderNumber,
+              customerId,
+              warehouseId,
+              userId: user.id,
+              expectedDeliveryDate: expectedDelivery ? new Date(expectedDelivery) : null,
+              subtotal,
+              tax,
+              discount,
+              total,
+              status,
+              notes: notes || null,
+              items: {
+                create: items.map((item) => ({
+                  productId: item.productId,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  subtotal: item.subtotal,
+                })),
+              },
+            },
+          })
 
-  const orderId = await prisma.$transaction(
-    async (tx) => {
-      const salesOrder = await tx.salesOrder.create({
-        data: {
-          orderNumber,
-          customerId,
-          warehouseId,
-          userId: user.id,
-          expectedDeliveryDate: expectedDelivery ? new Date(expectedDelivery) : null,
-          subtotal,
-          tax,
-          discount,
-          total,
-          status,
-          notes: notes || null,
-          items: {
-            create: items.map((item) => ({
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              subtotal: item.subtotal,
-            })),
-          },
+          // The customer balance is derived from orders and payments
+          // (lib/balances.ts), so nothing else needs updating here.
+
+          // Guarded, atomic deduction: fails the whole transaction if any line
+          // does not have enough unreserved stock (no read-then-write race).
+          for (const item of items) {
+            await decrementStock(tx, { productId: item.productId, warehouseId, quantity: item.quantity })
+            await tx.stockMovement.create({
+              data: {
+                productId: item.productId,
+                warehouseId,
+                type: "OUT",
+                quantity: item.quantity,
+                reference: orderNumber,
+                referenceId: salesOrder.id,
+                notes: `Sales order ${orderNumber}`,
+                userId: user.id,
+              },
+            })
+          }
+
+          return salesOrder.id
         },
-      })
-
-      // The customer balance is derived from orders and payments
-      // (lib/balances.ts), so nothing else needs updating here.
-
-      // Guarded, atomic deduction: fails the whole transaction if any line
-      // does not have enough unreserved stock (no read-then-write race).
-      for (const item of items) {
-        await decrementStock(tx, { productId: item.productId, warehouseId, quantity: item.quantity })
-        await tx.stockMovement.create({
-          data: {
-            productId: item.productId,
-            warehouseId,
-            type: "OUT",
-            quantity: item.quantity,
-            reference: orderNumber,
-            referenceId: salesOrder.id,
-            notes: `Sales order ${orderNumber}`,
-            userId: user.id,
-          },
-        })
-      }
-
-      return salesOrder.id
-    },
-    { maxWait: 10000, timeout: 15000 }
+        TX_OPTIONS
+      )
   )
 
   const order = await prisma.salesOrder.findUnique({

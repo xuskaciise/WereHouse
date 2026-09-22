@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
@@ -88,7 +88,7 @@ export const POST = withAuth(async (request, { user }) => {
         }
 
         return created
-      }),
+      }, TX_OPTIONS),
     { unique: "Product with this SKU already exists" }
   )
 

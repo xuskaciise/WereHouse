@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError, assertOwnership } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
@@ -107,7 +107,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
         // The reorder level may have changed, so recompute every stock status.
         await refreshStockStatus(tx, id)
         return updated
-      }),
+      }, TX_OPTIONS),
     { unique: "Product with this SKU already exists" }
   )
 

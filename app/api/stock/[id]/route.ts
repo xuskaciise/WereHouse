@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, assertOwnership } from "@/lib/auth-guard"
 import { parseQuantity, setStockQuantity } from "@/lib/stock"
@@ -54,7 +54,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
       where: { id: params.id },
       include: { product: true, warehouse: true },
     })
-  })
+  }, TX_OPTIONS)
 
   return json(stock)
 })

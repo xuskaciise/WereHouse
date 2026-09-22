@@ -19,3 +19,8 @@ if (typeof window === "undefined") {
     await prisma.$disconnect()
   })
 }
+
+// Options for interactive transactions. Prisma's 5s default is too short for
+// multi-line orders against a remote (e.g. Neon) database; row locks keep
+// these transactions correct regardless of their duration.
+export const TX_OPTIONS = { maxWait: 10_000, timeout: 30_000 } as const

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma"
+import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
@@ -52,7 +52,7 @@ export const POST = withAuth(async (request, { user }) => {
     return tx.stock.findUnique({
       where: { productId_warehouseId: { productId, warehouseId } },
     })
-  })
+  }, TX_OPTIONS)
 
   return json(stock, { status: 201 })
 })

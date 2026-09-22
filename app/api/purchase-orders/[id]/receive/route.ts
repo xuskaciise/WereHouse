@@ -1,5 +1,5 @@
 import type { OrderStatus, Prisma } from "@prisma/client"
-import { prisma } from "@/lib/prisma"
+import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { incrementStock } from "@/lib/stock"
@@ -140,7 +140,7 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
     }
 
     await recomputePurchaseOrderStatus(tx, po.id)
-  })
+  }, TX_OPTIONS)
 
   const updated = await prisma.purchaseOrder.findFirst({
     where: baseWhere,
