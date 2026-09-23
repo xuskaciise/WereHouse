@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/components/ui/use-toast"
 import { formatCurrency } from "@/lib/utils"
 import { purchaseStatusLabel } from "@/lib/purchase-rules"
+import { totalDiscountOf } from "@/lib/discount-rules"
 
 type PurchaseOrder = any
 type SalesOrder = any
@@ -160,6 +161,18 @@ export default function ReportsPage() {
       return dateMatch && warehouseMatch && customerMatch
     })
   }, [salesOrders, salesStartDate, salesEndDate, salesWarehouse, salesCustomer])
+
+  // Totals of the filtered sales orders (in cents to avoid float drift).
+  const salesSummary = useMemo(() => {
+    let totalCents = 0
+    let discountCents = 0
+    for (const order of filteredSalesOrders) {
+      if (order.status === "CANCELLED") continue
+      totalCents += Math.round(Number(order.total || 0) * 100)
+      discountCents += Math.round(totalDiscountOf(order) * 100)
+    }
+    return { total: totalCents / 100, discounts: discountCents / 100 }
+  }, [filteredSalesOrders])
 
   const paymentTrackingRows = useMemo(() => {
     const supplierPaymentMap = supplierPayments.reduce((map: Record<string, number>, payment) => {
@@ -384,9 +397,25 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Total sales (after discounts)</CardDescription>
+                <CardTitle className="text-2xl">{formatCurrency(salesSummary.total)}</CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Total discounts given</CardDescription>
+                <CardTitle className="text-2xl text-green-600">{formatCurrency(salesSummary.discounts)}</CardTitle>
+              </CardHeader>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle>Sales Orders</CardTitle>
+              <CardDescription>Totals exclude cancelled orders.</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -397,12 +426,13 @@ export default function ReportsPage() {
                     <TableHead>Warehouse</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Discount</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {!isLoading && filteredSalesOrders.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No sales records found.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No sales records found.</TableCell></TableRow>
                   ) : (
                     filteredSalesOrders.map((order) => (
                       <TableRow key={order.id}>
@@ -411,6 +441,7 @@ export default function ReportsPage() {
                         <TableCell>{order.warehouse?.name || "N/A"}</TableCell>
                         <TableCell>{order.customer?.name || "N/A"}</TableCell>
                         <TableCell><Badge variant="outline">{order.status}</Badge></TableCell>
+                        <TableCell className="text-right">{totalDiscountOf(order) > 0 ? `-${formatCurrency(totalDiscountOf(order))}` : "-"}</TableCell>
                         <TableCell className="text-right">{formatCurrency(order.total || 0)}</TableCell>
                       </TableRow>
                     ))

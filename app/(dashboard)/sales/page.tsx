@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { formatCurrency, formatDate } from "@/lib/utils"
 import Link from "next/link"
 import Image from "next/image"
+import { discountLabel, totalDiscountOf } from "@/lib/discount-rules"
 
 export default function SalesPage() {
   const [salesOrders, setSalesOrders] = useState<any[]>([])
@@ -106,6 +107,7 @@ export default function SalesPage() {
                 <TableHead>Order ID</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Date</TableHead>
+                <TableHead>Discount</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -132,7 +134,10 @@ export default function SalesPage() {
                   </TableCell>
                   <TableCell>{order.customer?.name || "N/A"}</TableCell>
                   <TableCell>{formatDate(order.orderDate || order.createdAt)}</TableCell>
-                  <TableCell>{formatCurrency(order.total)}</TableCell>
+                  <TableCell className={totalDiscountOf(order) > 0 ? "text-green-600" : "text-muted-foreground"}>
+                    {totalDiscountOf(order) > 0 ? `-${formatCurrency(totalDiscountOf(order))}` : "-"}
+                  </TableCell>
+                  <TableCell className="font-medium">{formatCurrency(order.total)}</TableCell>
                   <TableCell>
                     <Badge
                       variant={
@@ -260,6 +265,7 @@ function SalesOrderDetailsSheet({
                   <TableHead>Product</TableHead>
                   <TableHead>Quantity</TableHead>
                   <TableHead>Unit Price</TableHead>
+                  <TableHead>Discount</TableHead>
                   <TableHead className="text-right">Subtotal</TableHead>
                 </TableRow>
               </TableHeader>
@@ -269,6 +275,11 @@ function SalesOrderDetailsSheet({
                     <TableCell>{item.product?.name || "N/A"}</TableCell>
                     <TableCell>{item.quantity}</TableCell>
                     <TableCell>{formatCurrency(item.unitPrice)}</TableCell>
+                    <TableCell>
+                      {Number(item.discountAmount) > 0
+                        ? `-${formatCurrency(item.discountAmount)}${discountLabel(item.discountType, item.discountValue) ? ` (${discountLabel(item.discountType, item.discountValue)})` : ""}`
+                        : "-"}
+                    </TableCell>
                     <TableCell className="text-right">{formatCurrency(item.subtotal)}</TableCell>
                   </TableRow>
                 ))}
@@ -278,22 +289,45 @@ function SalesOrderDetailsSheet({
 
           <div className="border-t pt-4 space-y-2">
             <div className="flex justify-between text-sm">
-              <span>Subtotal</span>
-              <span>{formatCurrency(order.subtotal)}</span>
+              <span>Subtotal (before discounts)</span>
+              <span>{formatCurrency(Number(order.subtotal) + Number(order.itemDiscount || 0))}</span>
+            </div>
+            {Number(order.itemDiscount) > 0 && (
+              <div className="flex justify-between text-sm text-green-600">
+                <span>Item discounts</span>
+                <span>-{formatCurrency(order.itemDiscount)}</span>
+              </div>
+            )}
+            {Number(order.discount) > 0 && (
+              <div className="flex justify-between text-sm text-green-600">
+                <span>
+                  Order discount
+                  {discountLabel(order.discountType, order.discountValue) &&
+                    ` (${discountLabel(order.discountType, order.discountValue)})`}
+                </span>
+                <span>-{formatCurrency(order.discount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm">
+              <span>Taxable amount</span>
+              <span>{formatCurrency(Number(order.subtotal) - Number(order.discount || 0))}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span>Tax (5%)</span>
               <span>{formatCurrency(order.tax)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Discount</span>
-              <span>-{formatCurrency(order.discount)}</span>
             </div>
             <div className="flex justify-between text-lg font-bold border-t pt-2">
               <span>Total</span>
               <span className="text-primary">{formatCurrency(order.total)}</span>
             </div>
           </div>
+
+          {order.discountReason && (
+            <div>
+              <div className="text-sm font-medium text-muted-foreground mb-2">Discount reason</div>
+              <div className="text-sm">{order.discountReason}</div>
+            </div>
+          )}
 
           {order.notes && (
             <div>

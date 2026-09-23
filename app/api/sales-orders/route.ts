@@ -1,8 +1,17 @@
 import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
-import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError, assertRole, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
-import { calculateOrderTotals, createWithOrderNumber, parseOrderItems, parseOrderStatus } from "@/lib/orders"
+import { createWithOrderNumber, parseOrderItems, parseOrderStatus } from "@/lib/orders"
+import { UNLIMITED_DISCOUNT_ROLES } from "@/lib/discount-rules"
+import {
+  calculateSalesTotals,
+  formatPercent,
+  getMaxSalesDiscountPercent,
+  isDiscountReasonRequired,
+  parseDiscount,
+  parseDiscountReason,
+} from "@/lib/sales-discounts"
 import { decrementStock } from "@/lib/stock"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 import type { Prisma } from "@prisma/client"
@@ -51,7 +60,26 @@ export const POST = withAuth(async (request, { user }) => {
     productIds: items.map((item) => item.productId),
   })
 
-  const { subtotal, tax, discount, total } = calculateOrderTotals(items, "0.05") // 5% tax
+  // Discounts: validated and calculated here in Decimal (client totals ignored).
+  const rawItems = body.items as { discount?: unknown }[]
+  const totals = calculateSalesTotals(
+    items,
+    rawItems.map((raw, index) => parseDiscount(raw?.discount, `Line ${index + 1}`)),
+    parseDiscount(body.discount, "Order"),
+    (index) => `Line ${index + 1}`
+  )
+  const limit = await getMaxSalesDiscountPercent()
+  if (totals.discountPercent.gt(limit)) {
+    assertRole(
+      user,
+      UNLIMITED_DISCOUNT_ROLES,
+      `The total discount of ${formatPercent(totals.discountPercent)}% exceeds your limit of ${limit}%. Ask an admin or warehouse manager to create this order.`
+    )
+  }
+  const discountReason = totals.totalDiscount.isZero()
+    ? null
+    : parseDiscountReason(body.discountReason, isDiscountReasonRequired(totals.discountPercent, limit))
+  const { subtotal, tax, discount, total } = totals
 
   const orderId = await createWithOrderNumber(
     "SO",
@@ -69,15 +97,22 @@ export const POST = withAuth(async (request, { user }) => {
               subtotal,
               tax,
               discount,
+              discountType: totals.discountType,
+              discountValue: totals.discountValue,
+              itemDiscount: totals.itemDiscount,
+              discountReason,
               total,
               status,
               notes: notes || null,
               items: {
-                create: items.map((item) => ({
-                  productId: item.productId,
-                  quantity: item.quantity,
-                  unitPrice: item.unitPrice,
-                  subtotal: item.subtotal,
+                create: totals.lines.map((line) => ({
+                  productId: line.productId,
+                  quantity: line.quantity,
+                  unitPrice: line.unitPrice,
+                  subtotal: line.subtotal,
+                  discountType: line.discountType,
+                  discountValue: line.discountValue,
+                  discountAmount: line.discountAmount,
                 })),
               },
             },

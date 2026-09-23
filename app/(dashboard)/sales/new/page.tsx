@@ -6,11 +6,24 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Combobox } from "@/components/ui/combobox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
+import { useCurrentUser } from "@/components/providers/current-user-provider"
+import {
+  DEFAULT_MAX_SALES_DISCOUNT_PERCENT,
+  DISCOUNT_REASON_MAX_LENGTH,
+  MAX_SALES_DISCOUNT_SETTING,
+  SALES_TAX_RATE,
+  type DiscountTypeValue,
+  discountReasonRequired,
+  hasUnlimitedDiscount,
+  parseMaxDiscountPercent,
+} from "@/lib/discount-rules"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
@@ -19,11 +32,74 @@ interface OrderItem {
   productId: string
   quantity: number
   unitPrice: number
+  discountType: DiscountTypeValue
+  discountValue: string
+}
+
+// Preview only, in integer cents with the server's rounding (half-up); the
+// server recalculates and validates everything in Decimal.
+const TAX_RATE = Number(SALES_TAX_RATE)
+const toCents = (value: unknown) => Math.round(Number(value || 0) * 100)
+
+function discountCents(baseCents: number, type: DiscountTypeValue, raw: string): { cents: number; error?: string } {
+  if (raw.trim() === "") return { cents: 0 }
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < 0) return { cents: 0, error: "must be 0 or more" }
+  if (type === "PERCENT") {
+    if (value > 100) return { cents: 0, error: "percentage must be between 0 and 100" }
+    return { cents: Math.round((baseCents * value) / 100) }
+  }
+  const cents = toCents(value)
+  if (cents > baseCents) return { cents, error: "cannot be larger than the amount it applies to" }
+  return { cents }
+}
+
+function DiscountInput({
+  type,
+  value,
+  onTypeChange,
+  onValueChange,
+  invalid,
+  id,
+}: {
+  type: DiscountTypeValue
+  value: string
+  onTypeChange: (type: DiscountTypeValue) => void
+  onValueChange: (value: string) => void
+  invalid?: boolean
+  id?: string
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <Select value={type} onValueChange={(v) => onTypeChange(v as DiscountTypeValue)}>
+        <SelectTrigger className="h-9 w-16 px-2" aria-label="Discount type">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="PERCENT">%</SelectItem>
+          <SelectItem value="AMOUNT">$</SelectItem>
+        </SelectContent>
+      </Select>
+      <Input
+        id={id}
+        type="number"
+        min="0"
+        step="0.01"
+        max={type === "PERCENT" ? 100 : undefined}
+        value={value}
+        onChange={(e) => onValueChange(e.target.value)}
+        placeholder="0"
+        className={`h-9 w-24 ${invalid ? "border-destructive" : ""}`}
+      />
+    </div>
+  )
 }
 
 export default function NewSalesOrderPage() {
   const { toast } = useToast()
   const router = useRouter()
+  const currentUser = useCurrentUser()
+  const unlimitedDiscount = hasUnlimitedDiscount(currentUser.role)
   const [customers, setCustomers] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
   const [warehouses, setWarehouses] = useState<any[]>([])
@@ -32,6 +108,10 @@ export default function NewSalesOrderPage() {
   const [warehouseId, setWarehouseId] = useState("")
   const [expectedDelivery, setExpectedDelivery] = useState("")
   const [items, setItems] = useState<OrderItem[]>([])
+  const [orderDiscountType, setOrderDiscountType] = useState<DiscountTypeValue>("PERCENT")
+  const [orderDiscountValue, setOrderDiscountValue] = useState("")
+  const [discountReason, setDiscountReason] = useState("")
+  const [maxDiscountPercent, setMaxDiscountPercent] = useState(DEFAULT_MAX_SALES_DISCOUNT_PERCENT)
   const [isSaving, setIsSaving] = useState(false)
   const orderNumber = "SO-2023-0042"
 
@@ -40,6 +120,7 @@ export default function NewSalesOrderPage() {
     fetchProducts()
     fetchWarehouses()
     fetchStock()
+    fetchDiscountLimit()
   }, [])
 
   const fetchCustomers = async () => {
@@ -90,6 +171,18 @@ export default function NewSalesOrderPage() {
     }
   }
 
+  const fetchDiscountLimit = async () => {
+    try {
+      const response = await fetch("/api/settings")
+      if (response.ok) {
+        const data = await response.json()
+        setMaxDiscountPercent(parseMaxDiscountPercent(data?.[MAX_SALES_DISCOUNT_SETTING]))
+      }
+    } catch (error) {
+      console.error("Error fetching settings:", error)
+    }
+  }
+
   const addItem = () => {
     setItems([
       ...items,
@@ -97,6 +190,8 @@ export default function NewSalesOrderPage() {
         productId: "",
         quantity: 1,
         unitPrice: 0,
+        discountType: "PERCENT",
+        discountValue: "",
       },
     ])
   }
@@ -146,12 +241,44 @@ export default function NewSalesOrderPage() {
     (entry) => entry.item.productId && entry.item.quantity > entry.available
   )
 
-  const subtotal = items.reduce(
-    (sum, item) => sum + item.quantity * item.unitPrice,
-    0
-  )
-  const tax = subtotal * 0.05
-  const total = subtotal + tax
+  // --- Live totals (preview) -------------------------------------------------
+  const lineTotals = items.map((item) => {
+    const grossCents = toCents(item.unitPrice) * item.quantity
+    const discount = discountCents(grossCents, item.discountType, item.discountValue)
+    return { grossCents, discountCents: discount.error ? 0 : discount.cents, error: discount.error }
+  })
+  const grossCents = lineTotals.reduce((sum, line) => sum + line.grossCents, 0)
+  const itemDiscountCents = lineTotals.reduce((sum, line) => sum + line.discountCents, 0)
+  const subtotalCents = grossCents - itemDiscountCents
+  const orderDiscount = discountCents(subtotalCents, orderDiscountType, orderDiscountValue)
+  const orderDiscountCents = orderDiscount.error ? 0 : orderDiscount.cents
+  const taxableCents = subtotalCents - orderDiscountCents
+  const taxCents = Math.round(taxableCents * TAX_RATE)
+  const totalCents = taxableCents + taxCents
+  const totalDiscountCents = itemDiscountCents + orderDiscountCents
+  const discountPercent = grossCents > 0 ? (totalDiscountCents * 100) / grossCents : 0
+  const overLimit = !unlimitedDiscount && discountPercent > maxDiscountPercent
+  const reasonRequired = totalDiscountCents > 0 && discountReasonRequired(discountPercent, maxDiscountPercent)
+
+  const discountErrors: string[] = []
+  lineTotals.forEach((line, index) => {
+    if (line.error) discountErrors.push(`Line ${index + 1} discount ${line.error}`)
+  })
+  if (orderDiscount.error) discountErrors.push(`Order discount ${orderDiscount.error}`)
+  if (overLimit) {
+    discountErrors.push(
+      `The total discount of ${discountPercent.toFixed(2)}% exceeds your limit of ${maxDiscountPercent}%. Ask an admin or warehouse manager.`
+    )
+  }
+  if (reasonRequired && !discountReason.trim()) {
+    discountErrors.push(
+      `A reason is required for a total discount above ${Math.min(maxDiscountPercent, 20)}%.`
+    )
+  }
+
+  const money = (cents: number) => formatCurrency(cents / 100)
+  const discountPayload = (type: DiscountTypeValue, value: string) =>
+    value.trim() === "" || Number(value) === 0 ? null : { type, value }
 
   const handleSubmit = async (isDraft: boolean = false) => {
     if (!customerId || !warehouseId || items.length === 0) {
@@ -171,6 +298,11 @@ export default function NewSalesOrderPage() {
         description: "Please ensure all items have a product selected and quantity is greater than 0.",
         variant: "destructive",
       })
+      return
+    }
+
+    if (discountErrors.length > 0) {
+      toast({ title: "Discount", description: discountErrors[0], variant: "destructive" })
       return
     }
 
@@ -210,7 +342,10 @@ export default function NewSalesOrderPage() {
             productId: item.productId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
+            discount: discountPayload(item.discountType, item.discountValue),
           })),
+          discount: discountPayload(orderDiscountType, orderDiscountValue),
+          discountReason: discountReason.trim() || null,
           notes: null,
           status: isDraft ? "PENDING" : "CONFIRMED",
         }),
@@ -247,6 +382,37 @@ export default function NewSalesOrderPage() {
       setIsSaving(false)
     }
   }
+
+  const summaryRows = (
+    <>
+      <div className="flex justify-between text-sm">
+        <span>Subtotal (before discounts)</span>
+        <span>{money(grossCents)}</span>
+      </div>
+      {itemDiscountCents > 0 && (
+        <div className="flex justify-between text-sm text-green-600">
+          <span>Item discounts</span>
+          <span>-{money(itemDiscountCents)}</span>
+        </div>
+      )}
+      {orderDiscountCents > 0 && (
+        <div className="flex justify-between text-sm text-green-600">
+          <span>
+            Order discount{orderDiscountType === "PERCENT" ? ` (${Number(orderDiscountValue)}%)` : ""}
+          </span>
+          <span>-{money(orderDiscountCents)}</span>
+        </div>
+      )}
+      <div className="flex justify-between text-sm">
+        <span>Taxable amount</span>
+        <span>{money(taxableCents)}</span>
+      </div>
+      <div className="flex justify-between text-sm">
+        <span>Tax (5%)</span>
+        <span>{money(taxCents)}</span>
+      </div>
+    </>
+  )
 
   return (
     <div className="space-y-6">
@@ -325,105 +491,127 @@ export default function NewSalesOrderPage() {
               <CardTitle>Product/Item List</CardTitle>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item, index) => {
-                    const availableStock = getAvailableStock(item.productId)
-                    const product = products.find(
-                      (p) => p.id === item.productId
-                    )
-                    return (
-                      <TableRow key={index}>
-                        <TableCell>
-                          <Combobox
-                            options={products.map((p) => ({
-                              value: p.id,
-                              label: `${p.name} (${p.sku})`,
-                            }))}
-                            value={item.productId}
-                            onValueChange={(value) =>
-                              updateItem(index, "productId", value)
-                            }
-                            placeholder="Select product"
-                            searchPlaceholder="Search products..."
-                            emptyMessage="No products found."
-                            className="w-[250px]"
-                          />
-                          {product && (
-                            <div className="text-xs text-muted-foreground mt-1">
-                              SKU: {product.sku}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min="1"
-                            max={availableStock}
-                            value={item.quantity}
-                            onChange={(e) =>
-                              updateItem(
-                                index,
-                                "quantity",
-                                parseInt(e.target.value) || 0
-                              )
-                            }
-                            className="w-20"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {item.productId && (
-                            <Badge
-                              variant={
-                                item.quantity > availableStock
-                                  ? "destructive"
-                                  : availableStock === 0
-                                  ? "destructive"
-                                  : availableStock < 10
-                                  ? "warning"
-                                  : "success"
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Quantity</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Price</TableHead>
+                      <TableHead>Discount</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item, index) => {
+                      const availableStock = getAvailableStock(item.productId)
+                      const product = products.find(
+                        (p) => p.id === item.productId
+                      )
+                      const line = lineTotals[index]
+                      return (
+                        <TableRow key={index}>
+                          <TableCell>
+                            <Combobox
+                              options={products.map((p) => ({
+                                value: p.id,
+                                label: `${p.name} (${p.sku})`,
+                              }))}
+                              value={item.productId}
+                              onValueChange={(value) =>
+                                updateItem(index, "productId", value)
                               }
+                              placeholder="Select product"
+                              searchPlaceholder="Search products..."
+                              emptyMessage="No products found."
+                              className="w-[250px]"
+                            />
+                            {product && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                SKU: {product.sku}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min="1"
+                              max={availableStock}
+                              value={item.quantity}
+                              onChange={(e) =>
+                                updateItem(
+                                  index,
+                                  "quantity",
+                                  parseInt(e.target.value) || 0
+                                )
+                              }
+                              className="w-20"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {item.productId && (
+                              <Badge
+                                variant={
+                                  item.quantity > availableStock
+                                    ? "destructive"
+                                    : availableStock === 0
+                                    ? "destructive"
+                                    : availableStock < 10
+                                    ? "warning"
+                                    : "success"
+                                }
+                              >
+                                {item.quantity > availableStock
+                                  ? `Insufficient (${availableStock} available)`
+                                  : availableStock === 0
+                                  ? "Out of Stock"
+                                  : availableStock < 10
+                                  ? `Low Stock (${availableStock} left)`
+                                  : "In Stock"}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {formatCurrency(item.unitPrice)}
+                          </TableCell>
+                          <TableCell>
+                            <DiscountInput
+                              type={item.discountType}
+                              value={item.discountValue}
+                              invalid={!!line?.error}
+                              onTypeChange={(type) => updateItem(index, "discountType", type)}
+                              onValueChange={(value) => updateItem(index, "discountValue", value)}
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {line && line.discountCents > 0 ? (
+                              <div>
+                                <div>{money(line.grossCents - line.discountCents)}</div>
+                                <div className="text-xs text-muted-foreground line-through">
+                                  {money(line.grossCents)}
+                                </div>
+                              </div>
+                            ) : (
+                              money(line?.grossCents ?? 0)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeItem(index)}
                             >
-                              {item.quantity > availableStock
-                                ? `Insufficient (${availableStock} available)`
-                                : availableStock === 0
-                                ? "Out of Stock"
-                                : availableStock < 10
-                                ? `Low Stock (${availableStock} left)`
-                                : "In Stock"}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {formatCurrency(item.unitPrice)}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {formatCurrency(item.quantity * item.unitPrice)}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeItem(index)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
               <Button
                 variant="outline"
                 className="mt-4"
@@ -435,19 +623,79 @@ export default function NewSalesOrderPage() {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader>
+              <CardTitle>Discount</CardTitle>
+              <CardDescription>
+                Applied to the subtotal after item discounts; tax is calculated on the discounted amount.
+                {unlimitedDiscount
+                  ? " Your role has no discount limit."
+                  : ` Your maximum total discount is ${maxDiscountPercent}%.`}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="orderDiscount">Order discount</Label>
+                <DiscountInput
+                  id="orderDiscount"
+                  type={orderDiscountType}
+                  value={orderDiscountValue}
+                  invalid={!!orderDiscount.error}
+                  onTypeChange={setOrderDiscountType}
+                  onValueChange={setOrderDiscountValue}
+                />
+              </div>
+              {totalDiscountCents > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="discountReason">
+                    Discount reason {reasonRequired ? "*" : "(optional)"}
+                  </Label>
+                  <Textarea
+                    id="discountReason"
+                    value={discountReason}
+                    maxLength={DISCOUNT_REASON_MAX_LENGTH}
+                    onChange={(e) => setDiscountReason(e.target.value)}
+                    placeholder="e.g. Bulk order for the school library"
+                    rows={2}
+                  />
+                </div>
+              )}
+              <div className="rounded-md border p-4 space-y-2">
+                {summaryRows}
+                <div className="flex justify-between border-t pt-2 font-semibold">
+                  <span>Total</span>
+                  <span>{money(totalCents)}</span>
+                </div>
+                {totalDiscountCents > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    Total discount: {money(totalDiscountCents)} ({discountPercent.toFixed(2)}% of{" "}
+                    {money(grossCents)})
+                  </div>
+                )}
+              </div>
+              {discountErrors.length > 0 && (
+                <ul className="space-y-1 text-sm text-destructive">
+                  {discountErrors.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="flex gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="flex-1"
               onClick={() => handleSubmit(true)}
-              disabled={isSaving}
+              disabled={isSaving || discountErrors.length > 0}
             >
               {isSaving ? "Saving..." : "Save Draft"}
             </Button>
-            <Button 
+            <Button
               className="flex-1"
               onClick={() => handleSubmit(false)}
-              disabled={isSaving || hasInsufficientStock}
+              disabled={isSaving || hasInsufficientStock || discountErrors.length > 0}
             >
               {isSaving ? "Creating..." : hasInsufficientStock ? "Insufficient Stock" : "Finalize & Post"}
             </Button>
@@ -460,7 +708,7 @@ export default function NewSalesOrderPage() {
                   Estimated Total
                 </div>
                 <div className="text-3xl font-bold mt-2">
-                  {formatCurrency(total)}
+                  {money(totalCents)}
                 </div>
               </div>
             </CardContent>
@@ -532,6 +780,7 @@ export default function NewSalesOrderPage() {
                       const product = products.find(
                         (p) => p.id === item.productId
                       )
+                      const line = lineTotals[index]
                       return (
                         <TableRow key={index}>
                           <TableCell>
@@ -543,10 +792,15 @@ export default function NewSalesOrderPage() {
                                 {product.description}
                               </div>
                             )}
+                            {line && line.discountCents > 0 && (
+                              <div className="text-xs text-green-600">
+                                Discount -{money(line.discountCents)}
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell>{item.quantity}</TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(item.quantity * item.unitPrice)}
+                            {money((line?.grossCents ?? 0) - (line?.discountCents ?? 0))}
                           </TableCell>
                         </TableRow>
                       )
@@ -556,19 +810,12 @@ export default function NewSalesOrderPage() {
               </div>
 
               <div className="border-t pt-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Subtotal</span>
-                  <span>{formatCurrency(subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Tax (5%)</span>
-                  <span>{formatCurrency(tax)}</span>
-                </div>
+                {summaryRows}
                 <div className="border-t pt-2">
                   <div className="flex justify-between font-bold text-lg">
                     <span>GRAND TOTAL</span>
                     <span className="text-primary">
-                      {formatCurrency(total)}
+                      {money(totalCents)}
                     </span>
                   </div>
                 </div>

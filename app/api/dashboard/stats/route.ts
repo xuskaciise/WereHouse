@@ -33,7 +33,7 @@ export const GET = withAuth(async (_request, { user }) => {
       FROM "stock" s
       JOIN "products" p ON p."id" = s."productId"
       WHERE TRUE ${stockOwner}`,
-    prisma.salesOrder.aggregate({ where, _sum: { total: true } }),
+    prisma.salesOrder.aggregate({ where, _sum: { total: true, discount: true, itemDiscount: true } }),
     prisma.purchaseOrder.aggregate({ where, _sum: { total: true } }),
     prisma.stockMovement.findMany({
       where,
@@ -80,6 +80,8 @@ export const GET = withAuth(async (_request, { user }) => {
     totalProducts,
     totalStockValue: Number(stockSummary[0]?.stockValue ?? 0),
     totalSales: salesSum._sum.total ?? 0,
+    // Order-level + item discounts, same scope as totalSales.
+    totalSalesDiscounts: (salesSum._sum.discount ?? new Prisma.Decimal(0)).plus(salesSum._sum.itemDiscount ?? 0),
     totalPurchases: purchaseSum._sum.total ?? 0,
     lowStockCount: Number(stockSummary[0]?.lowStockCount ?? 0),
     recentMovements,

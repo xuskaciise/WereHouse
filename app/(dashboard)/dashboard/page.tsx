@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Package, TrendingUp, ShoppingBag, ShoppingCart, AlertTriangle } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { totalDiscountOf } from "@/lib/discount-rules"
 import {
   BarChart,
   Bar,
@@ -22,6 +23,7 @@ export default function DashboardPage() {
     totalProducts: 0,
     totalStockValue: 0,
     totalSales: 0,
+    totalSalesDiscounts: 0,
     totalPurchases: 0,
     lowStockCount: 0,
     recentMovements: [] as any[],
@@ -92,7 +94,9 @@ export default function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(stats.totalSales)}</div>
             <p className="text-xs text-muted-foreground">
-              {stats.totalSales === 0 ? "No sales yet" : "All-time sales"}
+              {stats.totalSales === 0
+                ? "No sales yet"
+                : `All-time sales, after ${formatCurrency(stats.totalSalesDiscounts)} in discounts`}
             </p>
           </CardContent>
         </Card>
@@ -219,6 +223,7 @@ export default function DashboardPage() {
                 <TableHead>Order Number</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Date</TableHead>
+                <TableHead>Discount</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
@@ -226,13 +231,13 @@ export default function DashboardPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : stats.recentSales.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     No sales orders yet
                   </TableCell>
                 </TableRow>
@@ -242,6 +247,7 @@ export default function DashboardPage() {
                     <TableCell className="font-medium">{order.orderNumber}</TableCell>
                     <TableCell>{order.customer?.name || "N/A"}</TableCell>
                     <TableCell>{formatDate(order.orderDate)}</TableCell>
+                    <TableCell>{totalDiscountOf(order) > 0 ? `-${formatCurrency(totalDiscountOf(order))}` : "-"}</TableCell>
                     <TableCell>{formatCurrency(order.total)}</TableCell>
                     <TableCell>
                       <Badge
