@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, ownershipWhere } from "@/lib/auth-guard"
-import { assertCanReference } from "@/lib/ownership"
 import { parseMoney } from "@/lib/money"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 
@@ -27,7 +26,10 @@ export const POST = withAuth(async (request, { user }) => {
   }
   const parsedAmount = parseMoney(amount)
 
-  await assertCanReference(user, { expenseCategoryId: categoryId })
+  // Categories are shared reference data; only active ones can be used.
+  const category = await prisma.expenseCategory.findUnique({ where: { id: String(categoryId) }, select: { isActive: true } })
+  if (!category) throw new HttpError(400, "Expense category not found")
+  if (!category.isActive) throw new HttpError(400, "This expense category is inactive; choose another one")
 
   const expense = await prisma.expense.create({
     data: {

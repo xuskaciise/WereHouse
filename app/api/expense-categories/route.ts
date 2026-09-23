@@ -1,27 +1,31 @@
 import { prisma } from "@/lib/prisma"
-import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
-import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { json, readJson, withAuth } from "@/lib/api"
 import { listResponse } from "@/lib/pagination"
+import { EXPENSE_CATEGORY_MANAGER_ROLES } from "@/lib/expense-rules"
+import { createExpenseCategory, expenseCategorySelect, parseExpenseCategoryInput } from "@/lib/expense-categories"
 
-export const GET = withAuth(async (request, { user }) => {
-  const where = ownershipWhere(user)
+// Expense categories are shared reference data: every signed-in user sees
+// all of them (to record expenses); only ADMIN/ACCOUNTANT manage them.
+// ?active=true returns only categories that can be chosen for new expenses.
+export const GET = withAuth(async (request) => {
+  const where = new URL(request.url).searchParams.get("active") === "true" ? { isActive: true } : {}
   return listResponse(request, {
     findMany: (page) =>
-      prisma.expenseCategory.findMany({ where, orderBy: { createdAt: "desc" }, ...page }),
+      prisma.expenseCategory.findMany({
+        where,
+        select: expenseCategorySelect,
+        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        ...page,
+      }),
     count: () => prisma.expenseCategory.count({ where }),
   })
 })
 
-export const POST = withAuth(async (request, { user }) => {
-  const { name, description } = await readJson(request)
-  if (!name) throw new HttpError(400, "Category name is required")
-
-  const category = await withConflictMessages(
-    () =>
-      prisma.expenseCategory.create({
-        data: { name, description: description || null, userId: user.id },
-      }),
-    { unique: "Category with this name already exists" }
-  )
-  return json(category, { status: 201 })
-})
+export const POST = withAuth(
+  async (request, { user }) => {
+    const input = parseExpenseCategoryInput(await readJson(request))
+    const category = await createExpenseCategory(input, user.id)
+    return json(category, { status: 201 })
+  },
+  { roles: EXPENSE_CATEGORY_MANAGER_ROLES }
+)

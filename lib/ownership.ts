@@ -9,7 +9,6 @@ interface ReferencedIds {
   customerId?: string | null
   warehouseId?: string | null
   categoryId?: string | null
-  expenseCategoryId?: string | null
   productIds?: (string | null | undefined)[]
 }
 
@@ -28,9 +27,6 @@ export async function assertCanReference(user: SessionUser, ids: ReferencedIds, 
   if (ids.customerId) checks.push(one(db.customer.count({ where: { id: ids.customerId, ...owner } })))
   if (ids.warehouseId) checks.push(one(db.warehouse.count({ where: { id: ids.warehouseId, ...owner } })))
   if (ids.categoryId) checks.push(one(db.category.count({ where: { id: ids.categoryId, ...owner } })))
-  if (ids.expenseCategoryId) {
-    checks.push(one(db.expenseCategory.count({ where: { id: ids.expenseCategoryId, ...owner } })))
-  }
 
   const productIds = Array.from(new Set((ids.productIds ?? []).filter((id): id is string => !!id)))
   if (productIds.length > 0) {
