@@ -41,9 +41,12 @@ export interface Product {
   description: string | null
   categoryId: string
   category: Category
+  /** Absent for roles without product_cost (removed by the API). */
   costPrice: number
   sellingPrice: number
   reorderLevel: number
+  weight?: number | null
+  volume?: number | null
   issueDate: Date | null
   expireDate: Date | null
   createdAt: Date
@@ -53,6 +56,8 @@ export interface Product {
 export interface Supplier {
   id: string
   name: string
+  /** SERVICE_PROVIDER: paid for landed costs (clearing, transport, commission). */
+  type?: "GOODS" | "SERVICE_PROVIDER"
   email: string | null
   phone: string | null
   address: string | null

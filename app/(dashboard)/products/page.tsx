@@ -36,6 +36,7 @@ export default function ProductsPage() {
   const canCreate = useCan("products", "create")
   const canEdit = useCan("products", "edit")
   const canDelete = useCan("products", "delete")
+  const seesCost = useCan("product_cost", "view")
   const { toast } = useToast()
   const [products, setProducts] = useState<any[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -267,7 +268,7 @@ export default function ProductsPage() {
                 <TableRow>
                   <TableHead>Product Name</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead>Cost</TableHead>
+                  {seesCost && <TableHead>Cost</TableHead>}
                   <TableHead>Selling Price</TableHead>
                   <TableHead>Production Date</TableHead>
                   <TableHead>Expiry Date</TableHead>
@@ -279,7 +280,7 @@ export default function ProductsPage() {
               <TableBody>
                 {filteredProducts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={seesCost ? 9 : 8} className="text-center text-muted-foreground py-8">
                       No products found. Click &quot;Add New Product&quot; to create your first product.
                     </TableCell>
                   </TableRow>
@@ -297,7 +298,7 @@ export default function ProductsPage() {
                   <TableCell>
                     <Badge variant="outline">{product.category?.name || "N/A"}</Badge>
                   </TableCell>
-                  <TableCell>{formatCurrency(product.costPrice)}</TableCell>
+                  {seesCost && <TableCell>{formatCurrency(product.costPrice)}</TableCell>}
                   <TableCell className="text-green-600 font-medium">
                     {formatCurrency(product.sellingPrice)}
                   </TableCell>
@@ -365,6 +366,7 @@ function ProductForm({
   warehouses: any[]
   onSuccess: () => void
 }) {
+  const seesCost = useCan("product_cost", "view")
   const { toast } = useToast()
   const toDateInputValue = (value?: string | Date | null) => {
     if (!value) return ""
@@ -377,8 +379,10 @@ function ProductForm({
     sku: product?.sku || "",
     description: product?.description || "",
     categoryId: product?.categoryId || "",
-    costPrice: product?.costPrice.toString() || "",
+    costPrice: product?.costPrice?.toString() ?? "",
     sellingPrice: product?.sellingPrice.toString() || "",
+    weight: product?.weight?.toString() ?? "",
+    volume: product?.volume?.toString() ?? "",
     productionDate: toDateInputValue(product?.issueDate),
     expiryDate: toDateInputValue(product?.expireDate),
   })
@@ -394,8 +398,10 @@ function ProductForm({
         sku: product.sku,
         description: product.description || "",
         categoryId: product.categoryId,
-        costPrice: product.costPrice.toString(),
+        costPrice: product.costPrice?.toString() ?? "",
         sellingPrice: product.sellingPrice.toString(),
+        weight: product.weight?.toString() ?? "",
+        volume: product.volume?.toString() ?? "",
         productionDate: toDateInputValue(product.issueDate),
         expiryDate: toDateInputValue(product.expireDate),
       })
@@ -408,6 +414,8 @@ function ProductForm({
         categoryId: "",
         costPrice: "",
         sellingPrice: "",
+        weight: "",
+        volume: "",
         productionDate: "",
         expiryDate: "",
       })
@@ -482,8 +490,11 @@ function ProductForm({
           sku: formData.sku.trim(),
           description: formData.description.trim() || null,
           categoryId: formData.categoryId,
-          costPrice: parseFloat(formData.costPrice) || 0,
+          // Only roles that see costs send the cost price (the server keeps it otherwise).
+          ...(seesCost && { costPrice: parseFloat(formData.costPrice) || 0 }),
           sellingPrice: parseFloat(formData.sellingPrice) || 0,
+          weight: formData.weight === "" ? null : formData.weight,
+          volume: formData.volume === "" ? null : formData.volume,
           productionDate: formData.productionDate || null,
           expiryDate: formData.expiryDate || null,
           reorderLevel: product?.reorderLevel || 10,
@@ -574,19 +585,21 @@ function ProductForm({
             emptyMessage="No categories available. Please create a category first."
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="costPrice">Cost Price *</Label>
-          <Input
-            id="costPrice"
-            type="number"
-            step="0.01"
-            value={formData.costPrice}
-            onChange={(e) =>
-              setFormData({ ...formData, costPrice: e.target.value })
-            }
-            required
-          />
-        </div>
+        {seesCost && (
+          <div className="space-y-2">
+            <Label htmlFor="costPrice">Cost Price *</Label>
+            <Input
+              id="costPrice"
+              type="number"
+              step="0.01"
+              value={formData.costPrice}
+              onChange={(e) =>
+                setFormData({ ...formData, costPrice: e.target.value })
+              }
+              required
+            />
+          </div>
+        )}
         <div className="space-y-2">
           <Label htmlFor="sellingPrice">Selling Price *</Label>
           <Input
@@ -601,6 +614,34 @@ function ProductForm({
           />
         </div>
       </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="weight">Weight per unit (kg)</Label>
+          <Input
+            id="weight"
+            type="number"
+            min="0"
+            step="0.001"
+            placeholder="Optional"
+            value={formData.weight}
+            onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="volume">Volume per unit (m³)</Label>
+          <Input
+            id="volume"
+            type="number"
+            min="0"
+            step="0.0001"
+            placeholder="Optional"
+            value={formData.volume}
+            onChange={(e) => setFormData({ ...formData, volume: e.target.value })}
+          />
+        </div>
+      </div>
+      <p className="-mt-2 text-xs text-muted-foreground">Used to allocate landed costs by weight or volume.</p>
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

@@ -652,6 +652,7 @@ function PaymentForm({
     supplierId: payment?.supplierId || "",
     salesOrderId: payment?.salesOrderId || "",
     purchaseOrderId: payment?.purchaseOrderId || "",
+    landedCostId: payment?.landedCostId || "",
     amount: payment?.amount?.toString() || "",
     paymentDate: payment?.paymentDate 
       ? new Date(payment.paymentDate).toISOString().split("T")[0]
@@ -661,6 +662,19 @@ function PaymentForm({
     notes: payment?.notes || "",
   })
 
+  // Landed cost lines owed to the selected supplier (clearing agent, transport...).
+  const [landedCosts, setLandedCosts] = useState<any[]>([])
+  useEffect(() => {
+    if (type !== "suppliers" || !formData.supplierId) {
+      setLandedCosts([])
+      return
+    }
+    fetch(`/api/landed-costs?supplierId=${formData.supplierId}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setLandedCosts)
+      .catch(() => setLandedCosts([]))
+  }, [type, formData.supplierId])
+
   useEffect(() => {
     if (payment) {
       setFormData({
@@ -668,6 +682,7 @@ function PaymentForm({
         supplierId: payment.supplierId || "",
         salesOrderId: payment.salesOrderId || "",
         purchaseOrderId: payment.purchaseOrderId || "",
+        landedCostId: payment.landedCostId || "",
         amount: payment.amount?.toString() || "",
         paymentDate: payment.paymentDate 
           ? new Date(payment.paymentDate).toISOString().split("T")[0]
@@ -741,6 +756,7 @@ function PaymentForm({
         : {
             ...(isEdit ? {} : { supplierId: formData.supplierId }),
             ...(isEdit ? {} : { purchaseOrderId: formData.purchaseOrderId || null }),
+            ...(isEdit ? {} : { landedCostId: formData.landedCostId || null }),
             amount: formData.amount,
             paymentDate: formData.paymentDate,
             paymentMethod: formData.paymentMethod,
@@ -774,6 +790,7 @@ function PaymentForm({
             supplierId: "",
             salesOrderId: "",
             purchaseOrderId: "",
+            landedCostId: "",
             amount: "",
             paymentDate: new Date().toISOString().split("T")[0],
             paymentMethod: "",
@@ -872,7 +889,7 @@ function PaymentForm({
               }))}
               value={formData.supplierId}
               onValueChange={(value) => {
-                setFormData({ ...formData, supplierId: value, purchaseOrderId: "" })
+                setFormData({ ...formData, supplierId: value, purchaseOrderId: "", landedCostId: "" })
               }}
               placeholder="Select supplier"
               searchPlaceholder="Search suppliers..."
@@ -901,6 +918,31 @@ function PaymentForm({
               disabled={!formData.supplierId}
             />
           </div>
+
+          {landedCosts.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="landedCost">Landed cost (optional)</Label>
+              <Combobox
+                options={landedCosts.map((cost) => ({
+                  value: cost.id,
+                  label: `${cost.purchaseOrder?.orderNumber} - ${cost.type?.name} - ${formatCurrency(cost.amount)} (open ${formatCurrency(cost.openAmount)})`,
+                }))}
+                value={formData.landedCostId}
+                onValueChange={(value) => {
+                  const cost = landedCosts.find((c) => c.id === value)
+                  setFormData({
+                    ...formData,
+                    landedCostId: value,
+                    amount: formData.amount || (cost ? String(cost.openAmount) : ""),
+                  })
+                }}
+                placeholder="Link to a cost line (optional)"
+                searchPlaceholder="Search costs..."
+                emptyMessage="No cost lines."
+                disabled={!!payment}
+              />
+            </div>
+          )}
         </>
       )}
 

@@ -35,10 +35,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { StockStatus } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { useCan } from "@/components/providers/current-user-provider"
+import { formatCurrency } from "@/lib/utils"
 
 export default function InventoryPage() {
   // Hide what the role may not do; the API enforces the same permissions.
   const canCreate = useCan("stock", "edit")
+  const seesCost = useCan("product_cost", "view")
   const canEdit = useCan("stock", "edit")
   const canDelete = useCan("stock", "delete")
   const { toast } = useToast()
@@ -249,6 +251,8 @@ export default function InventoryPage() {
                   <TableHead>Reserved</TableHead>
                   <TableHead>Available</TableHead>
                   <TableHead>Reorder Level</TableHead>
+                  {seesCost && <TableHead className="text-right">Avg. Cost</TableHead>}
+                  {seesCost && <TableHead className="text-right">Stock Value</TableHead>}
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -256,7 +260,7 @@ export default function InventoryPage() {
               <TableBody>
                 {filteredStock.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={seesCost ? 10 : 8} className="text-center text-muted-foreground py-8">
                       No stock items found. Add products and warehouses to get started.
                     </TableCell>
                   </TableRow>
@@ -273,6 +277,10 @@ export default function InventoryPage() {
                       {item.quantity - item.reservedQuantity}
                     </TableCell>
                     <TableCell>{item.product?.reorderLevel || 0}</TableCell>
+                    {seesCost && <TableCell className="text-right">${Number(item.avgCost || 0).toFixed(4)}</TableCell>}
+                    {seesCost && (
+                      <TableCell className="text-right">{formatCurrency(Number(item.avgCost || 0) * item.quantity)}</TableCell>
+                    )}
                     <TableCell>{getStatusBadge(item.status)}</TableCell>
                     <TableCell className="text-right">
                       {(canEdit || canDelete) && (

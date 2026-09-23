@@ -14,6 +14,7 @@ import { useCan } from "@/components/providers/current-user-provider"
 export default function LowStockPage() {
   // Hide what the role may not do; the API enforces the same permissions.
   const canCreate = useCan("purchases", "create")
+  const seesCost = useCan("product_cost", "view")
   const { toast } = useToast()
   const [stock, setStock] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -93,14 +94,14 @@ export default function LowStockPage() {
                   <TableHead>Current Stock</TableHead>
                   <TableHead>Reorder Level</TableHead>
                   <TableHead>Shortage</TableHead>
-                  <TableHead>Cost Price</TableHead>
+                  {seesCost && <TableHead>Avg. Cost</TableHead>}
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {lowStockItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={seesCost ? 7 : 6} className="text-center text-muted-foreground py-8">
                       No low stock items. All products are well stocked!
                     </TableCell>
                   </TableRow>
@@ -121,9 +122,7 @@ export default function LowStockPage() {
                         <TableCell className="text-red-600 font-medium">
                           -{shortage}
                         </TableCell>
-                        <TableCell>
-                          {formatCurrency(item.product?.costPrice || 0)}
-                        </TableCell>
+                        {seesCost && <TableCell>{formatCurrency(item.avgCost || 0)}</TableCell>}
                         <TableCell>
                           {item.quantity === 0 ? (
                             <Badge variant="destructive">Out of Stock</Badge>

@@ -15,7 +15,12 @@ export const GET = withAuth(async (request, { user }) => {
 }, { permission: [["suppliers", "view"], ["supplier_payments", "view"], ["purchases", "view"]] }) // also a lookup for payments/purchases
 
 export const POST = withAuth(async (request, { user }) => {
-  const { name, email, phone, address, city, state, zipCode, country, contactPerson } = await readJson(request)
+  const body = await readJson(request)
+  const { name, email, phone, address, city, state, zipCode, country, contactPerson } = body
+  const type = body.type === undefined ? undefined : body.type
+  if (type !== undefined && type !== "GOODS" && type !== "SERVICE_PROVIDER") {
+    throw new HttpError(400, "Supplier type must be GOODS or SERVICE_PROVIDER")
+  }
 
   if (typeof name !== "string" || !name.trim()) throw new HttpError(400, "Name is required")
   if (typeof email !== "string" || !email.trim()) throw new HttpError(400, "Email is required")
@@ -31,6 +36,8 @@ export const POST = withAuth(async (request, { user }) => {
       zipCode: zipCode?.trim() || null,
       country: country?.trim() || null,
       contactPerson: contactPerson?.trim() || null,
+      // SERVICE_PROVIDER: paid for landed costs (clearing, transport, commission).
+      type: type ?? "GOODS",
       userId: user.id,
     },
   })

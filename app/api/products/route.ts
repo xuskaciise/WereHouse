@@ -3,7 +3,8 @@ import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { scopeWhere } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
-import { parseMoney } from "@/lib/money"
+import { parseMoney, parseOptionalMeasure } from "@/lib/money"
+import { can } from "@/lib/permission-rules"
 import { validateProductDates } from "@/lib/product-date-validation"
 import { incrementStock, parseQuantity } from "@/lib/stock"
 import { listResponse } from "@/lib/pagination"
@@ -18,6 +19,7 @@ export const GET = withAuth(async (request, { user }) => {
 }, { permission: [["products", "view"], ["stock", "view"], ["sales", "create"], ["purchases", "create"]] }) // also a lookup for those forms
 
 export const POST = withAuth(async (request, { user }) => {
+  const canSeeCost = can(user.permissions, "product_cost", "view")
   const {
     name,
     sku,
@@ -26,6 +28,8 @@ export const POST = withAuth(async (request, { user }) => {
     costPrice,
     sellingPrice,
     reorderLevel,
+    weight,
+    volume,
     issueDate,
     expireDate,
     productionDate,
@@ -59,7 +63,10 @@ export const POST = withAuth(async (request, { user }) => {
             sku,
             description: description || null,
             categoryId,
-            costPrice: parseMoney(costPrice ?? 0, { field: "Cost price", allowZero: true }),
+            // Roles without product_cost never see the cost price (it starts at 0).
+            costPrice: canSeeCost ? parseMoney(costPrice ?? 0, { field: "Cost price", allowZero: true }) : 0,
+            weight: parseOptionalMeasure(weight, "Weight", 3),
+            volume: parseOptionalMeasure(volume, "Volume", 4),
             sellingPrice: parseMoney(sellingPrice ?? 0, { field: "Selling price", allowZero: true }),
             reorderLevel: reorderLevel === undefined || reorderLevel === null || reorderLevel === "" ? 10 : parseQuantity(reorderLevel, { allowZero: true }),
             issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,

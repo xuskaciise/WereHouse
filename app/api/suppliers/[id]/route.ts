@@ -17,7 +17,12 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
   const existing = await prisma.supplier.findUnique({ where: { id: params.id } })
   assertInScope(user, "suppliers", existing, NOT_FOUND)
 
-  const { name, email, phone, address, city, state, zipCode, country, contactPerson } = await readJson(request)
+  const body = await readJson(request)
+  const { name, email, phone, address, city, state, zipCode, country, contactPerson } = body
+  const type = body.type === undefined ? undefined : body.type
+  if (type !== undefined && type !== "GOODS" && type !== "SERVICE_PROVIDER") {
+    throw new HttpError(400, "Supplier type must be GOODS or SERVICE_PROVIDER")
+  }
   if (typeof name !== "string" || !name.trim()) throw new HttpError(400, "Name is required")
   if (typeof email !== "string" || !email.trim()) throw new HttpError(400, "Email is required")
 
@@ -33,6 +38,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
       zipCode: zipCode?.trim() || null,
       country: country?.trim() || null,
       contactPerson: contactPerson?.trim() || null,
+      ...(type !== undefined && { type }),
     },
   })
   return json(supplier)

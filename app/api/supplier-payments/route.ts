@@ -19,7 +19,7 @@ export const GET = withAuth(async (request, { user }) => {
 }, { permission: [["supplier_payments", "view"], ["reports_finance", "view"]] })
 
 export const POST = withAuth(async (request, { user }) => {
-  const { supplierId, purchaseOrderId, amount, paymentDate, paymentMethod, reference, notes } =
+  const { supplierId, purchaseOrderId, landedCostId, amount, paymentDate, paymentMethod, reference, notes } =
     await readJson(request)
 
   if (!supplierId || !paymentMethod) {
@@ -36,6 +36,14 @@ export const POST = withAuth(async (request, { user }) => {
     })
     if (!order) throw new HttpError(400, "Purchase order not found for this supplier")
   }
+  if (landedCostId) {
+    // Settles a landed cost line owed to this supplier (on a PO the user can see).
+    const cost = await prisma.purchaseLandedCost.findFirst({
+      where: { id: landedCostId, paidToSupplierId: supplierId, purchaseOrder: scopeWhere(user, "purchases") },
+      select: { id: true },
+    })
+    if (!cost) throw new HttpError(400, "Landed cost not found for this supplier")
+  }
 
   // The supplier balance is derived from orders and payments (lib/balances.ts),
   // so recording the payment is all that is needed.
@@ -43,6 +51,7 @@ export const POST = withAuth(async (request, { user }) => {
     data: {
       supplierId,
       purchaseOrderId: purchaseOrderId || null,
+      landedCostId: landedCostId || null,
       amount: parsedAmount,
       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
       paymentMethod,

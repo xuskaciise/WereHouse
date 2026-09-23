@@ -33,6 +33,9 @@ model User {
   purchaseReceives        PurchaseReceive[]
   purchaseItemAdjustments PurchaseOrderItemAdjustment[]
   permissionChanges       PermissionChangeLog[]
+  landedCosts             PurchaseLandedCost[]
+  landedCostLogs          LandedCostLog[]
+  valuationEntries        InventoryValuationEntry[]
   expenses                Expense[]
   expenseCategories       ExpenseCategory[]
   categories              Category[]
@@ -85,6 +88,9 @@ model Product {
   costPrice    Decimal   @default(0) @db.Decimal(12, 2)
   sellingPrice Decimal   @default(0) @db.Decimal(12, 2)
   reorderLevel Int       @default(10)
+  // Optional, for allocating landed costs by weight (kg) or volume (m3) per unit.
+  weight       Decimal?  @db.Decimal(12, 3)
+  volume       Decimal?  @db.Decimal(12, 4)
   issueDate    DateTime?
   expireDate   DateTime?
   createdAt    DateTime  @default(now())
@@ -97,6 +103,7 @@ model Product {
   purchaseOrderItems PurchaseOrderItem[]
   salesOrderItems    SalesOrderItem[]
   stockTransferItems StockTransferItem[]
+  valuationEntries   InventoryValuationEntry[]
 
   @@index([userId])
   @@index([categoryId])
@@ -104,7 +111,7 @@ model Product {
 }
 
 model Supplier {
-  id            String   @id @default(cuid())
+  id            String       @id @default(cuid())
   name          String
   email         String
   phone         String?
@@ -114,13 +121,16 @@ model Supplier {
   zipCode       String?
   country       String?
   contactPerson String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  // SERVICE_PROVIDER: paid for landed costs (clearing agent, transport, marketer...).
+  type          SupplierType @default(GOODS)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   userId        String?
-  user          User?    @relation(fields: [userId], references: [id])
+  user          User?        @relation(fields: [userId], references: [id])
 
   purchaseOrders   PurchaseOrder[]
   supplierPayments SupplierPayment[]
+  landedCosts      PurchaseLandedCost[]
 
   @@index([userId])
   @@map("suppliers")
@@ -165,10 +175,11 @@ model Warehouse {
 
   stock              Stock[]
   stockMovements     StockMovement[]
+  valuationEntries   InventoryValuationEntry[]
   purchaseOrders     PurchaseOrder[]
   salesOrders        SalesOrder[]
-  fromStockTransfers StockTransfer[] @relation("FromWarehouse")
-  toStockTransfers   StockTransfer[] @relation("ToWarehouse")
+  fromStockTransfers StockTransfer[]           @relation("FromWarehouse")
+  toStockTransfers   StockTransfer[]           @relation("ToWarehouse")
 
   @@index([userId])
   @@map("warehouses")
@@ -182,6 +193,8 @@ model Stock {
   warehouse        Warehouse   @relation(fields: [warehouseId], references: [id])
   quantity         Int         @default(0)
   reservedQuantity Int         @default(0)
+  // Weighted average unit cost in this warehouse (incl. landed costs), 4 decimals.
+  avgCost          Decimal     @default(0) @db.Decimal(14, 4)
   status           StockStatus @default(IN_STOCK)
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
@@ -243,6 +256,9 @@ model PurchaseOrder {
   discount             Decimal     @default(0) @db.Decimal(12, 2)
   total                Decimal     @default(0) @db.Decimal(12, 2)
   notes                String?
+  // Landed costs finalized: afterwards only ADMIN can change them (with a reason).
+  costsFinalizedAt     DateTime?
+  costsFinalizedById   String?
   userId               String
   user                 User        @relation(fields: [userId], references: [id])
   createdAt            DateTime    @default(now())
@@ -251,6 +267,8 @@ model PurchaseOrder {
   items            PurchaseOrderItem[]
   supplierPayments SupplierPayment[]
   receives         PurchaseReceive[]
+  landedCosts      PurchaseLandedCost[]
+  landedCostLogs   LandedCostLog[]
 
   @@index([status])
   @@index([orderDate])
@@ -260,24 +278,30 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id               String        @id @default(cuid())
-  purchaseOrderId  String
-  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  productId        String
-  product          Product       @relation(fields: [productId], references: [id])
+  id                String        @id @default(cuid())
+  purchaseOrderId   String
+  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product       @relation(fields: [productId], references: [id])
   // Current (adjusted) quantity: changed by edits before the first receive,
   // over-receiving and closing the remainder. subtotal always follows it.
-  quantity         Int
+  quantity          Int
   // Quantity as ordered when the PO was created; never changes.
-  originalQuantity Int
+  originalQuantity  Int
   // The supplier will not deliver the rest; quantity was reduced to received.
-  closed           Boolean       @default(false)
-  unitPrice        Decimal       @db.Decimal(12, 2)
-  subtotal         Decimal       @db.Decimal(12, 2)
-  createdAt        DateTime      @default(now())
+  closed            Boolean       @default(false)
+  unitPrice         Decimal       @db.Decimal(12, 2)
+  subtotal          Decimal       @db.Decimal(12, 2)
+  // Landed costs allocated to this line, and the part already applied to the
+  // value of received units (stock / COGS). See lib/landed-costs.ts.
+  landedCost        Decimal       @default(0) @db.Decimal(12, 2)
+  appliedLandedCost Decimal       @default(0) @db.Decimal(12, 2)
+  createdAt         DateTime      @default(now())
 
-  receiveItems PurchaseReceiveItem[]
-  adjustments  PurchaseOrderItemAdjustment[]
+  receiveItems          PurchaseReceiveItem[]
+  adjustments           PurchaseOrderItemAdjustment[]
+  landedCostAllocations PurchaseLandedCostAllocation[]
+  valuationEntries      InventoryValuationEntry[]
 
   @@index([purchaseOrderId])
   @@index([productId])
@@ -340,20 +364,28 @@ enum PurchaseAdjustmentType {
   CLOSE_REMAINING
 }
 
+enum SupplierType {
+  GOODS
+  SERVICE_PROVIDER
+}
+
 model SupplierPayment {
-  id              String         @id @default(cuid())
+  id              String              @id @default(cuid())
   supplierId      String
-  supplier        Supplier       @relation(fields: [supplierId], references: [id])
+  supplier        Supplier            @relation(fields: [supplierId], references: [id])
   purchaseOrderId String?
-  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
-  amount          Decimal        @db.Decimal(12, 2)
-  paymentDate     DateTime       @default(now())
+  purchaseOrder   PurchaseOrder?      @relation(fields: [purchaseOrderId], references: [id])
+  amount          Decimal             @db.Decimal(12, 2)
+  paymentDate     DateTime            @default(now())
   paymentMethod   String
   reference       String?
+  // Optional: the landed cost line this payment settles.
+  landedCostId    String?
+  landedCost      PurchaseLandedCost? @relation(fields: [landedCostId], references: [id])
   notes           String?
   userId          String
-  user            User           @relation(fields: [userId], references: [id])
-  createdAt       DateTime       @default(now())
+  user            User                @relation(fields: [userId], references: [id])
+  createdAt       DateTime            @default(now())
 
   @@index([supplierId])
   @@index([purchaseOrderId])
@@ -418,6 +450,10 @@ model SalesOrderItem {
   // Percent (0-100) or fixed amount, as entered.
   discountValue  Decimal       @default(0) @db.Decimal(12, 2)
   discountAmount Decimal       @default(0) @db.Decimal(12, 2)
+  // Warehouse average cost per unit at the moment of sale (COGS).
+  unitCost       Decimal       @default(0) @db.Decimal(14, 4)
+  // true for lines sold before cost tracking (backfilled with the product cost).
+  costEstimated  Boolean       @default(false)
   createdAt      DateTime      @default(now())
 
   @@index([salesOrderId])
@@ -573,4 +609,141 @@ model PermissionChangeLog {
 
   @@index([createdAt])
   @@map("permission_change_logs")
+}
+
+// --- Landed costs (lib/landed-costs.ts) ----------------------------------------
+
+// Manageable, global list of cost types (landed_cost_types permission).
+model LandedCostType {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  nameKey   String   @unique
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  costs PurchaseLandedCost[]
+
+  @@map("landed_cost_types")
+}
+
+enum LandedCostAmountType {
+  FIXED
+  PERCENT
+}
+
+enum LandedCostPercentBase {
+  // % of the goods value (PO subtotal, before tax)
+  GOODS
+  // % of the goods value + the other FIXED cost lines of the same PO
+  GOODS_PLUS_FIXED
+}
+
+enum LandedCostAllocation {
+  VALUE
+  QUANTITY
+  WEIGHT
+  VOLUME
+  MANUAL
+}
+
+// An extra cost of a purchase (shipment, customs, transport, commission...),
+// owed to a service provider and allocated to the PO lines.
+model PurchaseLandedCost {
+  id               String                @id @default(cuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  typeId           String
+  type             LandedCostType        @relation(fields: [typeId], references: [id])
+  paidToSupplierId String
+  paidToSupplier   Supplier              @relation(fields: [paidToSupplierId], references: [id])
+  amountType       LandedCostAmountType  @default(FIXED)
+  // FIXED: the amount; PERCENT: the percentage (0-100)
+  value            Decimal               @db.Decimal(12, 4)
+  percentBase      LandedCostPercentBase @default(GOODS)
+  // Calculated amount (recalculated when PO quantities change)
+  amount           Decimal               @db.Decimal(12, 2)
+  allocationMethod LandedCostAllocation  @default(VALUE)
+  reference        String?
+  costDate         DateTime              @default(now())
+  notes            String?
+  userId           String
+  user             User                  @relation(fields: [userId], references: [id])
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  allocations      PurchaseLandedCostAllocation[]
+  supplierPayments SupplierPayment[]
+  valuationEntries InventoryValuationEntry[]
+
+  @@index([purchaseOrderId])
+  @@index([paidToSupplierId])
+  @@map("purchase_landed_costs")
+}
+
+model PurchaseLandedCostAllocation {
+  id                  String             @id @default(cuid())
+  landedCostId        String
+  landedCost          PurchaseLandedCost @relation(fields: [landedCostId], references: [id], onDelete: Cascade)
+  purchaseOrderItemId String
+  purchaseOrderItem   PurchaseOrderItem  @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Cascade)
+  // MANUAL only: the amount entered (the weight if the cost amount changes later)
+  manualAmount        Decimal?           @db.Decimal(12, 2)
+  // Allocated amount; the allocations of a cost sum exactly to its amount
+  amount              Decimal            @db.Decimal(12, 2)
+
+  @@unique([landedCostId, purchaseOrderItemId])
+  @@index([purchaseOrderItemId])
+  @@map("purchase_landed_cost_allocations")
+}
+
+// Every change to landed costs: who, when, what (and why, after finalizing).
+model LandedCostLog {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  landedCostId    String?
+  action          String
+  before          Json?
+  after           Json?
+  reason          String?
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  createdAt       DateTime      @default(now())
+
+  @@index([purchaseOrderId, createdAt])
+  @@map("landed_cost_logs")
+}
+
+enum ValuationEntryType {
+  RECEIPT
+  LANDED_COST
+  COGS_ADJUSTMENT
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+// Inventory valuation ledger. COGS_ADJUSTMENT = the part of a later landed
+// cost change that belongs to units already sold (counted in profit reports).
+model InventoryValuationEntry {
+  id                  String              @id @default(cuid())
+  type                ValuationEntryType
+  productId           String
+  product             Product             @relation(fields: [productId], references: [id])
+  warehouseId         String
+  warehouse           Warehouse           @relation(fields: [warehouseId], references: [id])
+  quantity            Int                 @default(0)
+  amount              Decimal             @db.Decimal(12, 2)
+  purchaseOrderItemId String?
+  purchaseOrderItem   PurchaseOrderItem?  @relation(fields: [purchaseOrderItemId], references: [id], onDelete: SetNull)
+  landedCostId        String?
+  landedCost          PurchaseLandedCost? @relation(fields: [landedCostId], references: [id], onDelete: SetNull)
+  userId              String
+  user                User                @relation(fields: [userId], references: [id])
+  createdAt           DateTime            @default(now())
+
+  @@index([type, createdAt])
+  @@index([productId, warehouseId])
+  @@map("inventory_valuation_entries")
 }

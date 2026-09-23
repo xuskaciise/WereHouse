@@ -265,6 +265,41 @@ export default function NewSalesOrderPage() {
   }
 
   const money = (cents: number) => formatCurrency(cents / 100)
+
+  // "Selling below cost" check against the warehouse average (landed) cost,
+  // done on the server. Roles without product_cost get only yes/no.
+  const [belowCost, setBelowCost] = useState<Record<number, { below: boolean; avgCost?: number }>>({})
+  const costCheckKey = JSON.stringify([
+    warehouseId,
+    items.map((item, i) => [item.productId, item.quantity, lineTotals[i]?.grossCents, lineTotals[i]?.discountCents]),
+  ])
+  useEffect(() => {
+    const lines = items.map((item, i) => ({
+      productId: item.productId,
+      netUnitPrice:
+        item.quantity > 0 ? ((lineTotals[i].grossCents - lineTotals[i].discountCents) / item.quantity / 100).toFixed(4) : "0",
+    }))
+    if (!warehouseId || lines.every((l) => !l.productId)) {
+      setBelowCost({})
+      return
+    }
+    const timer = setTimeout(async () => {
+      const res = await fetch("/api/sales-orders/cost-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ warehouseId, lines }),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      setBelowCost(
+        Object.fromEntries(
+          data.results.map((r: any) => [r.index, { below: r.belowCost, avgCost: r.avgCost === undefined ? undefined : Number(r.avgCost) }])
+        )
+      )
+    }, 400)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [costCheckKey])
   const discountPayload = (type: DiscountTypeValue, value: string) =>
     value.trim() === "" || Number(value) === 0 ? null : { type, value }
 
@@ -585,6 +620,12 @@ export default function NewSalesOrderPage() {
                               </div>
                             ) : (
                               money(line?.grossCents ?? 0)
+                            )}
+                            {belowCost[index]?.below && (
+                              <div className="mt-1 text-xs font-normal text-destructive">
+                                Selling below cost
+                                {belowCost[index].avgCost !== undefined && ` (${formatCurrency(belowCost[index].avgCost!)} / unit)`}
+                              </div>
                             )}
                           </TableCell>
                           <TableCell>

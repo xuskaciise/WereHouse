@@ -7,6 +7,10 @@ import { verifyPassword } from "@/lib/password"
 // Business data wiped by a reset. Users and settings are preserved.
 // Hard-coded identifiers only; nothing user-supplied reaches the SQL.
 const TABLES_TO_TRUNCATE = [
+  "inventory_valuation_entries",
+  "landed_cost_logs",
+  "purchase_landed_cost_allocations",
+  "purchase_landed_costs",
   "purchase_order_item_adjustments",
   "purchase_receive_items",
   "purchase_receives",

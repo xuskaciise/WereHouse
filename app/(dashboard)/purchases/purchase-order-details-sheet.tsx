@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
 import { useCan } from "@/components/providers/current-user-provider"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { LandedCostsSection } from "./landed-costs-section"
 import {
   ADJUSTMENT_REASON_MAX_LENGTH,
   PURCHASE_TAX_RATE,
@@ -98,6 +99,7 @@ export function PurchaseOrderDetailsSheet({
   const canReceive = useCan("purchase_receive", "create")
   const canAdjust = useCan("purchase_receive", "edit")
   const canEditOrder = useCan("purchases", "edit")
+  const canViewLandedCosts = useCan("landed_costs", "view")
 
   const [receiveOpen, setReceiveOpen] = useState(false)
   const [receiveNote, setReceiveNote] = useState("")
@@ -433,6 +435,8 @@ export function PurchaseOrderDetailsSheet({
                   </div>
                 </div>
               </div>
+
+              {canViewLandedCosts && <LandedCostsSection key={order.updatedAt} purchaseOrderId={order.id} />}
 
               {history.length > 0 && (
                 <div className="space-y-3 border-t pt-4">

@@ -3,6 +3,7 @@ import { Prisma, type Role } from "@prisma/client"
 import { HttpError, requireAuth, requireRole, type SessionUser } from "@/lib/auth-guard"
 import { toJsonSafe } from "@/lib/money"
 import { type PermissionSpec, requirePermission } from "@/lib/permissions"
+import { can } from "@/lib/permission-rules"
 
 /**
  * JSON response helper for route handlers. Prisma Decimal money values are
@@ -45,11 +46,54 @@ export function withAuth<P extends Params = Params>(handler: AuthedHandler<P>, o
       const user = options.roles?.length ? await requireRole(...options.roles) : await requireAuth()
       if (options.permission) requirePermission(user, options.permission)
       const params = ((await context?.params) ?? {}) as P
-      return await handler(request, { user, params })
+      const response = await handler(request, { user, params })
+      // Cost data never leaves the server for roles without product_cost:view.
+      return can(user.permissions, "product_cost", "view") ? response : await withoutCostFields(response)
     } catch (error) {
       return errorResponse(error)
     }
   }
+}
+
+/**
+ * Response fields that reveal what goods cost the company (average / landed
+ * cost, cost price, COGS, stock value, profit). Removed at any depth from
+ * JSON responses for users without the product_cost permission, so no route
+ * can leak them by including a relation.
+ */
+export const COST_FIELDS = new Set([
+  "costPrice",
+  "avgCost",
+  "unitCost",
+  "landedCost",
+  "appliedLandedCost",
+  "landedUnitCost",
+  "costPerUnit",
+  "costIncreasePercent",
+  "totalStockValue",
+  "stockValue",
+  "cogs",
+  "cogsAdjustments",
+  "grossProfit",
+  "marginPercent",
+])
+
+function omitCostFields(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(omitCostFields)
+  if (value === null || typeof value !== "object") return value
+  const result: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (!COST_FIELDS.has(key)) result[key] = omitCostFields(item)
+  }
+  return result
+}
+
+async function withoutCostFields(response: Response): Promise<Response> {
+  if (!response.headers.get("content-type")?.includes("application/json")) return response
+  const data = omitCostFields(await response.json())
+  const headers = new Headers(response.headers)
+  headers.delete("content-length")
+  return NextResponse.json(data, { status: response.status, headers })
 }
 
 /** Explicitly unauthenticated route (e.g. public sign-up). */

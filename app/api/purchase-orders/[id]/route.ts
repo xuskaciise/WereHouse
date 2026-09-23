@@ -9,6 +9,7 @@ import {
   recalculatePurchaseOrderTotals,
   setItemQuantity,
 } from "@/lib/purchase-orders"
+import { syncLandedCosts } from "@/lib/landed-costs"
 
 /**
  * Edits line quantities while the order is still PENDING and nothing has
@@ -70,6 +71,8 @@ export const PATCH = withAuth<{ id: string }>(async (request, { user, params }) 
     if (changed === 0) throw new HttpError(400, "No quantities were changed")
 
     await recalculatePurchaseOrderTotals(tx, po.id)
+    // Allocations follow the new quantities (nothing received yet, so no revaluation).
+    await syncLandedCosts(tx, po.id, user.id)
   }, TX_OPTIONS)
 
   const updated = await prisma.purchaseOrder.findFirst({ where: baseWhere, include: purchaseOrderDetailInclude })

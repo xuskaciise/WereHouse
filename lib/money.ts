@@ -52,3 +52,16 @@ export function toJsonSafe<T>(value: T): T {
   }
   return result as T
 }
+
+/** Optional non-negative measurement (weight, volume); null when empty. */
+export function parseOptionalMeasure(value: unknown, field: string, decimals: number): Prisma.Decimal | null {
+  if (value === undefined || value === null || value === "") return null
+  let parsed: Prisma.Decimal
+  try {
+    parsed = new Prisma.Decimal(value as Prisma.Decimal.Value)
+  } catch {
+    throw new HttpError(400, `${field} must be a number`)
+  }
+  if (!parsed.isFinite() || parsed.isNegative()) throw new HttpError(400, `${field} must be 0 or more`)
+  return parsed.toDecimalPlaces(decimals, Prisma.Decimal.ROUND_HALF_UP)
+}

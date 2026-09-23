@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Package, TrendingUp, ShoppingBag, ShoppingCart, AlertTriangle } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { totalDiscountOf } from "@/lib/discount-rules"
+import { useCan } from "@/components/providers/current-user-provider"
 import {
   BarChart,
   Bar,
@@ -19,9 +20,12 @@ import {
 } from "recharts"
 
 export default function DashboardPage() {
+  const seesCost = useCan("product_cost", "view")
   const [stats, setStats] = useState({
     totalProducts: 0,
     totalStockValue: 0,
+    grossProfit: undefined as number | undefined,
+    marginPercent: undefined as number | undefined,
     totalSales: 0,
     totalSalesDiscounts: 0,
     totalPurchases: 0,
@@ -73,6 +77,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {seesCost && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Stock Value</CardTitle>
@@ -81,10 +86,28 @@ export default function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(stats.totalStockValue)}</div>
             <p className="text-xs text-muted-foreground">
-              {stats.totalStockValue === 0 ? "No stock data" : "Current inventory value"}
+              {stats.totalStockValue === 0 ? "No stock data" : "At average landed cost"}
             </p>
           </CardContent>
         </Card>
+        )}
+
+        {stats.grossProfit !== undefined && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Gross Profit</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className={`text-2xl font-bold ${Number(stats.grossProfit) < 0 ? "text-destructive" : ""}`}>
+                {formatCurrency(stats.grossProfit ?? 0)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Margin {Number(stats.marginPercent ?? 0).toFixed(2)}% (revenue after discounts, excl. tax)
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

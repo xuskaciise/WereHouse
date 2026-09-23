@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldCheck,
+  Tags,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
@@ -62,6 +63,7 @@ const navigationSections: NavSection[] = [
     title: "Procurement (Inbound)",
     items: [
       { name: "Purchases", href: "/purchases", icon: ShoppingBag },
+      { name: "Landed Cost Types", href: "/landed-cost-types", icon: Tags },
       { name: "Stock (In-hand)", href: "/inventory", icon: Package },
     ],
   },

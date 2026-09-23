@@ -13,6 +13,7 @@ import {
   reasonReferenceLimit,
 } from "@/lib/sales-discounts"
 import { decrementStock } from "@/lib/stock"
+import { averageCost } from "@/lib/stock-valuation"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 import type { Prisma } from "@prisma/client"
 
@@ -89,6 +90,13 @@ export const POST = withAuth(async (request, { user }) => {
     (orderNumber) =>
       prisma.$transaction(
         async (tx) => {
+          // COGS: the warehouse average cost of each product at this moment
+          // (rows locked, so a concurrent receipt cannot change it mid-sale).
+          const unitCosts = new Map<string, Prisma.Decimal>()
+          for (const productId of new Set(totals.lines.map((line) => line.productId))) {
+            unitCosts.set(productId, await averageCost(tx, productId, warehouseId))
+          }
+
           const salesOrder = await tx.salesOrder.create({
             data: {
               orderNumber,
@@ -115,6 +123,7 @@ export const POST = withAuth(async (request, { user }) => {
                   discountType: line.discountType,
                   discountValue: line.discountValue,
                   discountAmount: line.discountAmount,
+                  unitCost: unitCosts.get(line.productId)!,
                 })),
               },
             },

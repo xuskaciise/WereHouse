@@ -3,7 +3,9 @@ import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { requirePermission, scopeWhere } from "@/lib/permissions"
-import { incrementStock, parseQuantity } from "@/lib/stock"
+import { parseQuantity } from "@/lib/stock"
+import { receiveIntoStock } from "@/lib/stock-valuation"
+import { receiptValue, syncLandedCosts } from "@/lib/landed-costs"
 import {
   parseReason,
   purchaseOrderDetailInclude,
@@ -124,6 +126,18 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
       throw new HttpError(400, "Nothing to receive: every selected line is already complete")
     }
 
+    // 1. Quantity changes (over-receive / close remaining) and their history.
+    for (const p of plan) {
+      if (!p.adjustment) continue
+      await setItemQuantity(tx, p.item, p.newItemQuantity, { closed: p.adjustment.type === "CLOSE_REMAINING" })
+    }
+    if (plan.some((p) => p.adjustment)) await recalculatePurchaseOrderTotals(tx, po.id)
+
+    // 2. Landed costs follow the new quantities; units received earlier are
+    //    revalued (stock average / COGS) before the new units come in.
+    const costs = await syncLandedCosts(tx, po.id, user.id)
+
+    // 3. The receipt: stock IN at the landed unit cost, movement, history.
     const receive = await tx.purchaseReceive.create({
       data: {
         purchaseOrderId: po.id,
@@ -137,12 +151,22 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
 
     for (const p of plan) {
       if (p.quantity > 0) {
-        await incrementStock(tx, {
+        const receivedBefore = totalReceived(p.item)
+        const { value, appliedAfter } = receiptValue(
+          { unitPrice: p.item.unitPrice, quantity: p.newItemQuantity },
+          costs.items.get(p.item.id)!,
+          receivedBefore,
+          p.quantity
+        )
+        await receiveIntoStock(tx, {
           productId: p.item.productId,
           warehouseId: po.warehouseId,
           quantity: p.quantity,
+          value,
           userId: user.id,
+          purchaseOrderItemId: p.item.id,
         })
+        await tx.purchaseOrderItem.update({ where: { id: p.item.id }, data: { appliedLandedCost: appliedAfter } })
         await tx.stockMovement.create({
           data: {
             productId: p.item.productId,
@@ -161,9 +185,6 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
       }
 
       if (p.adjustment) {
-        await setItemQuantity(tx, p.item, p.newItemQuantity, {
-          closed: p.adjustment.type === "CLOSE_REMAINING",
-        })
         await tx.purchaseOrderItemAdjustment.create({
           data: {
             purchaseOrderItemId: p.item.id,
@@ -178,7 +199,6 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
       }
     }
 
-    if (plan.some((p) => p.adjustment)) await recalculatePurchaseOrderTotals(tx, po.id)
     await recomputePurchaseOrderStatus(tx, po.id)
   }, TX_OPTIONS)
 

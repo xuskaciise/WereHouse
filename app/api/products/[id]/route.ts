@@ -3,7 +3,8 @@ import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { assertInScope } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
-import { parseMoney } from "@/lib/money"
+import { parseMoney, parseOptionalMeasure } from "@/lib/money"
+import { can } from "@/lib/permission-rules"
 import { validateProductDates } from "@/lib/product-date-validation"
 import { parseQuantity, refreshStockStatus, setStockQuantity } from "@/lib/stock"
 
@@ -19,6 +20,7 @@ export const GET = withAuth<{ id: string }>(async (_request, { user, params }) =
 }, { permission: ["products", "view"] })
 
 export const PUT = withAuth<{ id: string }>(async (request, { user, params }) => {
+  const canSeeCost = can(user.permissions, "product_cost", "view")
   const { id } = params
   const {
     name,
@@ -28,6 +30,8 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
     costPrice,
     sellingPrice,
     reorderLevel,
+    weight,
+    volume,
     issueDate,
     expireDate,
     productionDate,
@@ -67,7 +71,12 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
             sku,
             description: description || null,
             categoryId,
-            costPrice: parseMoney(costPrice ?? 0, { field: "Cost price", allowZero: true }),
+            // Roles without product_cost never see the cost price, so they cannot change it.
+            costPrice: canSeeCost
+              ? parseMoney(costPrice ?? 0, { field: "Cost price", allowZero: true })
+              : existing.costPrice,
+            weight: parseOptionalMeasure(weight, "Weight", 3),
+            volume: parseOptionalMeasure(volume, "Volume", 4),
             sellingPrice: parseMoney(sellingPrice ?? 0, { field: "Selling price", allowZero: true }),
             reorderLevel: reorderLevel === undefined || reorderLevel === null || reorderLevel === "" ? 10 : parseQuantity(reorderLevel, { allowZero: true }),
             issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,

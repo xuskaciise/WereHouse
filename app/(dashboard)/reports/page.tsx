@@ -58,6 +58,9 @@ export default function ReportsPage() {
   const showPurchases = can(permissions, "reports_stock", "view")
   const showSales = can(permissions, "reports_sales", "view")
   const showPayments = can(permissions, "reports_finance", "view")
+  // Profit needs costs: product_cost plus a sales or finance report.
+  const showProfit = can(permissions, "product_cost", "view") && (showSales || showPayments)
+  const [profit, setProfit] = useState<any | null>(null)
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([])
@@ -112,6 +115,10 @@ export default function ReportsPage() {
       setSalesOrders(soData || [])
       setSupplierPayments(spData || [])
       setCustomerPayments(cpData || [])
+      if (showProfit) {
+        const res = await fetch(`/api/reports/profit?${new URLSearchParams(from ? { from } : {})}`)
+        setProfit(res.ok ? await res.json() : null)
+      }
     } catch (error) {
       toast({
         title: "Error",
@@ -172,6 +179,27 @@ export default function ReportsPage() {
   }, [salesOrders, salesStartDate, salesEndDate, salesWarehouse, salesCustomer])
 
   // Totals of the filtered sales orders (in cents to avoid float drift).
+  // Profit of the filtered orders (revenue after discounts, excl. tax - COGS).
+  const profitSummary = useMemo(() => {
+    if (!profit) return null
+    const byId = new Map<string, any>(profit.orders.map((o: any) => [o.id, o]))
+    const rows = filteredSalesOrders.map((o) => byId.get(o.id)).filter(Boolean)
+    const cents = (key: string) => rows.reduce((sum: number, r: any) => sum + Math.round(Number(r[key]) * 100), 0)
+    const revenue = cents("revenue")
+    const adjustments = Math.round(Number(profit.totals.cogsAdjustments) * 100)
+    const cogs = cents("cogs") + adjustments
+    const grossProfit = revenue - cogs
+    return {
+      byId,
+      revenue: revenue / 100,
+      cogs: cogs / 100,
+      adjustments: adjustments / 100,
+      grossProfit: grossProfit / 100,
+      margin: revenue ? (grossProfit / revenue) * 100 : 0,
+      estimated: rows.filter((r: any) => r.estimated).length,
+    }
+  }, [profit, filteredSalesOrders])
+
   const salesSummary = useMemo(() => {
     let totalCents = 0
     let discountCents = 0
@@ -352,6 +380,19 @@ export default function ReportsPage() {
                         <TableCell>{order.warehouse?.name || "N/A"}</TableCell>
                         <TableCell><Badge variant="outline">{purchaseStatusLabel(order.status)}</Badge></TableCell>
                         <TableCell className="text-right">{formatCurrency(order.total || 0)}</TableCell>
+                        {profitSummary && (() => {
+                          const row = profitSummary.byId.get(order.id)
+                          if (!row) return (<><TableCell className="text-right">-</TableCell><TableCell className="text-right">-</TableCell></>)
+                          return (
+                            <>
+                              <TableCell className={`text-right ${Number(row.grossProfit) < 0 ? "text-destructive" : ""}`}>
+                                {formatCurrency(row.grossProfit)}
+                                {row.estimated && <Badge variant="warning" className="ml-1">Estimated</Badge>}
+                              </TableCell>
+                              <TableCell className="text-right">{Number(row.marginPercent).toFixed(2)}%</TableCell>
+                            </>
+                          )
+                        })()}
                       </TableRow>
                     ))
                   )}
@@ -421,6 +462,47 @@ export default function ReportsPage() {
             </Card>
           </div>
 
+          {profitSummary && (
+            <div className="grid gap-4 md:grid-cols-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Revenue (after discounts, excl. tax)</CardDescription>
+                  <CardTitle className="text-2xl">{formatCurrency(profitSummary.revenue)}</CardTitle>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Cost of goods sold</CardDescription>
+                  <CardTitle className="text-2xl">{formatCurrency(profitSummary.cogs)}</CardTitle>
+                  {profitSummary.adjustments !== 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      incl. {formatCurrency(profitSummary.adjustments)} landed cost adjustments in the period
+                    </p>
+                  )}
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Gross profit</CardDescription>
+                  <CardTitle className={`text-2xl ${profitSummary.grossProfit < 0 ? "text-destructive" : ""}`}>
+                    {formatCurrency(profitSummary.grossProfit)}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Margin</CardDescription>
+                  <CardTitle className="text-2xl">{profitSummary.margin.toFixed(2)}%</CardTitle>
+                  {profitSummary.estimated > 0 && (
+                    <p className="text-xs text-amber-600">
+                      {profitSummary.estimated} order(s) use an estimated cost (sold before cost tracking)
+                    </p>
+                  )}
+                </CardHeader>
+              </Card>
+            </div>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Sales Orders</CardTitle>
@@ -437,11 +519,13 @@ export default function ReportsPage() {
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Discount</TableHead>
                     <TableHead className="text-right">Total</TableHead>
+                    {profitSummary && <TableHead className="text-right">Gross profit</TableHead>}
+                    {profitSummary && <TableHead className="text-right">Margin</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {!isLoading && filteredSalesOrders.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No sales records found.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={profitSummary ? 9 : 7} className="text-center text-muted-foreground">No sales records found.</TableCell></TableRow>
                   ) : (
                     filteredSalesOrders.map((order) => (
                       <TableRow key={order.id}>

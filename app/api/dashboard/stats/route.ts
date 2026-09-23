@@ -1,7 +1,8 @@
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { json, withAuth } from "@/lib/api"
-import { isOwnScope, scopeWhere } from "@/lib/permissions"
+import { hasPermission, isOwnScope, scopeWhere } from "@/lib/permissions"
+import { salesProfit } from "@/lib/profit"
 
 const CHART_MONTHS = 6
 
@@ -31,7 +32,7 @@ export const GET = withAuth(async (_request, { user }) => {
     prisma.product.count({ where }),
     prisma.$queryRaw<{ stockValue: Prisma.Decimal | null; lowStockCount: bigint }[]>`
       SELECT
-        SUM(s."quantity" * p."costPrice") AS "stockValue",
+        SUM(s."quantity" * s."avgCost") AS "stockValue",
         COUNT(*) FILTER (WHERE s."quantity" <= p."reorderLevel") AS "lowStockCount"
       FROM "stock" s
       JOIN "products" p ON p."id" = s."productId"
@@ -79,7 +80,14 @@ export const GET = withAuth(async (_request, { user }) => {
     }
   })
 
+  // Gross profit only for roles that see costs and a sales/finance report.
+  const showProfit =
+    hasPermission(user, ["product_cost", "view"]) &&
+    hasPermission(user, [["reports_sales", "view"], ["reports_finance", "view"]])
+  const profit = showProfit ? (await salesProfit({ where, adjustmentWhere: where })).totals : null
+
   return json({
+    ...(profit && { grossProfit: profit.grossProfit, marginPercent: profit.marginPercent, cogs: profit.cogs }),
     totalProducts,
     totalStockValue: Number(stockSummary[0]?.stockValue ?? 0),
     totalSales: salesSum._sum.total ?? 0,

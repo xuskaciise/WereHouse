@@ -51,7 +51,17 @@ export async function refreshStockStatus(tx: Tx, productId: string, warehouseId?
   }
 }
 
-/** Adds units (creating the stock row if needed). Returns the new quantity. */
+/** Starting average cost of a new stock row: the product's cost price. */
+async function initialAvgCost(tx: Tx, productId: string) {
+  const product = await tx.product.findUnique({ where: { id: productId }, select: { costPrice: true } })
+  return product?.costPrice ?? 0
+}
+
+/**
+ * Adds units (creating the stock row if needed) at the current average cost,
+ * e.g. a manual stock adjustment. Purchase receipts use receiveIntoStock()
+ * (lib/stock-valuation.ts), which re-weights the average. Returns the new quantity.
+ */
 export async function incrementStock(
   tx: Tx,
   { productId, warehouseId, quantity, userId }: StockKey & { quantity: number; userId: string }
@@ -59,7 +69,7 @@ export async function incrementStock(
   const stock = await tx.stock.upsert({
     where: { productId_warehouseId: { productId, warehouseId } },
     update: { quantity: { increment: quantity } },
-    create: { productId, warehouseId, quantity, reservedQuantity: 0, userId },
+    create: { productId, warehouseId, quantity, reservedQuantity: 0, userId, avgCost: await initialAvgCost(tx, productId) },
     select: { quantity: true },
   })
   await refreshStockStatus(tx, productId, warehouseId)
@@ -117,7 +127,9 @@ export async function setStockQuantity(
     FOR UPDATE`
 
   if (locked.length === 0) {
-    await tx.stock.create({ data: { productId, warehouseId, quantity, reservedQuantity: 0, userId } })
+    await tx.stock.create({
+      data: { productId, warehouseId, quantity, reservedQuantity: 0, userId, avgCost: await initialAvgCost(tx, productId) },
+    })
     await refreshStockStatus(tx, productId, warehouseId)
     return { oldQuantity: 0, newQuantity: quantity }
   }

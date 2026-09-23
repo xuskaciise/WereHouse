@@ -29,6 +29,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Supplier } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { formatDate } from "@/lib/utils"
@@ -175,7 +176,12 @@ export default function SuppliersPage() {
                 ) : (
                   suppliers.map((supplier) => (
                     <TableRow key={supplier.id}>
-                      <TableCell className="font-medium">{supplier.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {supplier.name}
+                        {supplier.type === "SERVICE_PROVIDER" && (
+                          <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">Service provider</span>
+                        )}
+                      </TableCell>
                       <TableCell>{supplier.email || "-"}</TableCell>
                       <TableCell>{supplier.phone || "-"}</TableCell>
                       <TableCell>{supplier.city || "-"}</TableCell>
@@ -275,6 +281,7 @@ function SupplierForm({
     city: supplier?.city || "",
     state: supplier?.state || "",
     contactPerson: supplier?.contactPerson || "",
+    type: supplier?.type || "GOODS",
   })
   const [isSaving, setIsSaving] = useState(false)
 
@@ -400,6 +407,20 @@ function SupplierForm({
             placeholder="John Doe"
           />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="supplierType">Type</Label>
+        <Select value={formData.type} onValueChange={(type) => setFormData({ ...formData, type: type as "GOODS" | "SERVICE_PROVIDER" })}>
+          <SelectTrigger id="supplierType">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="GOODS">Goods supplier</SelectItem>
+            <SelectItem value="SERVICE_PROVIDER">Service provider (clearing, transport, commission...)</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">Service providers are paid for additional purchase costs (landed costs).</p>
       </div>
 
       <div className="space-y-2">
