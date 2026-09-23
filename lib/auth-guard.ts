@@ -44,6 +44,11 @@ export async function requireRole(...roles: Role[]): Promise<SessionUser> {
   return user
 }
 
+/** For checks that depend on the request body (the route itself allows more roles). */
+export function assertRole(user: Pick<SessionUser, "role">, roles: readonly Role[], message = "Forbidden"): void {
+  if (!roles.includes(user.role)) throw new HttpError(403, message)
+}
+
 export function isAdmin(user: Pick<SessionUser, "role">): boolean {
   return user.role === "ADMIN"
 }

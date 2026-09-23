@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/components/ui/use-toast"
 import { formatCurrency } from "@/lib/utils"
+import { purchaseStatusLabel } from "@/lib/purchase-rules"
 
 type PurchaseOrder = any
 type SalesOrder = any
@@ -289,7 +290,7 @@ export default function ReportsPage() {
                       <SelectItem value="all">All Statuses</SelectItem>
                       <SelectItem value="PENDING">PENDING</SelectItem>
                       <SelectItem value="PARTIALLY_RECEIVED">PARTIALLY_RECEIVED</SelectItem>
-                      <SelectItem value="CONFIRMED">CONFIRMED</SelectItem>
+                      <SelectItem value="CONFIRMED">RECEIVED</SelectItem>
                       <SelectItem value="SHIPPED">SHIPPED</SelectItem>
                       <SelectItem value="DELIVERED">DELIVERED</SelectItem>
                       <SelectItem value="CANCELLED">CANCELLED</SelectItem>
@@ -327,7 +328,7 @@ export default function ReportsPage() {
                         <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
                         <TableCell>{order.supplier?.name || "N/A"}</TableCell>
                         <TableCell>{order.warehouse?.name || "N/A"}</TableCell>
-                        <TableCell><Badge variant="outline">{order.status}</Badge></TableCell>
+                        <TableCell><Badge variant="outline">{purchaseStatusLabel(order.status)}</Badge></TableCell>
                         <TableCell className="text-right">{formatCurrency(order.total || 0)}</TableCell>
                       </TableRow>
                     ))

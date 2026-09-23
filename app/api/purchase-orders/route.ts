@@ -5,20 +5,8 @@ import { HttpError, ownershipWhere } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
 import { calculateOrderTotals, createWithOrderNumber, parseOrderItems, parseOrderStatus } from "@/lib/orders"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
-
-const purchaseOrderInclude = {
-  supplier: true,
-  warehouse: true,
-  user: { select: { id: true, name: true, username: true } },
-  items: { include: { product: true, receiveItems: true } },
-  receives: {
-    orderBy: { createdAt: "desc" as const },
-    include: {
-      user: { select: { id: true, name: true, username: true } },
-      items: true,
-    },
-  },
-} satisfies Prisma.PurchaseOrderInclude
+import { purchaseOrderDetailInclude as purchaseOrderInclude } from "@/lib/purchase-orders"
+import { PURCHASE_TAX_RATE } from "@/lib/purchase-rules"
 
 // Lighter shape for reports/lists that do not need line items.
 const purchaseOrderSummaryInclude = {
@@ -56,7 +44,7 @@ export const POST = withAuth(async (request, { user }) => {
     productIds: items.map((item) => item.productId),
   })
 
-  const { subtotal, tax, discount, total } = calculateOrderTotals(items, "0.08") // 8% tax
+  const { subtotal, tax, discount, total } = calculateOrderTotals(items, PURCHASE_TAX_RATE)
 
   // Stock is only updated when goods are received (see .../receive), and the
   // supplier balance is derived from orders and payments (lib/balances.ts).
@@ -81,6 +69,7 @@ export const POST = withAuth(async (request, { user }) => {
             create: items.map((item) => ({
               productId: item.productId,
               quantity: item.quantity,
+              originalQuantity: item.quantity,
               unitPrice: item.unitPrice,
               subtotal: item.subtotal,
             })),

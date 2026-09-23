@@ -24,21 +24,22 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  stockMovements    StockMovement[]
-  purchaseOrders    PurchaseOrder[]
-  salesOrders       SalesOrder[]
-  supplierPayments  SupplierPayment[]
-  customerPayments  CustomerPayment[]
-  stockTransfers    StockTransfer[]
-  purchaseReceives  PurchaseReceive[]
-  expenses          Expense[]
-  expenseCategories ExpenseCategory[]
-  categories        Category[]
-  products          Product[]
-  suppliers         Supplier[]
-  customers         Customer[]
-  warehouses        Warehouse[]
-  stocks            Stock[]
+  stockMovements          StockMovement[]
+  purchaseOrders          PurchaseOrder[]
+  salesOrders             SalesOrder[]
+  supplierPayments        SupplierPayment[]
+  customerPayments        CustomerPayment[]
+  stockTransfers          StockTransfer[]
+  purchaseReceives        PurchaseReceive[]
+  purchaseItemAdjustments PurchaseOrderItemAdjustment[]
+  expenses                Expense[]
+  expenseCategories       ExpenseCategory[]
+  categories              Category[]
+  products                Product[]
+  suppliers               Supplier[]
+  customers               Customer[]
+  warehouses              Warehouse[]
+  stocks                  Stock[]
 
   @@map("users")
 }
@@ -257,17 +258,24 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id              String        @id @default(cuid())
-  purchaseOrderId String
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  productId       String
-  product         Product       @relation(fields: [productId], references: [id])
-  quantity        Int
-  unitPrice       Decimal       @db.Decimal(12, 2)
-  subtotal        Decimal       @db.Decimal(12, 2)
-  createdAt       DateTime      @default(now())
+  id               String        @id @default(cuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product       @relation(fields: [productId], references: [id])
+  // Current (adjusted) quantity: changed by edits before the first receive,
+  // over-receiving and closing the remainder. subtotal always follows it.
+  quantity         Int
+  // Quantity as ordered when the PO was created; never changes.
+  originalQuantity Int
+  // The supplier will not deliver the rest; quantity was reduced to received.
+  closed           Boolean       @default(false)
+  unitPrice        Decimal       @db.Decimal(12, 2)
+  subtotal         Decimal       @db.Decimal(12, 2)
+  createdAt        DateTime      @default(now())
 
   receiveItems PurchaseReceiveItem[]
+  adjustments  PurchaseOrderItemAdjustment[]
 
   @@index([purchaseOrderId])
   @@index([productId])
@@ -283,7 +291,8 @@ model PurchaseReceive {
   notes           String?
   createdAt       DateTime      @default(now())
 
-  items PurchaseReceiveItem[]
+  items       PurchaseReceiveItem[]
+  adjustments PurchaseOrderItemAdjustment[]
 
   @@index([purchaseOrderId])
   @@map("purchase_receives")
@@ -295,10 +304,38 @@ model PurchaseReceiveItem {
   purchaseReceive     PurchaseReceive   @relation(fields: [purchaseReceiveId], references: [id], onDelete: Cascade)
   purchaseOrderItemId String
   purchaseOrderItem   PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
+  // 0 only when the line's remainder is closed in this receive.
   quantityReceived    Int
 
   @@index([purchaseOrderItemId])
   @@map("purchase_receive_items")
+}
+
+// History of every change to a purchase order item's quantity, with who,
+// when and why (the reason is required for OVER_RECEIVE / CLOSE_REMAINING).
+model PurchaseOrderItemAdjustment {
+  id                  String                 @id @default(cuid())
+  purchaseOrderItemId String
+  purchaseOrderItem   PurchaseOrderItem      @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Cascade)
+  purchaseReceiveId   String?
+  purchaseReceive     PurchaseReceive?       @relation(fields: [purchaseReceiveId], references: [id], onDelete: Cascade)
+  type                PurchaseAdjustmentType
+  oldQuantity         Int
+  newQuantity         Int
+  reason              String?
+  userId              String
+  user                User                   @relation(fields: [userId], references: [id])
+  createdAt           DateTime               @default(now())
+
+  @@index([purchaseOrderItemId])
+  @@index([purchaseReceiveId])
+  @@map("purchase_order_item_adjustments")
+}
+
+enum PurchaseAdjustmentType {
+  EDIT
+  OVER_RECEIVE
+  CLOSE_REMAINING
 }
 
 model SupplierPayment {
