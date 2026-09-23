@@ -92,8 +92,12 @@ export function calculateSalesTotals(
   const tax = roundMoney(taxable.times(SALES_TAX_RATE))
   const total = taxable.plus(tax)
   const totalDiscount = itemDiscount.plus(discount)
-  // Share of the gross amount given away, e.g. 12.5 for 12.5%.
-  const discountPercent = gross.isZero() ? ZERO : totalDiscount.times(HUNDRED).div(gross)
+  // Share of the gross amount given away, e.g. 12.5 for 12.5%, rounded to
+  // 2 decimals so that "10%" stays 10% after rounding each amount to cents
+  // (10% of 219.99 = 22.00 = 10.0005%).
+  const discountPercent = gross.isZero()
+    ? ZERO
+    : totalDiscount.times(HUNDRED).div(gross).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
 
   return {
     lines,

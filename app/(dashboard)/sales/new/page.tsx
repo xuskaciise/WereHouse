@@ -256,7 +256,8 @@ export default function NewSalesOrderPage() {
   const taxCents = Math.round(taxableCents * TAX_RATE)
   const totalCents = taxableCents + taxCents
   const totalDiscountCents = itemDiscountCents + orderDiscountCents
-  const discountPercent = grossCents > 0 ? (totalDiscountCents * 100) / grossCents : 0
+  // Rounded to 2 decimals, as on the server.
+  const discountPercent = grossCents > 0 ? Math.round((totalDiscountCents * 10000) / grossCents) / 100 : 0
   const overLimit = !unlimitedDiscount && discountPercent > maxDiscountPercent
   const reasonRequired = totalDiscountCents > 0 && discountReasonRequired(discountPercent, maxDiscountPercent)
 
