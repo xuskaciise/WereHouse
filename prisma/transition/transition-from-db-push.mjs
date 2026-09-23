@@ -170,14 +170,14 @@ async function guards(client) {
   const tables = await tablesIn(client, "public")
   const unknownTables = tables.filter((t) => !TABLE_ORDER.includes(t))
   const { rows: otherObjects } = await client.query(
-    `SELECT 'relation ' || c.relname || ' (' || c.relkind || ')' AS object
+    `SELECT 'relation ' || c.relname::text || ' (' || c.relkind::text || ')' AS object
        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind IN ('v', 'm', 'f')
      UNION ALL
-     SELECT 'function ' || p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     SELECT 'function ' || p.proname::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = 'public'
      UNION ALL
-     SELECT 'extension ' || e.extname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+     SELECT 'extension ' || e.extname::text FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
       WHERE n.nspname = 'public'`
   )
   const unknown = [...unknownTables.map((t) => `table ${t}`), ...otherObjects.map((o) => o.object)]
