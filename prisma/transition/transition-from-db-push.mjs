@@ -11,8 +11,10 @@
  *
  * Everything runs in ONE transaction: it either fully succeeds or changes
  * nothing. Steps:
- *   1. Refuse if the database is already managed by Prisma Migrate or already
- *      on the new schema, or contains objects this script does not know.
+ *   1. Refuse if the database is already managed by Prisma Migrate (any row in
+ *      `_prisma_migrations`) or already on the new schema, or contains objects
+ *      this script does not know. An EMPTY `_prisma_migrations` (left by a
+ *      `migrate deploy` without migrations) is dropped inside the transaction.
  *   2. Lock the old tables and run pre-flight checks on the old data:
  *        - rows that would violate the new CHECK constraints (negative stock,
  *          reserved > quantity)                 -> STOP with a list
@@ -154,9 +156,19 @@ function printRows(rows) {
 async function guards(client) {
   section("Checking that this is an old (db push) warehouse database")
 
+  // An EMPTY _prisma_migrations table is left behind when `prisma migrate
+  // deploy` ran once with no migrations folder (the Aug 25 production deploy):
+  // the database is still the old db-push schema, so it counts as "not yet
+  // transitioned". Any recorded migration means it is managed by Migrate.
+  let emptyMigrationHistory = false
   const { rows: pm } = await client.query(`SELECT to_regclass('public._prisma_migrations') AS t`)
   if (pm[0].t) {
-    throw new Stop("REFUSED: public._prisma_migrations exists - this database is already managed by Prisma Migrate (already transitioned?). Nothing changed.")
+    await client.query(`LOCK TABLE public."_prisma_migrations" IN ACCESS EXCLUSIVE MODE`)
+    const { rows: [{ n }] } = await client.query(`SELECT count(*)::int AS n FROM public."_prisma_migrations"`)
+    if (n > 0) {
+      throw new Stop(`REFUSED: public._prisma_migrations has ${n} row(s) - this database is already managed by Prisma Migrate (already transitioned?). Nothing changed.`)
+    }
+    emptyMigrationHistory = true
   }
   const { rows: old } = await client.query(`SELECT to_regnamespace($1) AS s`, [OLD_SCHEMA])
   if (old[0].s) throw new Stop(`REFUSED: schema "${OLD_SCHEMA}" already exists (left over from an earlier attempt?). Nothing changed.`)
@@ -167,7 +179,7 @@ async function guards(client) {
     throw new Stop("REFUSED: users already has passwordHash / has no password column - the database is already on the new schema. Nothing changed.")
   }
 
-  const tables = await tablesIn(client, "public")
+  const tables = (await tablesIn(client, "public")).filter((t) => !(emptyMigrationHistory && t === "_prisma_migrations"))
   const unknownTables = tables.filter((t) => !TABLE_ORDER.includes(t))
   const { rows: otherObjects } = await client.query(
     `SELECT 'relation ' || c.relname::text || ' (' || c.relkind::text || ')' AS object
@@ -183,6 +195,12 @@ async function guards(client) {
   const unknown = [...unknownTables.map((t) => `table ${t}`), ...otherObjects.map((o) => o.object)]
   if (unknown.length > 0) {
     throw new Stop(`STOPPED: the public schema contains objects this script does not know and would drop:\n    ${unknown.join("\n    ")}\nNothing changed.`)
+  }
+  if (emptyMigrationHistory) {
+    // Inside the transaction: rolled back with everything else on --dry-run
+    // or failure. The real history table is created again in step 7.
+    await client.query(`DROP TABLE public."_prisma_migrations"`)
+    console.log("OK: dropped the EMPTY public._prisma_migrations table (0 rows, left by an earlier migrate deploy).")
   }
   console.log(`OK: old schema detected (${tables.length} tables, no Prisma migration history).`)
   return tables

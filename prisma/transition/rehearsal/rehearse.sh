@@ -5,7 +5,10 @@
 #
 # 1. create the OLD schema (main branch schema.prisma, via db push)
 # 2. seed realistic old-style data (plaintext passwords, float money, wrong balances)
-# 3. transition --dry-run, and prove it changed nothing
+#    and add an EMPTY _prisma_migrations table, as on production (the Aug 25
+#    deploy ran `prisma migrate deploy` without a migrations folder)
+# 3. a _prisma_migrations WITH rows must refuse; transition --dry-run, and
+#    prove it changed nothing
 # 4. transition for real, then `prisma migrate deploy` and a drift check
 # 5. independent before/after comparison + DB checks
 # 6. a second transition run must refuse
@@ -46,7 +49,8 @@ STATE="$(node -e '
     const tables=(await c.query("SELECT tablename FROM pg_tables WHERE schemaname=$1",["public"])).rows.map(r=>r.tablename);
     if(tables.length===0){ console.log("empty"); return }
     const pw=(await c.query("SELECT count(*)::int n FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 AND column_name=$3",["public","users","password"])).rows[0].n;
-    if(tables.includes("_prisma_migrations")||pw!==1){ console.log("other"); return }
+    if(pw!==1){ console.log("other"); return }
+    if(tables.includes("_prisma_migrations") && (await c.query("SELECT count(*)::int n FROM public._prisma_migrations")).rows[0].n!==0){ console.log("other"); return }
     let rows=0; for(const t of tables) rows+=(await c.query(`SELECT count(*)::int n FROM public."${t}"`)).rows[0].n;
     const ids=(await c.query("SELECT string_agg(id, $1 ORDER BY id) s FROM public.users",[","])).rows[0].s;
     console.log(ids==="u_acc,u_admin,u_legacy,u_mgr,u_pend,u_rej,u_sales,u_stu" && rows===53 ? "seeded" : "other")
@@ -70,6 +74,15 @@ case "$STATE" in
     die "staging is neither empty nor the untouched rehearsal seed - reset it in the Neon console first"
     ;;
 esac
+
+pg_exec() { node -e 'const {Client}=require("pg"); const c=new Client({connectionString:process.env.DATABASE_URL}); c.connect().then(()=>c.query(process.argv[1])).finally(()=>c.end())' "$1"; }
+
+step "2b. EMPTY _prisma_migrations (as on production)"
+pg_exec 'CREATE TABLE IF NOT EXISTS public."_prisma_migrations" (
+  "id" VARCHAR(36) PRIMARY KEY NOT NULL, "checksum" VARCHAR(64) NOT NULL, "finished_at" TIMESTAMPTZ,
+  "migration_name" VARCHAR(255) NOT NULL, "logs" TEXT, "rolled_back_at" TIMESTAMPTZ,
+  "started_at" TIMESTAMPTZ NOT NULL DEFAULT now(), "applied_steps_count" INTEGER NOT NULL DEFAULT 0)'
+echo "empty public._prisma_migrations present"
 node "$REHEARSAL/snapshot.mjs" save "$WORK/before.json"
 
 step "3. Transition (prepared exactly like the container: npm ci from the lockfile)"
@@ -78,16 +91,30 @@ cp prisma/transition/package.json prisma/transition/package-lock.json prisma/tra
 (cd "$WORK/t" && npm ci --omit=dev --no-audit --no-fund --loglevel=error)
 transition() { MIGRATIONS_DIR="$ROOT/prisma/migrations" node "$WORK/t/transition-from-db-push.mjs" "$@"; }
 
-step "3a. DRY RUN"
+step "3a. A _prisma_migrations WITH rows must refuse"
+pg_exec "INSERT INTO public.\"_prisma_migrations\" (id, checksum, migration_name) VALUES ('rehearsal-row', 'x', 'rehearsal_fake')"
+set +e
+transition --dry-run > "$WORK/with-rows.log" 2>&1
+rc=$?
+set -e
+pg_exec "DELETE FROM public.\"_prisma_migrations\" WHERE id = 'rehearsal-row'"
+tail -n 2 "$WORK/with-rows.log"
+[[ $rc -eq 2 ]] && grep -q "REFUSED: public._prisma_migrations has 1 row" "$WORK/with-rows.log" \
+  && echo "PASS  non-empty _prisma_migrations refused (exit 2)" || die "non-empty _prisma_migrations was not refused (exit $rc)"
+
+step "3b. DRY RUN"
 transition --dry-run | tee "$WORK/dry-run.log"
+grep -q "dropped the EMPTY public._prisma_migrations" "$WORK/dry-run.log" \
+  && echo "PASS  dry run accepted the empty _prisma_migrations" || die "dry run did not handle the empty _prisma_migrations"
 node "$REHEARSAL/snapshot.mjs" save "$WORK/after-dry-run.json"
 node "$REHEARSAL/snapshot.mjs" compare "$WORK/before.json" "$WORK/after-dry-run.json"
 node -e '
   const {Client}=require("pg"); const c=new Client({connectionString:process.env.DATABASE_URL});
   c.connect().then(()=>c.query(`SELECT to_regclass($1) pm, (SELECT count(*)::int FROM information_schema.columns WHERE table_schema=$2 AND table_name=$3 AND column_name=$4) pw`,["public._prisma_migrations","public","users","password"]))
-   .then(r=>{ const ok=!r.rows[0].pm && r.rows[0].pw===1; console.log(ok?"PASS  dry run left the old schema untouched":"FAIL  dry run changed the schema"); if(!ok) process.exit(1) }).finally(()=>c.end())'
+   .then(async r=>{ const n=r.rows[0].pm ? (await c.query("SELECT count(*)::int n FROM public._prisma_migrations")).rows[0].n : -1;
+     const ok=n===0 && r.rows[0].pw===1; console.log(ok?"PASS  dry run left the old schema and the empty _prisma_migrations untouched":"FAIL  dry run changed the schema"); if(!ok) process.exit(1) }).finally(()=>c.end())'
 
-step "3b. REAL RUN"
+step "3c. REAL RUN"
 transition | tee "$WORK/transition.log"
 grep -q "BookCo" "$WORK/transition.log" && grep -q "Campus Shop" "$WORK/transition.log" \
   && echo "PASS  mismatch report lists BookCo and Campus Shop" || die "balance mismatch report is missing the deliberately wrong balances"
