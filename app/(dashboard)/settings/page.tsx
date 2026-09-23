@@ -19,6 +19,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
+import { can } from "@/lib/permission-rules"
 
 export default function SettingsPage() {
   const { toast } = useToast()
@@ -39,7 +40,6 @@ export default function SettingsPage() {
     salesTaxRate: "",
     purchaseTaxRate: "",
     lowStockThreshold: "",
-    maxSalesDiscountPercent: "",
     dateFormat: "",
     timezone: "",
   })
@@ -103,7 +103,9 @@ export default function SettingsPage() {
     }
   }
 
-  // UI hint only; the server enforces admin access on the reset endpoint.
+  // UI hints only; the server enforces the same rules. Saving needs the
+  // settings "edit" permission; the system reset is a fixed ADMIN-only operation.
+  const canEditSettings = can(currentUser.permissions, "settings", "edit")
   const isAdminUser = currentUser.role === "ADMIN"
 
   const isTruncateConfirmed = resetConfirmText.trim().toUpperCase() === "TRUNCATE"
@@ -345,23 +347,6 @@ export default function SettingsPage() {
                 Products below this quantity will be marked as low stock
               </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="maxSalesDiscountPercent">Maximum Sales Discount (%)</Label>
-              <Input
-                id="maxSalesDiscountPercent"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                value={settings.maxSalesDiscountPercent}
-                onChange={(e) => setSettings({ ...settings, maxSalesDiscountPercent: e.target.value })}
-                placeholder="10"
-              />
-              <p className="text-sm text-muted-foreground">
-                Highest total discount a sales officer (or any role other than Admin and Warehouse
-                Manager) may give on a sales order. A reason is required above this limit and above 20%.
-              </p>
-            </div>
           </CardContent>
         </Card>
 
@@ -477,7 +462,7 @@ export default function SettingsPage() {
         </Card>
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={isSaving || !isAdminUser} title={isAdminUser ? undefined : "Only administrators can change settings"}>
+          <Button type="submit" disabled={isSaving || !canEditSettings} title={canEditSettings ? undefined : "Your role cannot change settings"}>
             {isSaving ? "Saving..." : "Save Changes"}
           </Button>
         </div>

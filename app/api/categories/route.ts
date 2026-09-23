@@ -1,16 +1,17 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
-import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { scopeWhere } from "@/lib/permissions"
 import { listResponse } from "@/lib/pagination"
 
 export const GET = withAuth(async (request, { user }) => {
-  const where = ownershipWhere(user)
+  const where = scopeWhere(user, "categories")
   return listResponse(request, {
     findMany: (page) =>
       prisma.category.findMany({ where, orderBy: { createdAt: "desc" }, ...page }),
     count: () => prisma.category.count({ where }),
   })
-})
+}, { permission: [["categories", "view"], ["products", "view"]] }) // also the product form/filter lookup
 
 export const POST = withAuth(async (request, { user }) => {
   const { name, description } = await readJson(request)
@@ -24,4 +25,4 @@ export const POST = withAuth(async (request, { user }) => {
     { unique: "Category with this name already exists" }
   )
   return json(category, { status: 201 })
-})
+}, { permission: ["categories", "create"] })

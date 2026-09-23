@@ -32,6 +32,7 @@ model User {
   stockTransfers          StockTransfer[]
   purchaseReceives        PurchaseReceive[]
   purchaseItemAdjustments PurchaseOrderItemAdjustment[]
+  permissionChanges       PermissionChangeLog[]
   expenses                Expense[]
   expenseCategories       ExpenseCategory[]
   categories              Category[]
@@ -47,6 +48,7 @@ model User {
 enum Role {
   ADMIN
   WAREHOUSE_MANAGER
+  SALES_MANAGER
   SALES_OFFICER
   ACCOUNTANT
   STUDENT
@@ -532,4 +534,43 @@ model Setting {
   updatedAt DateTime @updatedAt
 
   @@map("settings")
+}
+
+enum PermissionScope {
+  ALL
+  OWN
+}
+
+// Permissions per role and module (see lib/permission-rules.ts). ADMIN is
+// not stored: it always has full access. Edited on the Roles & Permissions page.
+model RolePermission {
+  id            String          @id @default(cuid())
+  role          Role
+  module        String
+  canView       Boolean         @default(false)
+  canCreate     Boolean         @default(false)
+  canEdit       Boolean         @default(false)
+  canDelete     Boolean         @default(false)
+  scope         PermissionScope @default(ALL)
+  // sales_discount only: maximum total discount in %, null = no limit.
+  discountLimit Decimal?        @db.Decimal(5, 2)
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([role, module])
+  @@map("role_permissions")
+}
+
+// Audit log of every permission change on the Roles & Permissions page.
+model PermissionChangeLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  role      Role
+  module    String
+  before    Json
+  after     Json
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("permission_change_logs")
 }

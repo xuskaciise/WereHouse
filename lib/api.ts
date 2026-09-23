@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { Prisma, type Role } from "@prisma/client"
 import { HttpError, requireAuth, requireRole, type SessionUser } from "@/lib/auth-guard"
 import { toJsonSafe } from "@/lib/money"
+import { type PermissionSpec, requirePermission } from "@/lib/permissions"
 
 /**
  * JSON response helper for route handlers. Prisma Decimal money values are
@@ -13,7 +14,10 @@ export function json(data: unknown, init?: ResponseInit): NextResponse {
 }
 
 // Every app/api/**/route.ts handler must be wrapped in withAuth() or
-// publicRoute(); scripts/check-route-guards.mjs enforces this in `npm run lint`.
+// publicRoute(), and every withAuth() must declare what it needs: a
+// permission from the central system (lib/permission-rules.ts), fixed roles
+// for system operations, or authenticatedOnly for data any signed-in user may
+// read. scripts/check-route-guards.mjs enforces this in `npm run lint`.
 
 type Params = Record<string, string>
 
@@ -26,13 +30,20 @@ type AuthedHandler<P extends Params> = (
   context: { user: SessionUser; params: P }
 ) => Promise<Response>
 
-export function withAuth<P extends Params = Params>(
-  handler: AuthedHandler<P>,
-  options: { roles?: Role[] } = {}
-) {
+interface AuthOptions {
+  /** [module, action] or a list of alternatives (any one is enough); 403 otherwise. */
+  permission?: PermissionSpec
+  /** Fixed roles, for system operations outside the permission matrix. */
+  roles?: Role[]
+  /** Explicitly: any signed-in, approved user. */
+  authenticatedOnly?: true
+}
+
+export function withAuth<P extends Params = Params>(handler: AuthedHandler<P>, options: AuthOptions) {
   return async (request: Request, context: RouteContext<P>): Promise<Response> => {
     try {
       const user = options.roles?.length ? await requireRole(...options.roles) : await requireAuth()
+      if (options.permission) requirePermission(user, options.permission)
       const params = ((await context?.params) ?? {}) as P
       return await handler(request, { user, params })
     } catch (error) {

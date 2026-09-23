@@ -1,7 +1,8 @@
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
-import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { scopeWhere } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
 import { calculateOrderTotals, createWithOrderNumber, parseOrderItems, parseOrderStatus } from "@/lib/orders"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
@@ -19,7 +20,7 @@ export const GET = withAuth(async (request, { user }) => {
   const params = new URL(request.url).searchParams
   const status = params.get("status")
   const where: Prisma.PurchaseOrderWhereInput = {
-    ...ownershipWhere(user),
+    ...scopeWhere(user, "purchases"),
     ...dateRangeWhere(request, "orderDate"),
     ...(status && { status: parseOrderStatus(status) }),
   }
@@ -28,7 +29,7 @@ export const GET = withAuth(async (request, { user }) => {
     findMany: (page) => prisma.purchaseOrder.findMany({ where, include, orderBy: { createdAt: "desc" }, ...page }),
     count: () => prisma.purchaseOrder.count({ where }),
   })
-})
+}, { permission: [["purchases", "view"], ["reports_stock", "view"], ["reports_finance", "view"]] })
 
 export const POST = withAuth(async (request, { user }) => {
   const body = await readJson(request)
@@ -80,4 +81,4 @@ export const POST = withAuth(async (request, { user }) => {
   )
 
   return json(purchaseOrder, { status: 201 })
-})
+}, { permission: ["purchases", "create"] })

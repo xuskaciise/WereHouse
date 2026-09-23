@@ -1,20 +1,21 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
-import { HttpError, assertOwnership } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { assertInScope } from "@/lib/permissions"
 import { withSupplierBalance } from "@/lib/balances"
 
 const NOT_FOUND = "Supplier not found"
 
 export const GET = withAuth<{ id: string }>(async (_request, { user, params }) => {
   const supplier = await prisma.supplier.findUnique({ where: { id: params.id } })
-  assertOwnership(user, supplier, NOT_FOUND)
+  assertInScope(user, "suppliers", supplier, NOT_FOUND)
   const [withBalance] = await withSupplierBalance([supplier])
   return json(withBalance)
-})
+}, { permission: ["suppliers", "view"] })
 
 export const PUT = withAuth<{ id: string }>(async (request, { user, params }) => {
   const existing = await prisma.supplier.findUnique({ where: { id: params.id } })
-  assertOwnership(user, existing, NOT_FOUND)
+  assertInScope(user, "suppliers", existing, NOT_FOUND)
 
   const { name, email, phone, address, city, state, zipCode, country, contactPerson } = await readJson(request)
   if (typeof name !== "string" || !name.trim()) throw new HttpError(400, "Name is required")
@@ -35,11 +36,11 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
     },
   })
   return json(supplier)
-})
+}, { permission: ["suppliers", "edit"] })
 
 export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }) => {
   const existing = await prisma.supplier.findUnique({ where: { id: params.id } })
-  assertOwnership(user, existing, NOT_FOUND)
+  assertInScope(user, "suppliers", existing, NOT_FOUND)
 
   const linked = await prisma.purchaseOrder.count({ where: { supplierId: params.id } })
   if (linked > 0) {
@@ -51,4 +52,4 @@ export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }
 
   await prisma.supplier.delete({ where: { id: params.id } })
   return json({ message: "Supplier deleted successfully" })
-})
+}, { permission: ["suppliers", "delete"] })

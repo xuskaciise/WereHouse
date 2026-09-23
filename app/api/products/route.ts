@@ -1,6 +1,7 @@
 import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
-import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { scopeWhere } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
 import { parseMoney } from "@/lib/money"
 import { validateProductDates } from "@/lib/product-date-validation"
@@ -8,13 +9,13 @@ import { incrementStock, parseQuantity } from "@/lib/stock"
 import { listResponse } from "@/lib/pagination"
 
 export const GET = withAuth(async (request, { user }) => {
-  const where = ownershipWhere(user)
+  const where = scopeWhere(user, "products")
   return listResponse(request, {
     findMany: (page) =>
       prisma.product.findMany({ where, include: { category: true }, orderBy: { createdAt: "desc" }, ...page }),
     count: () => prisma.product.count({ where }),
   })
-})
+}, { permission: [["products", "view"], ["stock", "view"], ["sales", "create"], ["purchases", "create"]] }) // also a lookup for those forms
 
 export const POST = withAuth(async (request, { user }) => {
   const {
@@ -93,4 +94,4 @@ export const POST = withAuth(async (request, { user }) => {
   )
 
   return json(product, { status: 201 })
-})
+}, { permission: ["products", "create"] })

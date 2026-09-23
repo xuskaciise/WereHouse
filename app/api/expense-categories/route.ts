@@ -1,11 +1,10 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { listResponse } from "@/lib/pagination"
-import { EXPENSE_CATEGORY_MANAGER_ROLES } from "@/lib/expense-rules"
 import { createExpenseCategory, expenseCategorySelect, parseExpenseCategoryInput } from "@/lib/expense-categories"
 
-// Expense categories are shared reference data: every signed-in user sees
-// all of them (to record expenses); only ADMIN/ACCOUNTANT manage them.
+// Expense categories are shared reference data: anyone who records or views
+// expenses sees all of them; managing them needs the expense_categories module.
 // ?active=true returns only categories that can be chosen for new expenses.
 export const GET = withAuth(async (request) => {
   const where = new URL(request.url).searchParams.get("active") === "true" ? { isActive: true } : {}
@@ -19,7 +18,7 @@ export const GET = withAuth(async (request) => {
       }),
     count: () => prisma.expenseCategory.count({ where }),
   })
-})
+}, { permission: [["expenses", "view"], ["expense_categories", "view"]] })
 
 export const POST = withAuth(
   async (request, { user }) => {
@@ -27,5 +26,5 @@ export const POST = withAuth(
     const category = await createExpenseCategory(input, user.id)
     return json(category, { status: 201 })
   },
-  { roles: EXPENSE_CATEGORY_MANAGER_ROLES }
+  { permission: ["expense_categories", "create"] }
 )

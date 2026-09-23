@@ -1,9 +1,9 @@
 import type { PurchaseAdjustmentType } from "@prisma/client"
 import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
-import { HttpError, assertRole, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { requirePermission, scopeWhere } from "@/lib/permissions"
 import { incrementStock, parseQuantity } from "@/lib/stock"
-import { PURCHASE_ADJUST_ROLES } from "@/lib/purchase-rules"
 import {
   parseReason,
   purchaseOrderDetailInclude,
@@ -63,7 +63,7 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
 
   const receiveNotes = parseReason(notes, { required: false, label: "the receive" })
 
-  const baseWhere = { id: purchaseOrderId, ...ownershipWhere(user) }
+  const baseWhere = { id: purchaseOrderId, ...scopeWhere(user, "purchase_receive") }
   const exists = await prisma.purchaseOrder.count({ where: baseWhere })
   if (!exists) throw new HttpError(404, "Purchase order not found")
 
@@ -103,12 +103,12 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
       let newItemQuantity = item.quantity
 
       if (receivedAfter > item.quantity) {
-        assertRole(user, PURCHASE_ADJUST_ROLES, "Only admins and warehouse managers can receive more than ordered")
+        requirePermission(user, ["purchase_receive", "edit"], "You are not allowed to receive more than ordered")
         const reason = parseReason(line.reason, { required: true, label: `receiving more ${name} than ordered` })!
         adjustment = { type: "OVER_RECEIVE", reason }
         newItemQuantity = receivedAfter
       } else if (line.closeRemaining && receivedAfter < item.quantity) {
-        assertRole(user, PURCHASE_ADJUST_ROLES, "Only admins and warehouse managers can close a remaining quantity")
+        requirePermission(user, ["purchase_receive", "edit"], "You are not allowed to close a remaining quantity")
         const reason = parseReason(line.reason, { required: true, label: `closing the remainder of ${name}` })!
         adjustment = { type: "CLOSE_REMAINING", reason }
         newItemQuantity = receivedAfter
@@ -184,4 +184,4 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
 
   const updated = await prisma.purchaseOrder.findFirst({ where: baseWhere, include: purchaseOrderDetailInclude })
   return json(updated)
-})
+}, { permission: ["purchase_receive", "create"] })

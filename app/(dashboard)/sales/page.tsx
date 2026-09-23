@@ -11,8 +11,11 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 import Link from "next/link"
 import Image from "next/image"
 import { discountLabel, totalDiscountOf } from "@/lib/discount-rules"
+import { useCan } from "@/components/providers/current-user-provider"
 
 export default function SalesPage() {
+  // Hide what the role may not do; the API enforces the same permissions.
+  const canCreate = useCan("sales", "create")
   const [salesOrders, setSalesOrders] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
@@ -68,12 +71,14 @@ export default function SalesPage() {
             Manage customer orders and track sales
           </p>
         </div>
-        <Link href="/sales/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Sales Order
-          </Button>
-        </Link>
+        {canCreate && (
+          <Link href="/sales/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Sales Order
+            </Button>
+          </Link>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

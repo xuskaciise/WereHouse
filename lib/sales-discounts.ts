@@ -1,15 +1,9 @@
 import type { DiscountType } from "@prisma/client"
-import { prisma } from "@/lib/prisma"
+import { getRolePermissions } from "@/lib/permissions"
 import { HttpError } from "@/lib/http-error"
 import { type Money, Decimal, ZERO, parseMoney, roundMoney, sumMoney } from "@/lib/money"
 import type { OrderItemInput } from "@/lib/orders"
-import {
-  DISCOUNT_REASON_MAX_LENGTH,
-  DISCOUNT_REASON_THRESHOLD_PERCENT,
-  MAX_SALES_DISCOUNT_SETTING,
-  SALES_TAX_RATE,
-  parseMaxDiscountPercent,
-} from "@/lib/discount-rules"
+import { DISCOUNT_REASON_MAX_LENGTH, DISCOUNT_REASON_THRESHOLD_PERCENT, SALES_TAX_RATE } from "@/lib/discount-rules"
 
 // Sales order discounts. Everything here is Decimal and runs on the server;
 // totals sent by the client are never used.
@@ -115,12 +109,17 @@ export function calculateSalesTotals(
   }
 }
 
-export async function getMaxSalesDiscountPercent(): Promise<number> {
-  const setting = await prisma.setting.findUnique({ where: { key: MAX_SALES_DISCOUNT_SETTING } })
-  return parseMaxDiscountPercent(setting?.value)
+/**
+ * The limit a reason is measured against: the user's own limit, or for roles
+ * without a limit, the sales officer limit (Roles & Permissions page).
+ */
+export async function reasonReferenceLimit(ownLimit: number | null): Promise<number> {
+  if (ownLimit !== null) return ownLimit
+  const officer = (await getRolePermissions("SALES_OFFICER")).sales_discount.discountLimit
+  return officer ?? DISCOUNT_REASON_THRESHOLD_PERCENT
 }
 
-/** Reason is required above the role limit, and always above 20%. */
+/** Reason is required above the limit, and always above 20%. */
 export function isDiscountReasonRequired(discountPercent: Money, limitPercent: number): boolean {
   return discountPercent.gt(Math.min(limitPercent, DISCOUNT_REASON_THRESHOLD_PERCENT))
 }

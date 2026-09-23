@@ -18,10 +18,21 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
+import { useCurrentUser } from "@/components/providers/current-user-provider"
+import { can } from "@/lib/permission-rules"
 
 export default function PaymentsPage() {
   const { toast } = useToast()
-  const [activeTab, setActiveTab] = useState("customers")
+  // Tabs, lists and buttons follow the customer_payments / supplier_payments
+  // permissions; the API enforces the same.
+  const { permissions } = useCurrentUser()
+  const canCustomer = can(permissions, "customer_payments", "view")
+  const canSupplier = can(permissions, "supplier_payments", "view")
+  const [activeTab, setActiveTab] = useState(canCustomer ? "customers" : "suppliers")
+  const tabModule = activeTab === "customers" ? "customer_payments" : "supplier_payments"
+  const canCreatePayment = can(permissions, tabModule, "create")
+  const canEditPayment = (type: string) => can(permissions, type === "customers" ? "customer_payments" : "supplier_payments", "edit")
+  const canDeletePayment = (type: string) => can(permissions, type === "customers" ? "customer_payments" : "supplier_payments", "delete")
   const [customerPayments, setCustomerPayments] = useState<any[]>([])
   const [supplierPayments, setSupplierPayments] = useState<any[]>([])
   const [customers, setCustomers] = useState<any[]>([])
@@ -35,12 +46,17 @@ export default function PaymentsPage() {
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchCustomerPayments()
-    fetchSupplierPayments()
-    fetchCustomers()
-    fetchSuppliers()
-    fetchSalesOrders()
-    fetchPurchaseOrders()
+    // Only load what this role may see (avoids 403s for the other tab).
+    if (canCustomer) {
+      fetchCustomerPayments()
+      fetchCustomers()
+      fetchSalesOrders()
+    } else setIsLoading(false)
+    if (canSupplier) {
+      fetchSupplierPayments()
+      fetchSuppliers()
+      fetchPurchaseOrders()
+    }
   }, [])
 
   const fetchCustomerPayments = async () => {
@@ -190,10 +206,10 @@ export default function PaymentsPage() {
           title: "Success",
           description: "Payment deleted successfully.",
         })
-        fetchCustomerPayments()
-        fetchSupplierPayments()
-        fetchCustomers()
-        fetchSuppliers()
+        if (canCustomer) fetchCustomerPayments()
+        if (canSupplier) fetchSupplierPayments()
+        if (canCustomer) fetchCustomers()
+        if (canSupplier) fetchSuppliers()
         setDeletePaymentId(null)
       } else {
         const error = await response.json()
@@ -223,12 +239,14 @@ export default function PaymentsPage() {
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="w-full sm:w-auto">
-              <Plus className="mr-2 h-4 w-4" />
-              Record Payment
-            </Button>
-          </DialogTrigger>
+          {canCreatePayment && (
+            <DialogTrigger asChild>
+              <Button className="w-full sm:w-auto">
+                <Plus className="mr-2 h-4 w-4" />
+                Record Payment
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
               <DialogTitle>{editingPayment ? "Edit Payment" : "Record Payment"}</DialogTitle>
@@ -249,11 +267,11 @@ export default function PaymentsPage() {
               onSuccess={() => {
                 setIsDialogOpen(false)
                 setEditingPayment(null)
-                fetchCustomerPayments()
-                fetchSupplierPayments()
+                if (canCustomer) fetchCustomerPayments()
+                if (canSupplier) fetchSupplierPayments()
                 // Refresh customers and suppliers to get updated balances
-                fetchCustomers()
-                fetchSuppliers()
+                if (canCustomer) fetchCustomers()
+                if (canSupplier) fetchSuppliers()
               }}
             />
           </DialogContent>
@@ -261,9 +279,9 @@ export default function PaymentsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="customers">Customer Payments</TabsTrigger>
-          <TabsTrigger value="suppliers">Supplier Payments</TabsTrigger>
+        <TabsList className={`grid w-full ${canCustomer && canSupplier ? "grid-cols-2" : "grid-cols-1"}`}>
+          {canCustomer && <TabsTrigger value="customers">Customer Payments</TabsTrigger>}
+          {canSupplier && <TabsTrigger value="suppliers">Supplier Payments</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="customers" className="space-y-4">
@@ -320,6 +338,8 @@ export default function PaymentsPage() {
                         <TableCell>{payment.user?.username || payment.user?.name || "N/A"}</TableCell>
                         <TableCell className="text-right">
                           <PaymentActions
+                            canEdit={canEditPayment("customers")}
+                            canDelete={canDeletePayment("customers")}
                             payment={payment}
                             type="customer"
                             onView={() => setSelectedPayment(payment)}
@@ -395,6 +415,8 @@ export default function PaymentsPage() {
                         <TableCell>{payment.user?.username || payment.user?.name || "N/A"}</TableCell>
                         <TableCell className="text-right">
                           <PaymentActions
+                            canEdit={canEditPayment("suppliers")}
+                            canDelete={canDeletePayment("suppliers")}
                             payment={payment}
                             type="supplier"
                             onView={() => setSelectedPayment(payment)}
@@ -450,6 +472,8 @@ export default function PaymentsPage() {
 function PaymentActions({
   payment,
   type,
+  canEdit,
+  canDelete,
   onView,
   onEdit,
   onDelete,
@@ -457,6 +481,8 @@ function PaymentActions({
 }: {
   payment: any
   type: string
+  canEdit: boolean
+  canDelete: boolean
   onView: () => void
   onEdit: () => void
   onDelete: () => void
@@ -478,14 +504,18 @@ function PaymentActions({
           <Printer className="mr-2 h-4 w-4" />
           Print Invoice
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onEdit}>
-          <Edit className="mr-2 h-4 w-4" />
-          Edit
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onDelete} className="text-red-600">
-          <Trash2 className="mr-2 h-4 w-4" />
-          Delete
-        </DropdownMenuItem>
+        {canEdit && (
+          <DropdownMenuItem onClick={onEdit}>
+            <Edit className="mr-2 h-4 w-4" />
+            Edit
+          </DropdownMenuItem>
+        )}
+        {canDelete && (
+          <DropdownMenuItem onClick={onDelete} className="text-red-600">
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

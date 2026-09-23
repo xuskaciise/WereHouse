@@ -1,16 +1,16 @@
 import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
-import { HttpError, assertRole, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { salesDiscountLimit, scopeWhere } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
 import { createWithOrderNumber, parseOrderItems, parseOrderStatus } from "@/lib/orders"
-import { UNLIMITED_DISCOUNT_ROLES } from "@/lib/discount-rules"
 import {
   calculateSalesTotals,
   formatPercent,
-  getMaxSalesDiscountPercent,
   isDiscountReasonRequired,
   parseDiscount,
   parseDiscountReason,
+  reasonReferenceLimit,
 } from "@/lib/sales-discounts"
 import { decrementStock } from "@/lib/stock"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
@@ -34,7 +34,7 @@ export const GET = withAuth(async (request, { user }) => {
   const params = new URL(request.url).searchParams
   const status = params.get("status")
   const where: Prisma.SalesOrderWhereInput = {
-    ...ownershipWhere(user),
+    ...scopeWhere(user, "sales"),
     ...dateRangeWhere(request, "orderDate"),
     ...(status && { status: parseOrderStatus(status) }),
   }
@@ -43,7 +43,7 @@ export const GET = withAuth(async (request, { user }) => {
     findMany: (page) => prisma.salesOrder.findMany({ where, include, orderBy: { createdAt: "desc" }, ...page }),
     count: () => prisma.salesOrder.count({ where }),
   })
-})
+}, { permission: [["sales", "view"], ["reports_sales", "view"], ["reports_finance", "view"]] })
 
 export const POST = withAuth(async (request, { user }) => {
   const body = await readJson(request)
@@ -68,17 +68,19 @@ export const POST = withAuth(async (request, { user }) => {
     parseDiscount(body.discount, "Order"),
     (index) => `Line ${index + 1}`
   )
-  const limit = await getMaxSalesDiscountPercent()
-  if (totals.discountPercent.gt(limit)) {
-    assertRole(
-      user,
-      UNLIMITED_DISCOUNT_ROLES,
-      `The total discount of ${formatPercent(totals.discountPercent)}% exceeds your limit of ${limit}%. Ask an admin or warehouse manager to create this order.`
-    )
+  // Limits come from the sales_discount permission (Roles & Permissions).
+  let discountReason: string | null = null
+  if (!totals.totalDiscount.isZero()) {
+    const limit = salesDiscountLimit(user) // 403 if the role may not give discounts
+    if (limit !== null && totals.discountPercent.gt(limit)) {
+      throw new HttpError(
+        403,
+        `The total discount of ${formatPercent(totals.discountPercent)}% exceeds your limit of ${limit}%. Ask a sales manager or admin to create this order.`
+      )
+    }
+    const reference = await reasonReferenceLimit(limit)
+    discountReason = parseDiscountReason(body.discountReason, isDiscountReasonRequired(totals.discountPercent, reference))
   }
-  const discountReason = totals.totalDiscount.isZero()
-    ? null
-    : parseDiscountReason(body.discountReason, isDiscountReasonRequired(totals.discountPercent, limit))
   const { subtotal, tax, discount, total } = totals
 
   const orderId = await createWithOrderNumber(
@@ -150,4 +152,4 @@ export const POST = withAuth(async (request, { user }) => {
     include: salesOrderInclude,
   })
   return json(order, { status: 201 })
-})
+}, { permission: ["sales", "create"] })

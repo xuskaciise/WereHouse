@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { withAuth } from "@/lib/api"
-import { ownershipWhere } from "@/lib/auth-guard"
+import { scopeWhere } from "@/lib/permissions"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 
 // Supports ?page, ?pageSize, ?from, ?to (createdAt) and ?q (product name,
@@ -9,7 +9,7 @@ import { dateRangeWhere, listResponse } from "@/lib/pagination"
 export const GET = withAuth(async (request, { user }) => {
   const q = new URL(request.url).searchParams.get("q")?.trim().slice(0, 100)
   const where: Prisma.StockMovementWhereInput = {
-    ...ownershipWhere(user),
+    ...scopeWhere(user, "stock_movements"),
     ...dateRangeWhere(request, "createdAt"),
     ...(q && {
       OR: [
@@ -34,4 +34,4 @@ export const GET = withAuth(async (request, { user }) => {
       }),
     count: () => prisma.stockMovement.count({ where }),
   })
-})
+}, { permission: ["stock_movements", "view"] })

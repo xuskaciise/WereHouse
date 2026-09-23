@@ -3,12 +3,16 @@ import type { Role } from "@prisma/client"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { HttpError } from "@/lib/http-error"
+import { getRolePermissions } from "@/lib/permissions"
+import type { PermissionMap } from "@/lib/permission-rules"
 
 export interface SessionUser {
   id: string
   name: string
   username: string
   role: Role
+  /** Resolved for this request from role_permissions (see lib/permissions.ts). */
+  permissions: PermissionMap
 }
 
 export { HttpError }
@@ -16,7 +20,8 @@ export { HttpError }
 /**
  * Returns the signed-in user, re-read from the database on every request so
  * that role changes, rejections and deletions take effect immediately instead
- * of waiting for the session cookie to expire.
+ * of waiting for the session cookie to expire. Permissions come from the
+ * central permission table (briefly cached).
  */
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const session = await auth()
@@ -29,7 +34,13 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   })
   if (!user || user.status !== "APPROVED") return null
 
-  return { id: user.id, name: user.name, username: user.username, role: user.role }
+  return {
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    role: user.role,
+    permissions: await getRolePermissions(user.role),
+  }
 })
 
 export async function requireAuth(): Promise<SessionUser> {
@@ -44,30 +55,6 @@ export async function requireRole(...roles: Role[]): Promise<SessionUser> {
   return user
 }
 
-/** For checks that depend on the request body (the route itself allows more roles). */
-export function assertRole(user: Pick<SessionUser, "role">, roles: readonly Role[], message = "Forbidden"): void {
-  if (!roles.includes(user.role)) throw new HttpError(403, message)
-}
-
 export function isAdmin(user: Pick<SessionUser, "role">): boolean {
   return user.role === "ADMIN"
-}
-
-/** Prisma `where` fragment limiting non-admins to the records they own. */
-export function ownershipWhere(user: SessionUser, field = "userId"): Record<string, string> {
-  return isAdmin(user) ? {} : { [field]: user.id }
-}
-
-/**
- * Throws 404 when the record does not exist or belongs to another user
- * (non-admins cannot tell the two cases apart).
- */
-export function assertOwnership<T extends { userId: string | null }>(
-  user: SessionUser,
-  record: T | null,
-  notFoundMessage = "Not found"
-): asserts record is T {
-  if (!record || (!isAdmin(user) && record.userId !== user.id)) {
-    throw new HttpError(404, notFoundMessage)
-  }
 }

@@ -9,8 +9,11 @@ import { Badge } from "@/components/ui/badge"
 import { formatCurrency } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
 import Link from "next/link"
+import { useCan } from "@/components/providers/current-user-provider"
 
 export default function LowStockPage() {
+  // Hide what the role may not do; the API enforces the same permissions.
+  const canCreate = useCan("purchases", "create")
   const { toast } = useToast()
   const [stock, setStock] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -59,12 +62,14 @@ export default function LowStockPage() {
             Products below reorder level that need attention
           </p>
         </div>
-        <Link href="/purchases/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Purchase Order
-          </Button>
-        </Link>
+        {canCreate && (
+          <Link href="/purchases/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Purchase Order
+            </Button>
+          </Link>
+        )}
       </div>
 
       <Card>

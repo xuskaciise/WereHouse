@@ -1,6 +1,7 @@
 import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
-import { HttpError, assertOwnership } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { assertInScope } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
 import { parseMoney } from "@/lib/money"
 import { validateProductDates } from "@/lib/product-date-validation"
@@ -13,9 +14,9 @@ export const GET = withAuth<{ id: string }>(async (_request, { user, params }) =
     where: { id: params.id },
     include: { category: true },
   })
-  assertOwnership(user, product, NOT_FOUND)
+  assertInScope(user, "products", product, NOT_FOUND)
   return json(product)
-})
+}, { permission: ["products", "view"] })
 
 export const PUT = withAuth<{ id: string }>(async (request, { user, params }) => {
   const { id } = params
@@ -47,7 +48,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
   if (dateError) throw new HttpError(400, dateError)
 
   const existing = await prisma.product.findUnique({ where: { id } })
-  assertOwnership(user, existing, NOT_FOUND)
+  assertInScope(user, "products", existing, NOT_FOUND)
   await assertCanReference(user, { categoryId })
 
   const updates: { stockId: string; quantity: number }[] = Array.isArray(stockUpdates)
@@ -112,14 +113,14 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
   )
 
   return json(product)
-})
+}, { permission: ["products", "edit"] })
 
 export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }) => {
   const existing = await prisma.product.findUnique({ where: { id: params.id } })
-  assertOwnership(user, existing, NOT_FOUND)
+  assertInScope(user, "products", existing, NOT_FOUND)
 
   await withConflictMessages(() => prisma.product.delete({ where: { id: params.id } }), {
     inUse: "Cannot delete product that has stock or orders. Please remove all related data first.",
   })
   return json({ message: "Product deleted successfully" })
-})
+}, { permission: ["products", "delete"] })

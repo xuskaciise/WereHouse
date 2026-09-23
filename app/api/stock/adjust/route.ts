@@ -55,4 +55,4 @@ export const POST = withAuth(async (request, { user }) => {
   }, TX_OPTIONS)
 
   return json(stock, { status: 201 })
-})
+}, { permission: ["stock", "edit"] })

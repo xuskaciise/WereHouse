@@ -30,10 +30,13 @@ import { formatDateTime } from "@/lib/utils"
 import { MovementType } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { PaginationControls } from "@/components/ui/pagination-controls"
+import { useCan } from "@/components/providers/current-user-provider"
 
 const PAGE_SIZE = 25
 
 export default function StockMovementsPage() {
+  // Hide what the role may not do; the API enforces the same permissions.
+  const canCreate = useCan("stock", "edit")
   const { toast } = useToast()
   const [stockMovements, setStockMovements] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
@@ -147,12 +150,14 @@ export default function StockMovementsPage() {
             Export CSV
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                New Adjustment
-              </Button>
-            </DialogTrigger>
+            {canCreate && (
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Adjustment
+                </Button>
+              </DialogTrigger>
+            )}
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>New Stock Adjustment</DialogTitle>

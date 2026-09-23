@@ -15,14 +15,10 @@ import { formatCurrency } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
 import {
-  DEFAULT_MAX_SALES_DISCOUNT_PERCENT,
   DISCOUNT_REASON_MAX_LENGTH,
-  MAX_SALES_DISCOUNT_SETTING,
   SALES_TAX_RATE,
   type DiscountTypeValue,
   discountReasonRequired,
-  hasUnlimitedDiscount,
-  parseMaxDiscountPercent,
 } from "@/lib/discount-rules"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -99,7 +95,12 @@ export default function NewSalesOrderPage() {
   const { toast } = useToast()
   const router = useRouter()
   const currentUser = useCurrentUser()
-  const unlimitedDiscount = hasUnlimitedDiscount(currentUser.role)
+  // From the sales_discount permission (Roles & Permissions); the server enforces the same.
+  const canDiscount = currentUser.permissions.sales_discount.create
+  const discountLimit = currentUser.permissions.sales_discount.discountLimit
+  const unlimitedDiscount = discountLimit === null
+  const maxDiscountPercent = discountLimit ?? 100
+  const reasonLimit = currentUser.discountReasonReferenceLimit
   const [customers, setCustomers] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
   const [warehouses, setWarehouses] = useState<any[]>([])
@@ -111,7 +112,6 @@ export default function NewSalesOrderPage() {
   const [orderDiscountType, setOrderDiscountType] = useState<DiscountTypeValue>("PERCENT")
   const [orderDiscountValue, setOrderDiscountValue] = useState("")
   const [discountReason, setDiscountReason] = useState("")
-  const [maxDiscountPercent, setMaxDiscountPercent] = useState(DEFAULT_MAX_SALES_DISCOUNT_PERCENT)
   const [isSaving, setIsSaving] = useState(false)
   const orderNumber = "SO-2023-0042"
 
@@ -120,7 +120,6 @@ export default function NewSalesOrderPage() {
     fetchProducts()
     fetchWarehouses()
     fetchStock()
-    fetchDiscountLimit()
   }, [])
 
   const fetchCustomers = async () => {
@@ -168,18 +167,6 @@ export default function NewSalesOrderPage() {
       }
     } catch (error) {
       console.error("Error fetching stock:", error)
-    }
-  }
-
-  const fetchDiscountLimit = async () => {
-    try {
-      const response = await fetch("/api/settings")
-      if (response.ok) {
-        const data = await response.json()
-        setMaxDiscountPercent(parseMaxDiscountPercent(data?.[MAX_SALES_DISCOUNT_SETTING]))
-      }
-    } catch (error) {
-      console.error("Error fetching settings:", error)
     }
   }
 
@@ -259,7 +246,7 @@ export default function NewSalesOrderPage() {
   // Rounded to 2 decimals, as on the server.
   const discountPercent = grossCents > 0 ? Math.round((totalDiscountCents * 10000) / grossCents) / 100 : 0
   const overLimit = !unlimitedDiscount && discountPercent > maxDiscountPercent
-  const reasonRequired = totalDiscountCents > 0 && discountReasonRequired(discountPercent, maxDiscountPercent)
+  const reasonRequired = totalDiscountCents > 0 && discountReasonRequired(discountPercent, reasonLimit)
 
   const discountErrors: string[] = []
   lineTotals.forEach((line, index) => {
@@ -268,12 +255,12 @@ export default function NewSalesOrderPage() {
   if (orderDiscount.error) discountErrors.push(`Order discount ${orderDiscount.error}`)
   if (overLimit) {
     discountErrors.push(
-      `The total discount of ${discountPercent.toFixed(2)}% exceeds your limit of ${maxDiscountPercent}%. Ask an admin or warehouse manager.`
+      `The total discount of ${discountPercent.toFixed(2)}% exceeds your limit of ${maxDiscountPercent}%. Ask a sales manager or admin.`
     )
   }
   if (reasonRequired && !discountReason.trim()) {
     discountErrors.push(
-      `A reason is required for a total discount above ${Math.min(maxDiscountPercent, 20)}%.`
+      `A reason is required for a total discount above ${Math.min(reasonLimit, 20)}%.`
     )
   }
 
@@ -500,7 +487,7 @@ export default function NewSalesOrderPage() {
                       <TableHead>Quantity</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Price</TableHead>
-                      <TableHead>Discount</TableHead>
+                      {canDiscount && <TableHead>Discount</TableHead>}
                       <TableHead>Total</TableHead>
                       <TableHead></TableHead>
                     </TableRow>
@@ -577,15 +564,17 @@ export default function NewSalesOrderPage() {
                           <TableCell>
                             {formatCurrency(item.unitPrice)}
                           </TableCell>
-                          <TableCell>
-                            <DiscountInput
-                              type={item.discountType}
-                              value={item.discountValue}
-                              invalid={!!line?.error}
-                              onTypeChange={(type) => updateItem(index, "discountType", type)}
-                              onValueChange={(value) => updateItem(index, "discountValue", value)}
-                            />
-                          </TableCell>
+                          {canDiscount && (
+                            <TableCell>
+                              <DiscountInput
+                                type={item.discountType}
+                                value={item.discountValue}
+                                invalid={!!line?.error}
+                                onTypeChange={(type) => updateItem(index, "discountType", type)}
+                                onValueChange={(value) => updateItem(index, "discountValue", value)}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell className="font-medium">
                             {line && line.discountCents > 0 ? (
                               <div>
@@ -624,65 +613,67 @@ export default function NewSalesOrderPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Discount</CardTitle>
-              <CardDescription>
-                Applied to the subtotal after item discounts; tax is calculated on the discounted amount.
-                {unlimitedDiscount
-                  ? " Your role has no discount limit."
-                  : ` Your maximum total discount is ${maxDiscountPercent}%.`}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="orderDiscount">Order discount</Label>
-                <DiscountInput
-                  id="orderDiscount"
-                  type={orderDiscountType}
-                  value={orderDiscountValue}
-                  invalid={!!orderDiscount.error}
-                  onTypeChange={setOrderDiscountType}
-                  onValueChange={setOrderDiscountValue}
-                />
-              </div>
-              {totalDiscountCents > 0 && (
+          {canDiscount && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Discount</CardTitle>
+                <CardDescription>
+                  Applied to the subtotal after item discounts; tax is calculated on the discounted amount.
+                  {unlimitedDiscount
+                    ? " Your role has no discount limit."
+                    : ` Your maximum total discount is ${maxDiscountPercent}%.`}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="discountReason">
-                    Discount reason {reasonRequired ? "*" : "(optional)"}
-                  </Label>
-                  <Textarea
-                    id="discountReason"
-                    value={discountReason}
-                    maxLength={DISCOUNT_REASON_MAX_LENGTH}
-                    onChange={(e) => setDiscountReason(e.target.value)}
-                    placeholder="e.g. Bulk order for the school library"
-                    rows={2}
+                  <Label htmlFor="orderDiscount">Order discount</Label>
+                  <DiscountInput
+                    id="orderDiscount"
+                    type={orderDiscountType}
+                    value={orderDiscountValue}
+                    invalid={!!orderDiscount.error}
+                    onTypeChange={setOrderDiscountType}
+                    onValueChange={setOrderDiscountValue}
                   />
                 </div>
-              )}
-              <div className="rounded-md border p-4 space-y-2">
-                {summaryRows}
-                <div className="flex justify-between border-t pt-2 font-semibold">
-                  <span>Total</span>
-                  <span>{money(totalCents)}</span>
-                </div>
                 {totalDiscountCents > 0 && (
-                  <div className="text-xs text-muted-foreground">
-                    Total discount: {money(totalDiscountCents)} ({discountPercent.toFixed(2)}% of{" "}
-                    {money(grossCents)})
+                  <div className="space-y-2">
+                    <Label htmlFor="discountReason">
+                      Discount reason {reasonRequired ? "*" : "(optional)"}
+                    </Label>
+                    <Textarea
+                      id="discountReason"
+                      value={discountReason}
+                      maxLength={DISCOUNT_REASON_MAX_LENGTH}
+                      onChange={(e) => setDiscountReason(e.target.value)}
+                      placeholder="e.g. Bulk order for the school library"
+                      rows={2}
+                    />
                   </div>
                 )}
-              </div>
-              {discountErrors.length > 0 && (
-                <ul className="space-y-1 text-sm text-destructive">
-                  {discountErrors.map((message) => (
-                    <li key={message}>{message}</li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+                <div className="rounded-md border p-4 space-y-2">
+                  {summaryRows}
+                  <div className="flex justify-between border-t pt-2 font-semibold">
+                    <span>Total</span>
+                    <span>{money(totalCents)}</span>
+                  </div>
+                  {totalDiscountCents > 0 && (
+                    <div className="text-xs text-muted-foreground">
+                      Total discount: {money(totalDiscountCents)} ({discountPercent.toFixed(2)}% of{" "}
+                      {money(grossCents)})
+                    </div>
+                  )}
+                </div>
+                {discountErrors.length > 0 && (
+                  <ul className="space-y-1 text-sm text-destructive">
+                    {discountErrors.map((message) => (
+                      <li key={message}>{message}</li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <div className="flex gap-2">
             <Button

@@ -1,16 +1,17 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
-import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { scopeWhere } from "@/lib/permissions"
 import { listResponse } from "@/lib/pagination"
 
 export const GET = withAuth(async (request, { user }) => {
-  const where = ownershipWhere(user)
+  const where = scopeWhere(user, "warehouses")
   return listResponse(request, {
     findMany: (page) =>
       prisma.warehouse.findMany({ where, orderBy: { createdAt: "desc" }, ...page }),
     count: () => prisma.warehouse.count({ where }),
   })
-})
+}, { permission: [["warehouses", "view"], ["stock", "view"], ["products", "view"], ["sales", "create"], ["purchases", "view"]] }) // also a lookup for those forms/filters
 
 export const POST = withAuth(async (request, { user }) => {
   const { name, code, address, city, state, zipCode, country, capacity } = await readJson(request)
@@ -34,4 +35,4 @@ export const POST = withAuth(async (request, { user }) => {
     { unique: "Warehouse with this code already exists" }
   )
   return json(warehouse, { status: 201 })
-})
+}, { permission: ["warehouses", "create"] })

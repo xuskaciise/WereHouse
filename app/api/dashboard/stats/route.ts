@@ -1,16 +1,19 @@
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { json, withAuth } from "@/lib/api"
-import { isAdmin, ownershipWhere } from "@/lib/auth-guard"
+import { isOwnScope, scopeWhere } from "@/lib/permissions"
 
 const CHART_MONTHS = 6
 
 // All figures are computed in the database with aggregates; no table is
 // loaded into memory, so the cost stays flat as data grows.
+// Scope from the "dashboard" permission: ALL = company-wide figures, OWN =
+// only records the user created (sales officers, students).
 export const GET = withAuth(async (_request, { user }) => {
-  const where = ownershipWhere(user)
-  const stockOwner = isAdmin(user) ? Prisma.empty : Prisma.sql`AND s."userId" = ${user.id}`
-  const orderOwner = isAdmin(user) ? Prisma.empty : Prisma.sql`AND "userId" = ${user.id}`
+  const where = scopeWhere(user, "dashboard")
+  const own = isOwnScope(user, "dashboard")
+  const stockOwner = own ? Prisma.sql`AND s."userId" = ${user.id}` : Prisma.empty
+  const orderOwner = own ? Prisma.sql`AND "userId" = ${user.id}` : Prisma.empty
 
   const now = new Date()
   const chartStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (CHART_MONTHS - 1), 1))
@@ -88,4 +91,4 @@ export const GET = withAuth(async (_request, { user }) => {
     recentSales,
     chartData,
   })
-})
+}, { permission: ["dashboard", "view"] })

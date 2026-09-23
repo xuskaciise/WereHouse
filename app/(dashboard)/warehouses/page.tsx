@@ -36,8 +36,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { Warehouse } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import Link from "next/link"
+import { useCan } from "@/components/providers/current-user-provider"
 
 export default function WarehousesPage() {
+  // Hide what the role may not do; the API enforces the same permissions.
+  const canCreate = useCan("warehouses", "create")
+  const canEdit = useCan("warehouses", "edit")
+  const canDelete = useCan("warehouses", "delete")
   const { toast } = useToast()
   const [warehouses, setWarehouses] = useState<any[]>([])
   const [stock, setStock] = useState<any[]>([])
@@ -182,17 +187,19 @@ export default function WarehousesPage() {
             }
           }}
         >
-          <DialogTrigger asChild>
-            <Button
-              onClick={() => {
-                setEditingWarehouse(null)
-                setIsDialogOpen(true)
-              }}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add Warehouse
-            </Button>
-          </DialogTrigger>
+          {canCreate && (
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => {
+                  setEditingWarehouse(null)
+                  setIsDialogOpen(true)
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Warehouse
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>
@@ -282,39 +289,45 @@ export default function WarehousesPage() {
                     <CardTitle className="text-lg">{warehouse.name}</CardTitle>
                     <Badge variant="outline">{warehouse.code}</Badge>
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleEdit(warehouse)
-                        }}
-                      >
-                        <Edit className="mr-2 h-4 w-4" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleDeleteClick(warehouse.id)
-                        }}
-                        className="text-destructive"
-                        disabled={hasStock}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete {hasStock ? "(Has Stock)" : ""}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {(canEdit || canDelete) && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {canEdit && (
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleEdit(warehouse)
+                            }}
+                          >
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+                        )}
+                        {canDelete && (
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteClick(warehouse.id)
+                            }}
+                            className="text-destructive"
+                            disabled={hasStock}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete {hasStock ? "(Has Stock)" : ""}
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
                 <CardDescription>{warehouse.address}</CardDescription>
               </CardHeader>

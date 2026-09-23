@@ -39,11 +39,10 @@ import {
 } from "@/components/ui/select"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
-import { useCurrentUser } from "@/components/providers/current-user-provider"
+import { useCan } from "@/components/providers/current-user-provider"
 import {
   EXPENSE_CATEGORY_DESCRIPTION_MAX_LENGTH,
   EXPENSE_CATEGORY_NAME_MAX_LENGTH,
-  canManageExpenseCategories,
 } from "@/lib/expense-rules"
 
 interface ExpenseCategory {
@@ -72,14 +71,19 @@ async function saveCategory(
 
 export default function ExpensesPage() {
   const { toast } = useToast()
-  const currentUser = useCurrentUser()
-  const canManage = canManageExpenseCategories(currentUser.role)
+  // Same permissions the API checks (lib/permission-rules.ts).
+  const canCreateExpense = useCan("expenses", "create")
+  const canViewExpenses = useCan("expenses", "view")
+  const canManage = useCan("expense_categories", "create")
+  const canEditCategory = useCan("expense_categories", "edit")
+  const canDeleteCategory = useCan("expense_categories", "delete")
+  const showActions = canEditCategory || canDeleteCategory
   const [expenses, setExpenses] = useState<any[]>([])
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [categoriesLoading, setCategoriesLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("expenses")
+  const [activeTab, setActiveTab] = useState(canViewExpenses ? "expenses" : "categories")
   const [categoryDialog, setCategoryDialog] = useState<{ open: boolean; category: ExpenseCategory | null }>({
     open: false,
     category: null,
@@ -87,7 +91,8 @@ export default function ExpensesPage() {
   const [deleteTarget, setDeleteTarget] = useState<ExpenseCategory | null>(null)
 
   useEffect(() => {
-    fetchExpenses()
+    if (canViewExpenses) fetchExpenses()
+    else setIsLoading(false)
     fetchExpenseCategories()
   }, [])
 
@@ -180,6 +185,7 @@ export default function ExpensesPage() {
             Track and manage business expenses
           </p>
         </div>
+        {canCreateExpense && (
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -211,11 +217,12 @@ export default function ExpensesPage() {
             />
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="expenses">Expenses</TabsTrigger>
+          {canViewExpenses && <TabsTrigger value="expenses">Expenses</TabsTrigger>}
           <TabsTrigger value="categories">Expense Categories</TabsTrigger>
         </TabsList>
 
@@ -307,13 +314,13 @@ export default function ExpensesPage() {
                       <TableHead>Description</TableHead>
                       <TableHead className="text-right">Expenses</TableHead>
                       <TableHead>Status</TableHead>
-                      {canManage && <TableHead className="text-right">Actions</TableHead>}
+                      {showActions && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {expenseCategories.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={canManage ? 5 : 4} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={showActions ? 5 : 4} className="text-center text-muted-foreground py-8">
                           {canManage
                             ? 'No expense categories yet. Click "Add Category" to create the first one.'
                             : "No expense categories yet. Ask an admin or accountant to create one."}
@@ -332,33 +339,39 @@ export default function ExpensesPage() {
                                 {category.isActive ? "Active" : "Inactive"}
                               </Badge>
                             </TableCell>
-                            {canManage && (
+                            {showActions && (
                               <TableCell className="text-right">
                                 <div className="flex justify-end gap-0">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Edit"
-                                    onClick={() => setCategoryDialog({ open: true, category })}
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title={category.isActive ? "Deactivate" : "Activate"}
-                                    onClick={() => toggleActive(category)}
-                                  >
-                                    <Power className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Delete"
-                                    onClick={() => setDeleteTarget(category)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
+                                  {canEditCategory && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      title="Edit"
+                                      onClick={() => setCategoryDialog({ open: true, category })}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {canEditCategory && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      title={category.isActive ? "Deactivate" : "Activate"}
+                                      onClick={() => toggleActive(category)}
+                                    >
+                                      <Power className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {canDeleteCategory && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      title="Delete"
+                                      onClick={() => setDeleteTarget(category)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
                                 </div>
                               </TableCell>
                             )}
@@ -397,7 +410,7 @@ export default function ExpensesPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             {(deleteTarget?._count?.expenses ?? 0) > 0 ? (
-              deleteTarget?.isActive && (
+              deleteTarget?.isActive && canEditCategory && (
                 <AlertDialogAction
                   onClick={() => {
                     const target = deleteTarget

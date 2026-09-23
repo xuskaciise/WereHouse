@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
-import { DEFAULT_MAX_SALES_DISCOUNT_PERCENT, MAX_SALES_DISCOUNT_SETTING } from "@/lib/discount-rules"
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   companyName: "Siu Warehouse",
@@ -14,14 +13,12 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   salesTaxRate: "5",
   purchaseTaxRate: "8",
   lowStockThreshold: "10",
-  // Maximum total discount (%) for roles other than ADMIN/WAREHOUSE_MANAGER.
-  [MAX_SALES_DISCOUNT_SETTING]: String(DEFAULT_MAX_SALES_DISCOUNT_PERCENT),
   dateFormat: "MM/DD/YYYY",
   timezone: "UTC",
 }
 const MAX_VALUE_LENGTH = 500
 
-// Any signed-in user may read settings.
+// Any signed-in user may read settings (company details, tax rates used by forms).
 export const GET = withAuth(async () => {
   const settings = await prisma.setting.findMany({
     where: { key: { in: Object.keys(DEFAULT_SETTINGS) } },
@@ -32,9 +29,9 @@ export const GET = withAuth(async () => {
     if (setting.value) result[setting.key] = setting.value
   }
   return json(result)
-})
+}, { authenticatedOnly: true })
 
-// Only ADMIN may change company-wide settings; unknown keys are rejected.
+// Changing settings needs settings:edit (ADMIN by default); unknown keys are rejected.
 export const PUT = withAuth(
   async (request) => {
     const body = await readJson<Record<string, unknown>>(request)
@@ -49,12 +46,6 @@ export const PUT = withAuth(
         throw new HttpError(400, `Invalid value for ${key}`)
       }
       if (String(value).length > MAX_VALUE_LENGTH) throw new HttpError(400, `Value for ${key} is too long`)
-      if (key === MAX_SALES_DISCOUNT_SETTING) {
-        const n = Number(value)
-        if (String(value).trim() === "" || !Number.isFinite(n) || n < 0 || n > 100) {
-          throw new HttpError(400, "Maximum sales discount must be a number between 0 and 100")
-        }
-      }
     }
 
     await prisma.$transaction(
@@ -69,5 +60,5 @@ export const PUT = withAuth(
 
     return json({ message: "Settings updated successfully" })
   },
-  { roles: ["ADMIN"] }
+  { permission: ["settings", "edit"] }
 )

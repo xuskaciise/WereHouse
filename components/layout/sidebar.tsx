@@ -19,9 +19,11 @@ import {
   Users,
   ChevronDown,
   ChevronRight,
+  ShieldCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
+import { ROLE_LABELS, canOpenPage } from "@/lib/permission-rules"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   Collapsible,
@@ -33,7 +35,6 @@ interface NavItem {
   name: string
   href: string
   icon: React.ComponentType<{ className?: string }>
-  adminOnly?: boolean
   children?: NavItem[]
 }
 
@@ -83,7 +84,8 @@ const navigationSections: NavSection[] = [
     title: "System",
     items: [
       { name: "Reports", href: "/reports", icon: FileText },
-      { name: "Users", href: "/users", icon: Users, adminOnly: true },
+      { name: "Users", href: "/users", icon: Users },
+      { name: "Roles & Permissions", href: "/roles", icon: ShieldCheck },
       { name: "Settings", href: "/settings", icon: Settings },
     ],
   },
@@ -120,7 +122,7 @@ export function Sidebar() {
   }
 
   const getRoleDisplayName = () => {
-    return user.role.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())
+    return ROLE_LABELS[user.role]
   }
 
   return (
@@ -136,18 +138,17 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 p-4 overflow-y-auto">
-        {navigationSections.map((section) => (
+        {navigationSections.map((section) => {
+          // Links follow the same page permissions the server enforces.
+          const items = section.items.filter((item) => canOpenPage(user.permissions, item.href))
+          if (items.length === 0) return null
+          return (
           <div key={section.title} className="mb-5">
             <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">
               {section.title}
             </p>
             <div className="space-y-1">
-              {section.items.map((item) => {
-                // Hide admin-only items if user is not admin
-                if (item.adminOnly && user.role !== "ADMIN") {
-                  return null
-                }
-
+              {items.map((item) => {
                 // Check if any child route is active (more precise matching)
                 // First check for exact matches, then check for path prefixes
                 const hasActiveChild = item.children?.some((child) => {
@@ -248,7 +249,8 @@ export function Sidebar() {
               })}
             </div>
           </div>
-        ))}
+          )
+        })}
       </nav>
 
       <div className="border-t p-4">

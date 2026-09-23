@@ -1,17 +1,18 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
-import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { scopeWhere } from "@/lib/permissions"
 import { withCustomerBalance } from "@/lib/balances"
 import { listResponse } from "@/lib/pagination"
 
 export const GET = withAuth(async (request, { user }) => {
-  const where = ownershipWhere(user)
+  const where = scopeWhere(user, "customers")
   return listResponse(request, {
     findMany: (page) => prisma.customer.findMany({ where, orderBy: { createdAt: "desc" }, ...page }),
     count: () => prisma.customer.count({ where }),
     map: withCustomerBalance,
   })
-})
+}, { permission: [["customers", "view"], ["customer_payments", "view"]] }) // also the payment form lookup
 
 export const POST = withAuth(async (request, { user }) => {
   const { name, email, phone, address, city, state } = await readJson(request)
@@ -30,4 +31,4 @@ export const POST = withAuth(async (request, { user }) => {
   })
 
   return json({ ...customer, balance: 0 }, { status: 201 })
-})
+}, { permission: ["customers", "create"] })

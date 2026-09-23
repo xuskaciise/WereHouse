@@ -19,12 +19,11 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
-import { useCurrentUser } from "@/components/providers/current-user-provider"
+import { useCan } from "@/components/providers/current-user-provider"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import {
   ADJUSTMENT_REASON_MAX_LENGTH,
   PURCHASE_TAX_RATE,
-  canAdjustPurchaseQuantities,
   purchaseStatusLabel,
 } from "@/lib/purchase-rules"
 
@@ -95,8 +94,10 @@ export function PurchaseOrderDetailsSheet({
   onReceiveComplete: (orderId: string) => void | Promise<void>
 }) {
   const { toast } = useToast()
-  const currentUser = useCurrentUser()
-  const canAdjust = canAdjustPurchaseQuantities(currentUser.role)
+  // Same permissions the API checks (lib/permission-rules.ts).
+  const canReceive = useCan("purchase_receive", "create")
+  const canAdjust = useCan("purchase_receive", "edit")
+  const canEditOrder = useCan("purchases", "edit")
 
   const [receiveOpen, setReceiveOpen] = useState(false)
   const [receiveNote, setReceiveNote] = useState("")
@@ -156,8 +157,8 @@ export function PurchaseOrderDetailsSheet({
     if (p.needsReason && !canAdjust) {
       receiveErrors.push(
         p.over
-          ? `${name}: only admins and warehouse managers can receive more than ordered`
-          : `${name}: only admins and warehouse managers can close a remainder`
+          ? `${name}: your role cannot receive more than ordered`
+          : `${name}: your role cannot close a remainder`
       )
     }
     if (p.needsReason && canAdjust && !p.row.reason.trim()) receiveErrors.push(`${name}: a reason is required`)
@@ -291,13 +292,13 @@ export function PurchaseOrderDetailsSheet({
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 print:hidden shrink-0">
-                {canEditPurchaseOrder(order) && (
+                {canEditOrder && canEditPurchaseOrder(order) && (
                   <Button type="button" variant="outline" size="sm" onClick={openEditDialog}>
                     <Pencil className="mr-2 h-4 w-4" />
                     Edit quantities
                   </Button>
                 )}
-                {canReceivePurchaseOrder(order) && (
+                {canReceive && canReceivePurchaseOrder(order) && (
                   <Button type="button" variant="default" size="sm" onClick={openReceiveDialog}>
                     <PackageCheck className="mr-2 h-4 w-4" />
                     Receive Order
@@ -465,7 +466,7 @@ export function PurchaseOrderDetailsSheet({
               updates only after you confirm.
               {canAdjust
                 ? " You may receive more than ordered, or close a remainder the supplier will not deliver."
-                : " Only admins and warehouse managers can receive more than ordered or close a remainder."}
+                : " Your role cannot receive more than ordered or close a remainder."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">

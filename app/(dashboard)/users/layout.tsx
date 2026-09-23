@@ -1,10 +1,7 @@
-import { redirect } from "next/navigation"
-import { getCurrentUser } from "@/lib/auth-guard"
+import { requirePageAccess } from "@/lib/page-access"
 
-// User management is ADMIN-only; the API enforces this too.
-export default async function UsersLayout({ children }: { children: React.ReactNode }) {
-  const user = await getCurrentUser()
-  if (!user) redirect("/login")
-  if (user.role !== "ADMIN") redirect("/dashboard")
+// Page guard: see PAGE_MODULES in lib/permission-rules.ts.
+export default async function Layout({ children }: { children: React.ReactNode }) {
+  await requirePageAccess("/users")
   return <>{children}</>
 }

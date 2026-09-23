@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { Navbar } from "@/components/layout/navbar"
 import { CurrentUserProvider } from "@/components/providers/current-user-provider"
 import { getCurrentUser } from "@/lib/auth-guard"
+import { reasonReferenceLimit } from "@/lib/sales-discounts"
 
 export default async function DashboardLayout({
   children,
@@ -11,9 +12,10 @@ export default async function DashboardLayout({
 }) {
   const user = await getCurrentUser()
   if (!user) redirect("/login")
+  const discountReasonReferenceLimit = await reasonReferenceLimit(user.permissions.sales_discount.discountLimit)
 
   return (
-    <CurrentUserProvider user={user}>
+    <CurrentUserProvider user={{ ...user, discountReasonReferenceLimit }}>
       <div className="flex h-screen overflow-hidden">
         <Sidebar />
         <div className="flex flex-1 flex-col overflow-hidden">

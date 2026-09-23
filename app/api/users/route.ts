@@ -14,7 +14,7 @@ export const GET = withAuth(
       count: () => prisma.user.count(),
     })
   },
-  { roles: ["ADMIN"] }
+  { permission: ["users", "view"] }
 )
 
 export const POST = withAuth(
@@ -45,5 +45,5 @@ export const POST = withAuth(
 
     return json(user, { status: 201 })
   },
-  { roles: ["ADMIN"] }
+  { permission: ["users", "create"] }
 )

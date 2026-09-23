@@ -6,7 +6,7 @@ import { hashPassword, validatePassword } from "@/lib/password"
 import { assertAdminRemains, parseRole, parseStatus, publicUserSelect } from "@/lib/users"
 
 // All user management is ADMIN-only and verified against the server session.
-const ADMIN_ONLY = { roles: ["ADMIN" as const] }
+// The users module is ADMIN-only (never grantable, see lib/permission-rules.ts).
 
 export const GET = withAuth<{ id: string }>(async (_request, { params }) => {
   const user = await prisma.user.findUnique({
@@ -15,7 +15,7 @@ export const GET = withAuth<{ id: string }>(async (_request, { params }) => {
   })
   if (!user) throw new HttpError(404, "User not found")
   return json(user)
-}, ADMIN_ONLY)
+}, { permission: ["users", "view"] })
 
 export const PUT = withAuth<{ id: string }>(async (request, { params }) => {
   const body = await readJson(request)
@@ -52,7 +52,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { params }) => {
     select: publicUserSelect,
   })
   return json(user)
-}, ADMIN_ONLY)
+}, { permission: ["users", "edit"] })
 
 export const PATCH = withAuth<{ id: string }>(async (request, { params }) => {
   const body = await readJson(request)
@@ -66,7 +66,7 @@ export const PATCH = withAuth<{ id: string }>(async (request, { params }) => {
     select: publicUserSelect,
   })
   return json(user)
-}, ADMIN_ONLY)
+}, { permission: ["users", "edit"] })
 
 export const DELETE = withAuth<{ id: string }>(async (_request, { user: currentUser, params }) => {
   if (params.id === currentUser.id) {
@@ -76,4 +76,4 @@ export const DELETE = withAuth<{ id: string }>(async (_request, { user: currentU
 
   await prisma.user.delete({ where: { id: params.id } })
   return json({ message: "User deleted successfully" })
-}, ADMIN_ONLY)
+}, { permission: ["users", "delete"] })

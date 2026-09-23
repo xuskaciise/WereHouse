@@ -1,6 +1,6 @@
 // TypeScript types matching future Prisma schema
 
-export type Role = "ADMIN" | "WAREHOUSE_MANAGER" | "SALES_OFFICER" | "ACCOUNTANT" | "STUDENT"
+export type Role = "ADMIN" | "WAREHOUSE_MANAGER" | "SALES_MANAGER" | "SALES_OFFICER" | "ACCOUNTANT" | "STUDENT"
 
 export type StockStatus = "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK"
 

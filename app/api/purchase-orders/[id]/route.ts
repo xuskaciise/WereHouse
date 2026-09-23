@@ -1,6 +1,7 @@
 import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
-import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { scopeWhere } from "@/lib/permissions"
 import { parseQuantity } from "@/lib/stock"
 import {
   parseReason,
@@ -31,7 +32,7 @@ export const PATCH = withAuth<{ id: string }>(async (request, { user, params }) 
   }
   const reason = parseReason(body.reason, { required: false, label: "the edit" })
 
-  const baseWhere = { id: purchaseOrderId, ...ownershipWhere(user) }
+  const baseWhere = { id: purchaseOrderId, ...scopeWhere(user, "purchases") }
   const exists = await prisma.purchaseOrder.count({ where: baseWhere })
   if (!exists) throw new HttpError(404, "Purchase order not found")
 
@@ -73,4 +74,4 @@ export const PATCH = withAuth<{ id: string }>(async (request, { user, params }) 
 
   const updated = await prisma.purchaseOrder.findFirst({ where: baseWhere, include: purchaseOrderDetailInclude })
   return json(updated)
-})
+}, { permission: ["purchases", "edit"] })

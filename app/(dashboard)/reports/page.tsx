@@ -13,6 +13,8 @@ import { useToast } from "@/components/ui/use-toast"
 import { formatCurrency } from "@/lib/utils"
 import { purchaseStatusLabel } from "@/lib/purchase-rules"
 import { totalDiscountOf } from "@/lib/discount-rules"
+import { useCurrentUser } from "@/components/providers/current-user-provider"
+import { can } from "@/lib/permission-rules"
 
 type PurchaseOrder = any
 type SalesOrder = any
@@ -51,6 +53,11 @@ function inDateRange(dateValue: string | Date, start: string, end: string) {
 }
 
 export default function ReportsPage() {
+  // Each tab needs its report permission; only the data for allowed tabs is loaded.
+  const { permissions } = useCurrentUser()
+  const showPurchases = can(permissions, "reports_stock", "view")
+  const showSales = can(permissions, "reports_sales", "view")
+  const showPayments = can(permissions, "reports_finance", "view")
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([])
@@ -81,11 +88,13 @@ export default function ReportsPage() {
       const from = periodStart(period)
       const orderQuery = new URLSearchParams({ view: "summary", ...(from && { from }) })
       const paymentQuery = new URLSearchParams(from ? { from } : {})
+      const load = (allowed: boolean, url: string) =>
+        allowed ? fetch(url) : Promise.resolve(new Response("[]", { status: 200 }))
       const [poRes, soRes, spRes, cpRes] = await Promise.all([
-        fetch(`/api/purchase-orders?${orderQuery}`),
-        fetch(`/api/sales-orders?${orderQuery}`),
-        fetch(`/api/supplier-payments?${paymentQuery}`),
-        fetch(`/api/customer-payments?${paymentQuery}`),
+        load(showPurchases || showPayments, `/api/purchase-orders?${orderQuery}`),
+        load(showSales || showPayments, `/api/sales-orders?${orderQuery}`),
+        load(showPayments, `/api/supplier-payments?${paymentQuery}`),
+        load(showPayments, `/api/customer-payments?${paymentQuery}`),
       ])
 
       if (!poRes.ok || !soRes.ok || !spRes.ok || !cpRes.ok) {
@@ -260,11 +269,11 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="purchases" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="purchases">Purchase Report</TabsTrigger>
-          <TabsTrigger value="sales">Sales Report</TabsTrigger>
-          <TabsTrigger value="payments">Payments Report</TabsTrigger>
+      <Tabs defaultValue={showPurchases ? "purchases" : showSales ? "sales" : "payments"} className="space-y-4">
+        <TabsList className={`grid w-full ${["grid-cols-1", "grid-cols-1", "grid-cols-2", "grid-cols-3"][[showPurchases, showSales, showPayments].filter(Boolean).length]}`}>
+          {showPurchases && <TabsTrigger value="purchases">Purchase Report</TabsTrigger>}
+          {showSales && <TabsTrigger value="sales">Sales Report</TabsTrigger>}
+          {showPayments && <TabsTrigger value="payments">Payments Report</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="purchases" className="space-y-4">

@@ -45,6 +45,7 @@ import { formatDate } from "@/lib/utils"
 import { User, Role } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
+import { ROLE_LABELS, can } from "@/lib/permission-rules"
 
 export default function UsersPage() {
   const { toast } = useToast()
@@ -86,8 +87,8 @@ export default function UsersPage() {
     }
   }
 
-  // Check if current user is admin
-  const isAdmin = currentUser.role === "ADMIN"
+  // UI only; the API checks the same "users" permission (ADMIN-only).
+  const isAdmin = can(currentUser.permissions, "users", "view")
 
   // Count users that can be approved (PENDING + REJECTED)
   const usersToApproveCount = users.filter((u) => u.status === "PENDING" || u.status === "REJECTED").length
@@ -339,13 +340,14 @@ export default function UsersPage() {
     const variants: Record<Role, "default" | "secondary" | "success" | "warning"> = {
       ADMIN: "default",
       WAREHOUSE_MANAGER: "secondary",
+      SALES_MANAGER: "success",
       SALES_OFFICER: "success",
       ACCOUNTANT: "warning",
       STUDENT: "secondary",
     }
     return (
       <Badge variant={variants[role] || "default"}>
-        {role.replace("_", " ")}
+        {ROLE_LABELS[role]}
       </Badge>
     )
   }
@@ -742,6 +744,7 @@ function UserForm({
           <SelectContent>
             <SelectItem value="ADMIN">Admin</SelectItem>
             <SelectItem value="WAREHOUSE_MANAGER">Warehouse Manager</SelectItem>
+            <SelectItem value="SALES_MANAGER">Sales Manager</SelectItem>
             <SelectItem value="SALES_OFFICER">Sales Officer</SelectItem>
             <SelectItem value="ACCOUNTANT">Accountant</SelectItem>
             <SelectItem value="STUDENT">Student</SelectItem>

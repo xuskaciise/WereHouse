@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
-import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { scopeWhere } from "@/lib/permissions"
 import { parseMoney } from "@/lib/money"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 
@@ -10,13 +11,13 @@ const expenseInclude = {
 } as const
 
 export const GET = withAuth(async (request, { user }) => {
-  const where = { ...ownershipWhere(user), ...dateRangeWhere(request, "expenseDate") }
+  const where = { ...scopeWhere(user, "expenses"), ...dateRangeWhere(request, "expenseDate") }
   return listResponse(request, {
     findMany: (page) =>
       prisma.expense.findMany({ where, include: expenseInclude, orderBy: { createdAt: "desc" }, ...page }),
     count: () => prisma.expense.count({ where }),
   })
-})
+}, { permission: ["expenses", "view"] })
 
 export const POST = withAuth(async (request, { user }) => {
   const { categoryId, amount, description, expenseDate, paymentMethod, reference } = await readJson(request)
@@ -44,4 +45,4 @@ export const POST = withAuth(async (request, { user }) => {
     include: expenseInclude,
   })
   return json(expense, { status: 201 })
-})
+}, { permission: ["expenses", "create"] })

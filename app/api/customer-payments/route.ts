@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
-import { HttpError, ownershipWhere } from "@/lib/auth-guard"
+import { HttpError } from "@/lib/auth-guard"
+import { scopeWhere } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
 import { parseMoney } from "@/lib/money"
 import { withNestedCustomerBalance } from "@/lib/balances"
@@ -8,14 +9,14 @@ import { customerPaymentInclude as paymentInclude } from "@/lib/includes"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 
 export const GET = withAuth(async (request, { user }) => {
-  const where = { ...ownershipWhere(user), ...dateRangeWhere(request, "paymentDate") }
+  const where = { ...scopeWhere(user, "customer_payments"), ...dateRangeWhere(request, "paymentDate") }
   return listResponse(request, {
     findMany: (page) =>
       prisma.customerPayment.findMany({ where, include: paymentInclude, orderBy: { createdAt: "desc" }, ...page }),
     count: () => prisma.customerPayment.count({ where }),
     map: withNestedCustomerBalance,
   })
-})
+}, { permission: [["customer_payments", "view"], ["reports_finance", "view"]] })
 
 export const POST = withAuth(async (request, { user }) => {
   const { customerId, salesOrderId, amount, paymentDate, paymentMethod, reference, notes } =
@@ -29,7 +30,8 @@ export const POST = withAuth(async (request, { user }) => {
   await assertCanReference(user, { customerId })
   if (salesOrderId) {
     const order = await prisma.salesOrder.findFirst({
-      where: { id: salesOrderId, customerId, ...ownershipWhere(user) },
+      // The linked order must be one the user can see (own orders for OWN sales scope).
+      where: { id: salesOrderId, customerId, ...scopeWhere(user, "sales") },
       select: { id: true },
     })
     if (!order) throw new HttpError(400, "Sales order not found for this customer")
@@ -52,4 +54,4 @@ export const POST = withAuth(async (request, { user }) => {
 
   const [withBalance] = await withNestedCustomerBalance([payment])
   return json(withBalance, { status: 201 })
-})
+}, { permission: ["customer_payments", "create"] })

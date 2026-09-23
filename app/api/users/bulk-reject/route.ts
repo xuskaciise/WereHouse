@@ -14,5 +14,5 @@ export const POST = withAuth(
     })
     return json({ success: true, count: result.count })
   },
-  { roles: ["ADMIN"] }
+  { permission: ["users", "edit"] }
 )
