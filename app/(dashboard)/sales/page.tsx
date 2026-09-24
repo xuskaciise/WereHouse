@@ -11,6 +11,7 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 import Link from "next/link"
 import Image from "next/image"
 import { discountLabel, totalDiscountOf } from "@/lib/discount-rules"
+import { taxLabel } from "@/lib/tax-rules"
 import { useCan } from "@/components/providers/current-user-provider"
 
 export default function SalesPage() {
@@ -317,10 +318,12 @@ function SalesOrderDetailsSheet({
               <span>Taxable amount</span>
               <span>{formatCurrency(Number(order.subtotal) - Number(order.discount || 0))}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span>Tax (5%)</span>
-              <span>{formatCurrency(order.tax)}</span>
-            </div>
+            {Number(order.tax) !== 0 && (
+              <div className="flex justify-between text-sm">
+                <span>{taxLabel(order.taxRate)}</span>
+                <span>{formatCurrency(order.tax)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-lg font-bold border-t pt-2">
               <span>Total</span>
               <span className="text-primary">{formatCurrency(order.total)}</span>

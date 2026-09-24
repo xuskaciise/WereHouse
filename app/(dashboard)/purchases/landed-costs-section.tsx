@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog"
 import { useToast } from "@/components/ui/use-toast"
 import { useCan, useCurrentUser } from "@/components/providers/current-user-provider"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { formatCurrency, formatDate, formatUnitCost } from "@/lib/utils"
 import { PaymentMethodFields, emptyPaymentMethod, paymentMethodBody, paymentMethodProblems, usePaymentConfig, type PaymentMethodValue } from "@/components/payment-method-fields"
 
 export const METHOD_LABELS: Record<string, string> = {
@@ -36,7 +36,7 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "secondary"> = {
   PARTLY_PAID: "warning",
   UNPAID: "secondary",
 }
-export const unit4 = (n: unknown) => `$${Number(n ?? 0).toFixed(4)}`
+export const unit4 = (n: unknown) => formatUnitCost(n as number)
 
 interface CostForm {
   typeId: string
@@ -382,7 +382,7 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
             {view.logs.map((log: any) => (
               <li key={log.id}>
                 <span className="font-medium">{log.action}</span> {log.after?.type || log.before?.type || ""}{" "}
-                {log.after?.amount ? `→ $${log.after.amount}` : log.before?.amount ? `($${log.before.amount})` : ""} ·{" "}
+                {log.after?.amount ? `→ ${formatCurrency(log.after.amount)}` : log.before?.amount ? `(${formatCurrency(log.before.amount)})` : ""} ·{" "}
                 {log.user?.username} · {formatDate(log.createdAt)}
                 {log.reason && <span className="text-muted-foreground"> · {log.reason}</span>}
               </li>

@@ -7,7 +7,7 @@ import { assertCanReference } from "@/lib/ownership"
 import { calculateOrderTotals, createWithOrderNumber, parseOrderItems, parseOrderStatus } from "@/lib/orders"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 import { purchaseOrderDetailInclude as purchaseOrderInclude } from "@/lib/purchase-orders"
-import { PURCHASE_TAX_RATE } from "@/lib/purchase-rules"
+import { currentTaxRate } from "@/lib/tax"
 
 // Lighter shape for reports/lists that do not need line items.
 const purchaseOrderSummaryInclude = {
@@ -45,7 +45,9 @@ export const POST = withAuth(async (request, { user }) => {
     productIds: items.map((item) => item.productId),
   })
 
-  const { subtotal, tax, discount, total } = calculateOrderTotals(items, PURCHASE_TAX_RATE)
+  // Purchase tax rate from Settings, stored on the order.
+  const taxRate = await currentTaxRate("purchase")
+  const { subtotal, tax, discount, total } = calculateOrderTotals(items, taxRate)
 
   // Stock is only updated when goods are received (see .../receive), and the
   // supplier balance is derived from orders and payments (lib/balances.ts).
@@ -62,6 +64,7 @@ export const POST = withAuth(async (request, { user }) => {
           expectedDeliveryDate: expectedDelivery ? new Date(expectedDelivery) : null,
           subtotal,
           tax,
+          taxRate,
           discount,
           total,
           status: "PENDING",

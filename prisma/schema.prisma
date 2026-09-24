@@ -257,6 +257,9 @@ model PurchaseOrder {
   status               OrderStatus @default(PENDING)
   subtotal             Decimal     @default(0) @db.Decimal(12, 2)
   tax                  Decimal     @default(0) @db.Decimal(12, 2)
+  // Tax rate in % used for this order (from Settings at creation); every
+  // recalculation of the order uses it, never the current Settings.
+  taxRate              Decimal     @default(0) @db.Decimal(5, 2)
   discount             Decimal     @default(0) @db.Decimal(12, 2)
   total                Decimal     @default(0) @db.Decimal(12, 2)
   notes                String?
@@ -417,6 +420,9 @@ model SalesOrder {
   status               OrderStatus   @default(PENDING)
   subtotal             Decimal       @default(0) @db.Decimal(12, 2)
   tax                  Decimal       @default(0) @db.Decimal(12, 2)
+  // Tax rate in % used for this order (from Settings at creation); every
+  // recalculation of the order uses it, never the current Settings.
+  taxRate              Decimal       @default(0) @db.Decimal(5, 2)
   // subtotal = sum of line subtotals (after item discounts).
   // discount = ORDER-level discount amount; itemDiscount = sum of line discounts.
   // total = (subtotal - discount) + tax, tax on the amount after all discounts.

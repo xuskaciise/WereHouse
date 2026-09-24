@@ -3,9 +3,6 @@
 // Who may give discounts, and up to which %, is the sales_discount
 // permission (lib/permission-rules.ts, Roles & Permissions page).
 
-/** Sales tax rate as a fraction (5%), applied after all discounts. */
-export const SALES_TAX_RATE = "0.05"
-
 /** A reason is required above the limit, and always above this percentage. */
 export const DISCOUNT_REASON_THRESHOLD_PERCENT = 20
 

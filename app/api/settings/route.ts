@@ -2,6 +2,14 @@ import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { DEFAULT_PAYMENT_CONFIG, PAYMENT_METHODS, PAYMENT_METHOD_SETTING } from "@/lib/payment-methods"
+import { isValidTaxRateInput } from "@/lib/tax-rules"
+import { CURRENCIES } from "@/lib/utils"
+
+const TAX_KEYS: Record<string, string> = {
+  defaultTaxRate: "Default tax rate",
+  salesTaxRate: "Sales tax rate",
+  purchaseTaxRate: "Purchase tax rate",
+}
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   companyName: "Siu Warehouse",
@@ -10,9 +18,11 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   companyEmail: "",
   companyWebsite: "",
   defaultCurrency: "USD",
-  defaultTaxRate: "8",
-  salesTaxRate: "5",
-  purchaseTaxRate: "8",
+  // Tax rates in % (0-100, max 2 decimals); an empty sales / purchase rate
+  // falls back to the default rate (lib/tax-rules.ts). Stored on each order.
+  defaultTaxRate: "0",
+  salesTaxRate: "0",
+  purchaseTaxRate: "0",
   lowStockThreshold: "10",
   // Enabled payment methods and mobile money prefixes (lib/payment-methods.ts).
   [PAYMENT_METHOD_SETTING]: JSON.stringify(DEFAULT_PAYMENT_CONFIG),
@@ -58,7 +68,7 @@ function validatePaymentConfig(value: unknown): string {
   return JSON.stringify({ disabled: Array.from(new Set(raw.disabled)), prefixes })
 }
 
-// Changing settings needs settings:edit (ADMIN by default); unknown keys are rejected.
+// Changing settings needs settings:edit, which only ADMIN has (not grantable); unknown keys are rejected.
 export const PUT = withAuth(
   async (request) => {
     const body = await readJson<Record<string, unknown>>(request)
@@ -70,6 +80,15 @@ export const PUT = withAuth(
       if (!(key in DEFAULT_SETTINGS)) throw new HttpError(400, `Unknown setting: ${key}`)
       if (typeof value !== "string" && typeof value !== "number") {
         throw new HttpError(400, `Invalid value for ${key}`)
+      }
+      if (key in TAX_KEYS) {
+        if (!isValidTaxRateInput(value)) throw new HttpError(400, `${TAX_KEYS[key]} must be between 0 and 100 (max 2 decimals)`)
+        body[key] = String(value).trim()
+        continue
+      }
+      if (key === "defaultCurrency") {
+        if (!CURRENCIES.includes(String(value) as never)) throw new HttpError(400, `Currency must be one of ${CURRENCIES.join(", ")}`)
+        continue
       }
       if (key === PAYMENT_METHOD_SETTING) {
         body[key] = validatePaymentConfig(value)

@@ -4,6 +4,7 @@ import { Navbar } from "@/components/layout/navbar"
 import { CurrentUserProvider } from "@/components/providers/current-user-provider"
 import { getCurrentUser } from "@/lib/auth-guard"
 import { reasonReferenceLimit } from "@/lib/sales-discounts"
+import { prisma } from "@/lib/prisma"
 
 export default async function DashboardLayout({
   children,
@@ -13,9 +14,10 @@ export default async function DashboardLayout({
   const user = await getCurrentUser()
   if (!user) redirect("/login")
   const discountReasonReferenceLimit = await reasonReferenceLimit(user.permissions.sales_discount.discountLimit)
+  const currency = (await prisma.setting.findUnique({ where: { key: "defaultCurrency" } }))?.value ?? "USD"
 
   return (
-    <CurrentUserProvider user={{ ...user, discountReasonReferenceLimit }}>
+    <CurrentUserProvider user={{ ...user, discountReasonReferenceLimit }} currency={currency}>
       <div className="flex h-screen overflow-hidden">
         <Sidebar />
         <div className="flex flex-1 flex-col overflow-hidden">

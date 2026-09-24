@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
 import { can } from "@/lib/permission-rules"
+import { CURRENCIES } from "@/lib/utils"
 import { PaymentMethodsCard } from "./payment-methods-card"
 
 export default function SettingsPage() {
@@ -276,13 +278,19 @@ export default function SettingsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="defaultCurrency">Default Currency *</Label>
-                <Input
-                  id="defaultCurrency"
-                  value={settings.defaultCurrency}
-                  onChange={(e) => setSettings({ ...settings, defaultCurrency: e.target.value })}
-                  placeholder="USD"
-                  required
-                />
+                <Select
+                  value={CURRENCIES.includes(settings.defaultCurrency as never) ? settings.defaultCurrency : "USD"}
+                  onValueChange={(defaultCurrency) => setSettings({ ...settings, defaultCurrency })}
+                >
+                  <SelectTrigger id="defaultCurrency">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="USD">USD – US Dollar ($)</SelectItem>
+                    <SelectItem value="SOS">SOS – Somali Shilling</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">All amounts in the app are shown in this currency.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="defaultTaxRate">Default Tax Rate (%)</Label>

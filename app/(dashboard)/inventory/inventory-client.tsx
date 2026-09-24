@@ -35,7 +35,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { StockStatus } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { useCan } from "@/components/providers/current-user-provider"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, formatUnitCost } from "@/lib/utils"
 import Link from "next/link"
 
 export default function InventoryPage() {
@@ -321,7 +321,7 @@ export default function InventoryPage() {
                       {item.quantity - item.reservedQuantity}
                     </TableCell>
                     <TableCell>{item.product?.reorderLevel || 0}</TableCell>
-                    {seesCost && <TableCell className="text-right">${Number(item.avgCost || 0).toFixed(4)}</TableCell>}
+                    {seesCost && <TableCell className="text-right">{formatUnitCost(item.avgCost)}</TableCell>}
                     {seesCost && (
                       <TableCell className="text-right">{formatCurrency(Number(item.avgCost || 0) * item.quantity)}</TableCell>
                     )}

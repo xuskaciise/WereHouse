@@ -14,6 +14,7 @@ import {
 } from "@/lib/sales-discounts"
 import { decrementStock } from "@/lib/stock"
 import { averageCost } from "@/lib/stock-valuation"
+import { currentTaxRate } from "@/lib/tax"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 import type { Prisma } from "@prisma/client"
 
@@ -63,11 +64,14 @@ export const POST = withAuth(async (request, { user }) => {
 
   // Discounts: validated and calculated here in Decimal (client totals ignored).
   const rawItems = body.items as { discount?: unknown }[]
+  // Sales tax rate from Settings, stored on the order.
+  const taxRate = await currentTaxRate("sales")
   const totals = calculateSalesTotals(
     items,
     rawItems.map((raw, index) => parseDiscount(raw?.discount, `Line ${index + 1}`)),
     parseDiscount(body.discount, "Order"),
-    (index) => `Line ${index + 1}`
+    (index) => `Line ${index + 1}`,
+    taxRate
   )
   // Limits come from the sales_discount permission (Roles & Permissions).
   let discountReason: string | null = null
@@ -106,6 +110,7 @@ export const POST = withAuth(async (request, { user }) => {
               expectedDeliveryDate: expectedDelivery ? new Date(expectedDelivery) : null,
               subtotal,
               tax,
+              taxRate,
               discount,
               discountType: totals.discountType,
               discountValue: totals.discountValue,

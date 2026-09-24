@@ -63,7 +63,7 @@ export const EDITABLE_ROLES = ["WAREHOUSE_MANAGER", "SALES_MANAGER", "SALES_OFFI
 export type EditableRole = (typeof EDITABLE_ROLES)[number]
 
 /** Modules that stay ADMIN-only (granting them would allow privilege escalation). */
-export const ADMIN_ONLY_MODULES: readonly Module[] = ["users", "roles"]
+export const ADMIN_ONLY_MODULES: readonly Module[] = ["users", "roles", "settings"]
 
 export const MODULE_LABELS: Record<Module, string> = {
   dashboard: "Dashboard",
@@ -227,7 +227,6 @@ export const DEFAULT_PERMISSIONS: Record<EditableRole, PermissionMap> = {
       reports_stock: VIEW,
       reports_sales: VIEW,
       reports_finance: VIEW,
-      settings: VIEW,
     },
     "OWN"
   ),

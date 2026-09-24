@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Combobox } from "@/components/ui/combobox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatCurrency } from "@/lib/utils"
+import { resolveTaxRate, taxLabel } from "@/lib/tax-rules"
 import { useToast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -21,6 +22,11 @@ interface OrderItem {
 }
 
 export default function NewPurchaseOrderPage() {
+  // Purchase tax rate from Settings (preview; the server applies and stores it).
+  const [taxRate, setTaxRate] = useState(0)
+  useEffect(() => {
+    fetch("/api/settings").then(async (r) => r.ok && setTaxRate(resolveTaxRate(await r.json(), "purchase")))
+  }, [])
   const { toast } = useToast()
   const router = useRouter()
   const [suppliers, setSuppliers] = useState<any[]>([])
@@ -166,7 +172,7 @@ export default function NewPurchaseOrderPage() {
     (sum, item) => sum + item.quantity * item.unitPrice,
     0
   )
-  const tax = subtotal * 0.08
+  const tax = Math.round(subtotal * taxRate) / 100
   const total = subtotal + tax
 
   return (
@@ -352,10 +358,12 @@ export default function NewPurchaseOrderPage() {
                 <span>Subtotal</span>
                 <span className="font-medium">{formatCurrency(subtotal)}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Tax (8%)</span>
-                <span className="font-medium">{formatCurrency(tax)}</span>
-              </div>
+              {tax !== 0 && (
+                <div className="flex justify-between">
+                  <span>{taxLabel(taxRate)}</span>
+                  <span className="font-medium">{formatCurrency(tax)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span>Discount</span>
                 <span className="font-medium text-green-600">

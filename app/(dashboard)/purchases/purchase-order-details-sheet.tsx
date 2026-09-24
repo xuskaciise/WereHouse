@@ -22,9 +22,9 @@ import { useToast } from "@/components/ui/use-toast"
 import { useCan } from "@/components/providers/current-user-provider"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { LandedCostsSection } from "./landed-costs-section"
+import { taxLabel } from "@/lib/tax-rules"
 import {
   ADJUSTMENT_REASON_MAX_LENGTH,
-  PURCHASE_TAX_RATE,
   purchaseStatusLabel,
 } from "@/lib/purchase-rules"
 
@@ -55,8 +55,8 @@ function canEditPurchaseOrder(order: { status?: string; receives?: unknown[] }) 
 }
 
 // Preview only (the server recalculates): integer cents, same rounding as
-// the server (half-up per line and on the tax).
-const TAX_RATE = Number(PURCHASE_TAX_RATE)
+// the server (half-up per line and on the tax), at the order's own stored
+// tax rate.
 const cents = (value: unknown) => Math.round(Number(value || 0) * 100)
 
 function previewTotalCents(order: any, quantityById: Record<string, number>) {
@@ -64,7 +64,7 @@ function previewTotalCents(order: any, quantityById: Record<string, number>) {
     (sum: number, item: any) => sum + cents(item.unitPrice) * (quantityById[item.id] ?? item.quantity),
     0
   )
-  return subtotal + Math.round(subtotal * TAX_RATE) - cents(order.discount)
+  return subtotal + Math.round((subtotal * Number(order.taxRate || 0)) / 100) - cents(order.discount)
 }
 
 function formatDelta(deltaCents: number) {
@@ -419,10 +419,12 @@ export function PurchaseOrderDetailsSheet({
                     <span className="text-muted-foreground">Subtotal</span>
                     <span className="font-medium">{formatCurrency(order.subtotal || 0)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Tax (8%)</span>
-                    <span className="font-medium">{formatCurrency(order.tax || 0)}</span>
-                  </div>
+                  {Number(order.tax) !== 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{taxLabel(order.taxRate)}</span>
+                      <span className="font-medium">{formatCurrency(order.tax || 0)}</span>
+                    </div>
+                  )}
                   {order.discount > 0 && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Discount</span>

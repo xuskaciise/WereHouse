@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/components/ui/use-toast"
 import { useCan, useCurrentUser } from "@/components/providers/current-user-provider"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { formatCurrency, formatDate, formatUnitCost } from "@/lib/utils"
 import { TRANSFER_EVENTS, TRANSFER_STATUS } from "@/lib/transfer-labels"
 import { PaymentMethodFields, emptyPaymentMethod, paymentMethodBody, paymentMethodProblems, usePaymentConfig, type PaymentMethodValue } from "@/components/payment-method-fields"
 
@@ -236,7 +236,7 @@ export default function TransferDetailPage() {
                     <TableCell className="text-right">{i.lostQuantity || "-"}</TableCell>
                     <TableCell className="text-right">{i.returnedQuantity || "-"}</TableCell>
                     <TableCell className="text-right font-medium">{i.inTransitQuantity || "-"}</TableCell>
-                    {seesCost && <TableCell className="text-right">${Number(i.unitCost || 0).toFixed(4)}</TableCell>}
+                    {seesCost && <TableCell className="text-right">{formatUnitCost(i.unitCost)}</TableCell>}
                     {seesCost && <TableCell className="text-right">{formatCurrency(i.allocatedCost || 0)}</TableCell>}
                     <TableCell className="hidden print:table-cell" />
                   </TableRow>
@@ -331,8 +331,8 @@ export default function TransferDetailPage() {
                   {when(e.createdAt)} · {e.user?.username}
                   {e.data?.received !== undefined && ` · received ${e.data.received}`}
                   {e.data?.lost ? ` · damaged/lost ${e.data.lost}` : ""}
-                  {e.data?.after?.amount && ` · ${e.data.after.type} $${e.data.after.amount}`}
-                  {e.data?.before?.amount && !e.data?.after && ` · ${e.data.before.type} $${e.data.before.amount}`}
+                  {e.data?.after?.amount && ` · ${e.data.after.type} ${formatCurrency(e.data.after.amount)}`}
+                  {e.data?.before?.amount && !e.data?.after && ` · ${e.data.before.type} ${formatCurrency(e.data.before.amount)}`}
                 </div>
                 {e.notes && <div>{e.notes}</div>}
                 {e.data?.reasons?.length > 0 && <div className="text-muted-foreground">Reason: {e.data.reasons.join("; ")}</div>}

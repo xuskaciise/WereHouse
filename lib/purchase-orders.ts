@@ -1,7 +1,8 @@
 import type { OrderStatus, Prisma } from "@prisma/client"
 import { HttpError } from "@/lib/http-error"
 import { roundMoney, sumMoney } from "@/lib/money"
-import { ADJUSTMENT_REASON_MAX_LENGTH, PURCHASE_TAX_RATE } from "@/lib/purchase-rules"
+import { ADJUSTMENT_REASON_MAX_LENGTH } from "@/lib/purchase-rules"
+import { taxOn } from "@/lib/tax"
 
 type Tx = Prisma.TransactionClient
 
@@ -57,15 +58,16 @@ export async function setItemQuantity(
 
 /**
  * Recomputes subtotal, tax and total from the stored line subtotals (never
- * from client input). The discount is kept as it is.
+ * from client input), at the order's own stored tax rate (never the current
+ * Settings). The discount is kept as it is.
  */
 export async function recalculatePurchaseOrderTotals(tx: Tx, purchaseOrderId: string): Promise<void> {
   const [po, items] = await Promise.all([
-    tx.purchaseOrder.findUniqueOrThrow({ where: { id: purchaseOrderId }, select: { discount: true } }),
+    tx.purchaseOrder.findUniqueOrThrow({ where: { id: purchaseOrderId }, select: { discount: true, taxRate: true } }),
     tx.purchaseOrderItem.findMany({ where: { purchaseOrderId }, select: { subtotal: true } }),
   ])
   const subtotal = sumMoney(items.map((item) => item.subtotal))
-  const tax = roundMoney(subtotal.times(PURCHASE_TAX_RATE))
+  const tax = taxOn(subtotal, po.taxRate)
   const total = subtotal.plus(tax).minus(po.discount)
   if (total.isNegative()) throw new HttpError(400, "The order total cannot be negative")
   await tx.purchaseOrder.update({ where: { id: purchaseOrderId }, data: { subtotal, tax, total } })

@@ -16,11 +16,11 @@ import { useToast } from "@/components/ui/use-toast"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
 import {
   DISCOUNT_REASON_MAX_LENGTH,
-  SALES_TAX_RATE,
   type DiscountTypeValue,
   discountReasonRequired,
 } from "@/lib/discount-rules"
 import { useRouter } from "next/navigation"
+import { resolveTaxRate, taxLabel } from "@/lib/tax-rules"
 import Link from "next/link"
 import Image from "next/image"
 
@@ -34,7 +34,6 @@ interface OrderItem {
 
 // Preview only, in integer cents with the server's rounding (half-up); the
 // server recalculates and validates everything in Decimal.
-const TAX_RATE = Number(SALES_TAX_RATE)
 const toCents = (value: unknown) => Math.round(Number(value || 0) * 100)
 
 function discountCents(baseCents: number, type: DiscountTypeValue, raw: string): { cents: number; error?: string } {
@@ -113,6 +112,11 @@ export default function NewSalesOrderPage() {
   const [orderDiscountValue, setOrderDiscountValue] = useState("")
   const [discountReason, setDiscountReason] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+  // Sales tax rate from Settings (preview; the server applies and stores it).
+  const [taxRate, setTaxRate] = useState(0)
+  useEffect(() => {
+    fetch("/api/settings").then(async (r) => r.ok && setTaxRate(resolveTaxRate(await r.json(), "sales")))
+  }, [])
   const orderNumber = "SO-2023-0042"
 
   useEffect(() => {
@@ -240,7 +244,7 @@ export default function NewSalesOrderPage() {
   const orderDiscount = discountCents(subtotalCents, orderDiscountType, orderDiscountValue)
   const orderDiscountCents = orderDiscount.error ? 0 : orderDiscount.cents
   const taxableCents = subtotalCents - orderDiscountCents
-  const taxCents = Math.round(taxableCents * TAX_RATE)
+  const taxCents = Math.round((taxableCents * taxRate) / 100)
   const totalCents = taxableCents + taxCents
   const totalDiscountCents = itemDiscountCents + orderDiscountCents
   // Rounded to 2 decimals, as on the server.
@@ -430,10 +434,12 @@ export default function NewSalesOrderPage() {
         <span>Taxable amount</span>
         <span>{money(taxableCents)}</span>
       </div>
-      <div className="flex justify-between text-sm">
-        <span>Tax (5%)</span>
-        <span>{money(taxCents)}</span>
-      </div>
+      {taxCents !== 0 && (
+        <div className="flex justify-between text-sm">
+          <span>{taxLabel(taxRate)}</span>
+          <span>{money(taxCents)}</span>
+        </div>
+      )}
     </>
   )
 

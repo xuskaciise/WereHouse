@@ -24,10 +24,10 @@ export function parseOrderItems(items: unknown): OrderItemInput[] {
   })
 }
 
-/** Order totals in Decimal. `taxRate` is a fraction, e.g. "0.08" for 8%. */
-export function calculateOrderTotals(items: OrderItemInput[], taxRate: string) {
+/** Order totals in Decimal. `taxRatePercent` is a percentage, e.g. 8 for 8%. */
+export function calculateOrderTotals(items: OrderItemInput[], taxRatePercent: Prisma.Decimal.Value) {
   const subtotal = sumMoney(items.map((item) => item.subtotal))
-  const tax = roundMoney(subtotal.times(taxRate))
+  const tax = roundMoney(subtotal.times(taxRatePercent).div(100))
   const discount = ZERO
   const total = subtotal.plus(tax).minus(discount)
   return { subtotal, tax, discount, total }

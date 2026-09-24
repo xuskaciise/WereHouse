@@ -1,9 +1,10 @@
-import type { DiscountType } from "@prisma/client"
+import type { DiscountType, Prisma } from "@prisma/client"
 import { getRolePermissions } from "@/lib/permissions"
 import { HttpError } from "@/lib/http-error"
 import { type Money, Decimal, ZERO, parseMoney, roundMoney, sumMoney } from "@/lib/money"
 import type { OrderItemInput } from "@/lib/orders"
-import { DISCOUNT_REASON_MAX_LENGTH, DISCOUNT_REASON_THRESHOLD_PERCENT, SALES_TAX_RATE } from "@/lib/discount-rules"
+import { DISCOUNT_REASON_MAX_LENGTH, DISCOUNT_REASON_THRESHOLD_PERCENT } from "@/lib/discount-rules"
+import { taxOn } from "@/lib/tax"
 
 // Sales order discounts. Everything here is Decimal and runs on the server;
 // totals sent by the client are never used.
@@ -13,7 +14,7 @@ import { DISCOUNT_REASON_MAX_LENGTH, DISCOUNT_REASON_THRESHOLD_PERCENT, SALES_TA
 //   subtotal       = sum of line subtotals
 //   order discount = % of subtotal, or a fixed amount      (never above subtotal)
 //   taxable        = subtotal - order discount
-//   tax            = taxable x 5%
+//   tax            = taxable x the sales tax rate (Settings, stored on the order)
 //   total          = taxable + tax
 
 export interface Discount {
@@ -62,7 +63,9 @@ export function calculateSalesTotals(
   items: OrderItemInput[],
   lineDiscounts: Discount[],
   orderDiscount: Discount,
-  itemLabel: (index: number) => string
+  itemLabel: (index: number) => string,
+  /** Sales tax in % for this order (Settings at creation). */
+  taxRatePercent: Prisma.Decimal.Value
 ) {
   let gross = ZERO
   const lines: SalesLineTotals[] = items.map((item, index) => {
@@ -83,7 +86,7 @@ export function calculateSalesTotals(
   const itemDiscount = sumMoney(lines.map((line) => line.discountAmount))
   const discount = discountAmount(subtotal, orderDiscount, "Order")
   const taxable = subtotal.minus(discount)
-  const tax = roundMoney(taxable.times(SALES_TAX_RATE))
+  const tax = taxOn(taxable, taxRatePercent)
   const total = taxable.plus(tax)
   const totalDiscount = itemDiscount.plus(discount)
   // Share of the gross amount given away, e.g. 12.5 for 12.5%, rounded to

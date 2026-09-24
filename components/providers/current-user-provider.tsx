@@ -3,6 +3,7 @@
 import { createContext, useContext } from "react"
 import type { Role } from "@prisma/client"
 import { type Action, type Module, type PermissionMap, can } from "@/lib/permission-rules"
+import { setCurrency } from "@/lib/utils"
 
 export interface CurrentUser {
   id: string
@@ -21,11 +22,15 @@ const CurrentUserContext = createContext<CurrentUser | null>(null)
 // re-checks the same permissions on the server.
 export function CurrentUserProvider({
   user,
+  currency,
   children,
 }: {
   user: CurrentUser
+  /** Company currency from Settings; used by formatCurrency() everywhere. */
+  currency: string
   children: React.ReactNode
 }) {
+  setCurrency(currency)
   return <CurrentUserContext.Provider value={user}>{children}</CurrentUserContext.Provider>
 }
 
