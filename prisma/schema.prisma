@@ -382,6 +382,10 @@ model SupplierPayment {
   amount              Decimal             @db.Decimal(12, 2)
   paymentDate         DateTime            @default(now())
   paymentMethod       String
+  // Mobile money (EVC Plus, ZAAD, E-Dahab): payer phone as +252XXXXXXXXX and
+  // the transaction ID from the confirmation SMS (lib/payment-methods.ts).
+  payerPhone          String?
+  transactionId       String?
   reference           String?
   // Optional: the landed cost line this payment settles.
   landedCostId        String?
@@ -477,6 +481,10 @@ model CustomerPayment {
   amount        Decimal     @db.Decimal(12, 2)
   paymentDate   DateTime    @default(now())
   paymentMethod String
+  // Mobile money (EVC Plus, ZAAD, E-Dahab): payer phone as +252XXXXXXXXX and
+  // the transaction ID from the confirmation SMS (lib/payment-methods.ts).
+  payerPhone    String?
+  transactionId String?
   reference     String?
   notes         String?
   userId        String
@@ -681,6 +689,10 @@ model Expense {
   description   String
   expenseDate   DateTime        @default(now())
   paymentMethod String
+  // Mobile money (EVC Plus, ZAAD, E-Dahab): payer phone as +252XXXXXXXXX and
+  // the transaction ID from the confirmation SMS (lib/payment-methods.ts).
+  payerPhone    String?
+  transactionId String?
   reference     String?
   userId        String
   user          User            @relation(fields: [userId], references: [id])

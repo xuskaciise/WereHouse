@@ -1,5 +1,6 @@
 import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
+import { parsePaymentFields } from "@/lib/payment-fields"
 import { HttpError } from "@/lib/auth-guard"
 import { requirePermission } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
@@ -30,8 +31,8 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
   const paidNow = body.paidNow && typeof body.paidNow === "object" ? body.paidNow : null
   if (paidNow) {
     requirePermission(user, ["supplier_payments", "create"], "Your role cannot record supplier payments")
-    if (typeof paidNow.paymentMethod !== "string" || !paidNow.paymentMethod) throw new HttpError(400, "Payment method is required")
   }
+  const paidMethod = paidNow ? await parsePaymentFields(paidNow) : null
 
   await prisma.$transaction(async (tx) => {
     const t = await lockTransfer(tx, params.id)
@@ -44,7 +45,9 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
           supplierId: input.paidToSupplierId,
           stockTransferCostId: cost.id,
           amount: input.amount,
-          paymentMethod: paidNow.paymentMethod,
+          paymentMethod: paidMethod!.paymentMethod,
+          payerPhone: paidMethod!.payerPhone,
+          transactionId: paidMethod!.transactionId,
           reference: input.reference,
           notes: `Transfer cost ${t.transferNumber}: ${type.name}`,
           userId: user.id,
@@ -60,5 +63,5 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
     })
   }, TX_OPTIONS)
 
-  return json(await transferDetail(params.id), { status: 201 })
+  return json({ ...(await transferDetail(params.id)), warnings: paidMethod?.warnings ?? [] }, { status: 201 })
 }, { permission: ["stock_transfers", "edit"] })

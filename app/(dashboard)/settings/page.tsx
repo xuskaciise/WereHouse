@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
 import { can } from "@/lib/permission-rules"
+import { PaymentMethodsCard } from "./payment-methods-card"
 
 export default function SettingsPage() {
   const { toast } = useToast()
@@ -42,6 +43,7 @@ export default function SettingsPage() {
     lowStockThreshold: "",
     dateFormat: "",
     timezone: "",
+    paymentMethodConfig: "",
   })
 
   useEffect(() => {
@@ -349,6 +351,12 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        <PaymentMethodsCard
+          value={settings.paymentMethodConfig}
+          onChange={(paymentMethodConfig) => setSettings({ ...settings, paymentMethodConfig })}
+          disabled={!canEditSettings}
+        />
 
         {/* System Settings */}
         <Card>

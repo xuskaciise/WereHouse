@@ -41,6 +41,15 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
 import { useCan } from "@/components/providers/current-user-provider"
 import {
+  PaymentMethodFields,
+  type PaymentMethodValue,
+  emptyPaymentMethod,
+  paymentMethodBody,
+  paymentMethodProblems,
+  usePaymentConfig,
+} from "@/components/payment-method-fields"
+import { PAYMENT_METHODS, formatSomaliPhone, methodLabel } from "@/lib/payment-methods"
+import {
   EXPENSE_CATEGORY_DESCRIPTION_MAX_LENGTH,
   EXPENSE_CATEGORY_NAME_MAX_LENGTH,
 } from "@/lib/expense-rules"
@@ -84,6 +93,7 @@ export default function ExpensesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [activeTab, setActiveTab] = useState(canViewExpenses ? "expenses" : "categories")
+  const [methodFilter, setMethodFilter] = useState("all")
   const [categoryDialog, setCategoryDialog] = useState<{ open: boolean; category: ExpenseCategory | null }>({
     open: false,
     category: null,
@@ -229,10 +239,21 @@ export default function ExpensesPage() {
         <TabsContent value="expenses" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>All Expenses</CardTitle>
-              <CardDescription>
-                List of all recorded expenses
-              </CardDescription>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle>All Expenses</CardTitle>
+                  <CardDescription>
+                    List of all recorded expenses
+                  </CardDescription>
+                </div>
+                <Select value={methodFilter} onValueChange={setMethodFilter}>
+                  <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All payment methods</SelectItem>
+                    {PAYMENT_METHODS.map((m) => <SelectItem key={m.code} value={m.code}>{m.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -260,7 +281,7 @@ export default function ExpensesPage() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      expenses.map((expense) => (
+                      expenses.filter((e) => methodFilter === "all" || e.paymentMethod === methodFilter).map((expense) => (
                         <TableRow key={expense.id}>
                           <TableCell className="font-medium">
                             {expense.category?.name || "N/A"}
@@ -268,7 +289,11 @@ export default function ExpensesPage() {
                           <TableCell>{expense.description}</TableCell>
                           <TableCell>{formatCurrency(expense.amount)}</TableCell>
                           <TableCell>{formatDate(expense.expenseDate)}</TableCell>
-                          <TableCell>{expense.paymentMethod}</TableCell>
+                          <TableCell>
+                            {methodLabel(expense.paymentMethod)}
+                            {expense.payerPhone && <div className="text-xs text-muted-foreground">{formatSomaliPhone(expense.payerPhone)}</div>}
+                            {expense.transactionId && <div className="text-xs text-muted-foreground">Tx {expense.transactionId}</div>}
+                          </TableCell>
                           <TableCell>{expense.reference || "-"}</TableCell>
                           <TableCell>{expense.user?.username || expense.user?.name || "N/A"}</TableCell>
                         </TableRow>
@@ -562,9 +587,10 @@ function ExpenseForm({
     amount: "",
     description: "",
     expenseDate: new Date().toISOString().split("T")[0],
-    paymentMethod: "",
     reference: "",
   })
+  const paymentConfig = usePaymentConfig()
+  const [method, setMethod] = useState<PaymentMethodValue>(emptyPaymentMethod())
   const [isSaving, setIsSaving] = useState(false)
   const [newCategory, setNewCategory] = useState<{ name: string; description: string } | null>(null)
   const [newCategoryError, setNewCategoryError] = useState("")
@@ -599,10 +625,11 @@ function ExpenseForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!formData.categoryId || !formData.amount || !formData.description || !formData.paymentMethod) {
+    const methodError = paymentMethodProblems(method, paymentConfig).error
+    if (!formData.categoryId || !formData.amount || !formData.description || methodError) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields (Category, Amount, Description, Payment Method).",
+        description: methodError ?? "Please fill in all required fields (Category, Amount, Description, Payment Method).",
         variant: "destructive",
       })
       return
@@ -616,14 +643,17 @@ function ExpenseForm({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, ...paymentMethodBody(method) }),
       })
 
       if (response.ok) {
+        const result = await response.json()
         toast({
           title: "Expense Created",
           description: "Expense has been successfully recorded.",
         })
+        for (const warning of result.warnings ?? []) toast({ title: "Please check", description: warning })
+        setMethod(emptyPaymentMethod())
         onSuccess()
         // Reset form
         setFormData({
@@ -631,7 +661,6 @@ function ExpenseForm({
           amount: "",
           description: "",
           expenseDate: new Date().toISOString().split("T")[0],
-          paymentMethod: "",
           reference: "",
         })
       } else {
@@ -757,25 +786,9 @@ function ExpenseForm({
         />
       </div>
 
+      <PaymentMethodFields value={method} onChange={setMethod} idPrefix="expense" />
+
       <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="paymentMethod">Payment Method *</Label>
-          <Select
-            value={formData.paymentMethod}
-            onValueChange={(value) => setFormData({ ...formData, paymentMethod: value })}
-          >
-            <SelectTrigger id="paymentMethod">
-              <SelectValue placeholder="Select payment method" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="CASH">Cash</SelectItem>
-              <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-              <SelectItem value="CREDIT_CARD">Credit Card</SelectItem>
-              <SelectItem value="CHECK">Check</SelectItem>
-              <SelectItem value="OTHER">Other</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
         <div className="space-y-2">
           <Label htmlFor="reference">Reference</Label>
           <Input

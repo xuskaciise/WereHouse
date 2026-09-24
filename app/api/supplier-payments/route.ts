@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
+import { parsePaymentFields } from "@/lib/payment-fields"
 import { HttpError } from "@/lib/auth-guard"
 import { scopeWhere } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
@@ -9,7 +10,11 @@ import { supplierPaymentInclude as paymentInclude } from "@/lib/includes"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 
 export const GET = withAuth(async (request, { user }) => {
-  const where = { ...scopeWhere(user, "supplier_payments"), ...dateRangeWhere(request, "paymentDate") }
+  const where = { ...scopeWhere(user, "supplier_payments"), ...dateRangeWhere(request, "paymentDate"),
+    // ?paymentMethod=EVC_PLUS
+    ...(new URL(request.url).searchParams.get("paymentMethod") && {
+      paymentMethod: new URL(request.url).searchParams.get("paymentMethod")!,
+    }) }
   return listResponse(request, {
     findMany: (page) =>
       prisma.supplierPayment.findMany({ where, include: paymentInclude, orderBy: { createdAt: "desc" }, ...page }),
@@ -19,12 +24,11 @@ export const GET = withAuth(async (request, { user }) => {
 }, { permission: [["supplier_payments", "view"], ["reports_finance", "view"]] })
 
 export const POST = withAuth(async (request, { user }) => {
-  const { supplierId, purchaseOrderId, landedCostId, stockTransferCostId, amount, paymentDate, paymentMethod, reference, notes } =
-    await readJson(request)
+  const body = await readJson(request)
+  const { supplierId, purchaseOrderId, landedCostId, stockTransferCostId, amount, paymentDate, reference, notes } = body
 
-  if (!supplierId || !paymentMethod) {
-    throw new HttpError(400, "Supplier, Amount, and Payment Method are required")
-  }
+  if (!supplierId) throw new HttpError(400, "Supplier, Amount, and Payment Method are required")
+  const method = await parsePaymentFields(body)
   const parsedAmount = parseMoney(amount)
 
   await assertCanReference(user, { supplierId })
@@ -63,7 +67,9 @@ export const POST = withAuth(async (request, { user }) => {
       stockTransferCostId: stockTransferCostId || null,
       amount: parsedAmount,
       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
-      paymentMethod,
+      paymentMethod: method.paymentMethod,
+      payerPhone: method.payerPhone,
+      transactionId: method.transactionId,
       reference: reference || null,
       notes: notes || null,
       userId: user.id,
@@ -72,5 +78,5 @@ export const POST = withAuth(async (request, { user }) => {
   })
 
   const [withBalance] = await withNestedSupplierBalance([payment])
-  return json(withBalance, { status: 201 })
+  return json({ ...withBalance, warnings: method.warnings }, { status: 201 })
 }, { permission: ["supplier_payments", "create"] })

@@ -19,7 +19,20 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
+import {
+  PaymentMethodFields,
+  type PaymentMethodValue,
+  emptyPaymentMethod,
+  paymentMethodBody,
+  paymentMethodProblems,
+  paymentMethodValueOf,
+  usePaymentConfig,
+} from "@/components/payment-method-fields"
+import { PAYMENT_METHODS, formatSomaliPhone, methodLabel } from "@/lib/payment-methods"
 import { can } from "@/lib/permission-rules"
+
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
 
 export default function PaymentsPage() {
   const { toast } = useToast()
@@ -29,6 +42,8 @@ export default function PaymentsPage() {
   const canCustomer = can(permissions, "customer_payments", "view")
   const canSupplier = can(permissions, "supplier_payments", "view")
   const [activeTab, setActiveTab] = useState(canCustomer ? "customers" : "suppliers")
+  const [methodFilter, setMethodFilter] = useState("all")
+  const byMethod = (list: any[]) => (methodFilter === "all" ? list : list.filter((p) => p.paymentMethod === methodFilter))
   const tabModule = activeTab === "customers" ? "customer_payments" : "supplier_payments"
   const canCreatePayment = can(permissions, tabModule, "create")
   const canEditPayment = (type: string) => can(permissions, type === "customers" ? "customer_payments" : "supplier_payments", "edit")
@@ -171,7 +186,9 @@ export default function PaymentsPage() {
               <tr><td>${entityLabel}:</td><td>${entityName || "N/A"}</td></tr>
               <tr><td>Amount:</td><td>${formatCurrency(payment.amount)}</td></tr>
               <tr><td>Payment Date:</td><td>${formatDate(payment.paymentDate)}</td></tr>
-              <tr><td>Payment Method:</td><td>${payment.paymentMethod}</td></tr>
+              <tr><td>Payment Method:</td><td>${escapeHtml(methodLabel(payment.paymentMethod))}</td></tr>
+              ${payment.payerPhone ? `<tr><td>Phone:</td><td>${escapeHtml(formatSomaliPhone(payment.payerPhone))}</td></tr>` : ""}
+              ${payment.transactionId ? `<tr><td>Transaction ID:</td><td>${escapeHtml(payment.transactionId)}</td></tr>` : ""}
               ${payment.reference ? `<tr><td>Reference:</td><td>${payment.reference}</td></tr>` : ""}
               ${payment.notes ? `<tr><td>Notes:</td><td>${payment.notes}</td></tr>` : ""}
               <tr><td>Created By:</td><td>${payment.user?.username || payment.user?.name || "N/A"}</td></tr>
@@ -284,6 +301,21 @@ export default function PaymentsPage() {
           {canSupplier && <TabsTrigger value="suppliers">Supplier Payments</TabsTrigger>}
         </TabsList>
 
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Payment method</span>
+          <Select value={methodFilter} onValueChange={setMethodFilter}>
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All methods</SelectItem>
+              {PAYMENT_METHODS.map((m) => (
+                <SelectItem key={m.code} value={m.code}>{m.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <TabsContent value="customers" className="space-y-4">
           <Card className="shadow-sm">
             <CardHeader>
@@ -314,21 +346,25 @@ export default function PaymentsPage() {
                         Loading...
                       </TableCell>
                     </TableRow>
-                  ) : customerPayments.length === 0 ? (
+                  ) : byMethod(customerPayments).length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                         No customer payments found.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    customerPayments.map((payment) => (
+                    byMethod(customerPayments).map((payment) => (
                       <TableRow key={payment.id}>
                         <TableCell className="font-medium">
                           {payment.customer?.name || "N/A"}
                         </TableCell>
                         <TableCell>{formatCurrency(payment.amount)}</TableCell>
                         <TableCell>{formatDate(payment.paymentDate)}</TableCell>
-                        <TableCell>{payment.paymentMethod}</TableCell>
+                        <TableCell>
+                          {methodLabel(payment.paymentMethod)}
+                          {payment.payerPhone && <div className="text-xs text-muted-foreground">{formatSomaliPhone(payment.payerPhone)}</div>}
+                          {payment.transactionId && <div className="text-xs text-muted-foreground">Tx {payment.transactionId}</div>}
+                        </TableCell>
                         <TableCell>{payment.reference || "-"}</TableCell>
                         <TableCell>
                           <span className={payment.customer?.balance >= 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
@@ -391,21 +427,25 @@ export default function PaymentsPage() {
                         Loading...
                       </TableCell>
                     </TableRow>
-                  ) : supplierPayments.length === 0 ? (
+                  ) : byMethod(supplierPayments).length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                         No supplier payments found.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    supplierPayments.map((payment) => (
+                    byMethod(supplierPayments).map((payment) => (
                       <TableRow key={payment.id}>
                         <TableCell className="font-medium">
                           {payment.supplier?.name || "N/A"}
                         </TableCell>
                         <TableCell>{formatCurrency(payment.amount)}</TableCell>
                         <TableCell>{formatDate(payment.paymentDate)}</TableCell>
-                        <TableCell>{payment.paymentMethod}</TableCell>
+                        <TableCell>
+                          {methodLabel(payment.paymentMethod)}
+                          {payment.payerPhone && <div className="text-xs text-muted-foreground">{formatSomaliPhone(payment.payerPhone)}</div>}
+                          {payment.transactionId && <div className="text-xs text-muted-foreground">Tx {payment.transactionId}</div>}
+                        </TableCell>
                         <TableCell>{payment.reference || "-"}</TableCell>
                         <TableCell>
                           <span className={payment.supplier?.balance >= 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
@@ -574,7 +614,9 @@ function PaymentDetailsSheet({
             </div>
             <div>
               <div className="text-sm font-medium text-muted-foreground">Payment Method</div>
-              <div className="text-base">{payment.paymentMethod}</div>
+              <div className="text-base">{methodLabel(payment.paymentMethod)}</div>
+              {payment.payerPhone && <div className="text-sm">{formatSomaliPhone(payment.payerPhone)}</div>}
+              {payment.transactionId && <div className="text-sm text-muted-foreground">Transaction ID: {payment.transactionId}</div>}
             </div>
             {payment.reference && (
               <div>
@@ -657,10 +699,13 @@ function PaymentForm({
     paymentDate: payment?.paymentDate 
       ? new Date(payment.paymentDate).toISOString().split("T")[0]
       : new Date().toISOString().split("T")[0],
-    paymentMethod: payment?.paymentMethod || "",
     reference: payment?.reference || "",
     notes: payment?.notes || "",
   })
+
+  // Payment method (incl. mobile money phone / transaction ID), shared component.
+  const paymentConfig = usePaymentConfig()
+  const [method, setMethod] = useState<PaymentMethodValue>(paymentMethodValueOf(payment))
 
   // Landed cost lines owed to the selected supplier (clearing agent, transport...).
   const [landedCosts, setLandedCosts] = useState<any[]>([])
@@ -677,6 +722,7 @@ function PaymentForm({
 
   useEffect(() => {
     if (payment) {
+      setMethod(paymentMethodValueOf(payment))
       setFormData({
         customerId: payment.customerId || "",
         supplierId: payment.supplierId || "",
@@ -687,7 +733,6 @@ function PaymentForm({
         paymentDate: payment.paymentDate 
           ? new Date(payment.paymentDate).toISOString().split("T")[0]
           : new Date().toISOString().split("T")[0],
-        paymentMethod: payment.paymentMethod || "",
         reference: payment.reference || "",
         notes: payment.notes || "",
       })
@@ -724,12 +769,9 @@ function PaymentForm({
       return
     }
 
-    if (!formData.paymentMethod) {
-      toast({
-        title: "Validation Error",
-        description: "Please select a payment method.",
-        variant: "destructive",
-      })
+    const methodError = paymentMethodProblems(method, paymentConfig).error
+    if (methodError) {
+      toast({ title: "Validation Error", description: methodError, variant: "destructive" })
       return
     }
 
@@ -749,7 +791,7 @@ function PaymentForm({
             ...(isEdit ? {} : { salesOrderId: formData.salesOrderId || null }),
             amount: formData.amount,
             paymentDate: formData.paymentDate,
-            paymentMethod: formData.paymentMethod,
+            ...paymentMethodBody(method),
             reference: formData.reference || null,
             notes: formData.notes || null,
           }
@@ -764,7 +806,7 @@ function PaymentForm({
                 : { landedCostId: formData.landedCostId || null }),
             amount: formData.amount,
             paymentDate: formData.paymentDate,
-            paymentMethod: formData.paymentMethod,
+            ...paymentMethodBody(method),
             reference: formData.reference || null,
             notes: formData.notes || null,
           }
@@ -789,7 +831,10 @@ function PaymentForm({
             ? `Payment updated successfully. New balance: ${formatCurrency(newBalance)}`
             : `Payment recorded successfully. New balance: ${formatCurrency(newBalance)}`,
         })
+        // Saved, but e.g. the phone prefix does not match the operator.
+        for (const warning of result.warnings ?? []) toast({ title: "Please check", description: warning })
         if (!isEdit) {
+          setMethod(emptyPaymentMethod())
           setFormData({
             customerId: "",
             supplierId: "",
@@ -798,7 +843,6 @@ function PaymentForm({
             landedCostId: "",
             amount: "",
             paymentDate: new Date().toISOString().split("T")[0],
-            paymentMethod: "",
             reference: "",
             notes: "",
           })
@@ -977,25 +1021,7 @@ function PaymentForm({
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="paymentMethod">Payment Method *</Label>
-        <Select
-          value={formData.paymentMethod}
-          onValueChange={(value) => setFormData({ ...formData, paymentMethod: value })}
-          required
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select payment method" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="CASH">Cash</SelectItem>
-            <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-            <SelectItem value="CHECK">Check</SelectItem>
-            <SelectItem value="CREDIT_CARD">Credit Card</SelectItem>
-            <SelectItem value="OTHER">Other</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <PaymentMethodFields value={method} onChange={setMethod} existingMethod={payment?.paymentMethod} idPrefix="payment" />
 
       <div className="space-y-2">
         <Label htmlFor="reference">Reference (Optional)</Label>

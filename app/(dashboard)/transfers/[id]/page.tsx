@@ -18,6 +18,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { useCan, useCurrentUser } from "@/components/providers/current-user-provider"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { TRANSFER_EVENTS, TRANSFER_STATUS } from "@/lib/transfer-labels"
+import { PaymentMethodFields, emptyPaymentMethod, paymentMethodBody, paymentMethodProblems, usePaymentConfig, type PaymentMethodValue } from "@/components/payment-method-fields"
 
 const when = (d: string | null | undefined) => (d ? `${formatDate(d)} ${new Date(d).toLocaleTimeString()}` : "")
 
@@ -43,8 +44,10 @@ export default function TransferDetailPage() {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState("")
   const [costDialog, setCostDialog] = useState<{ open: boolean; cost: any | null }>({ open: false, cost: null })
-  const [costForm, setCostForm] = useState({ typeId: "", paidToSupplierId: "", amount: "", reference: "", costDate: "", notes: "", reason: "", paidNow: false, paymentMethod: "BANK_TRANSFER" })
+  const [costForm, setCostForm] = useState({ typeId: "", paidToSupplierId: "", amount: "", reference: "", costDate: "", notes: "", reason: "", paidNow: false })
   const [types, setTypes] = useState<any[]>([])
+  const paymentConfig = usePaymentConfig()
+  const [paidMethod, setPaidMethod] = useState<PaymentMethodValue>(emptyPaymentMethod("BANK_TRANSFER"))
   const [suppliers, setSuppliers] = useState<any[]>([])
 
   const load = useCallback(async () => {
@@ -68,6 +71,7 @@ export default function TransferDetailPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || "Failed")
       if (success) toast({ title: success })
+      for (const warning of data.warnings ?? []) toast({ title: "Please check", description: warning })
       if (method === "DELETE" && path === "") {
         router.push("/transfers")
         return true
@@ -116,8 +120,8 @@ export default function TransferDetailPage() {
       notes: cost?.notes ?? "",
       reason: "",
       paidNow: false,
-      paymentMethod: "BANK_TRANSFER",
     })
+    setPaidMethod(emptyPaymentMethod("BANK_TRANSFER"))
     setCostDialog({ open: true, cost })
   }
 
@@ -489,16 +493,22 @@ export default function TransferDetailPage() {
                 Paid now (records a supplier payment)
               </label>
             )}
+            {!costDialog.cost && canPay && costForm.paidNow && (
+              <PaymentMethodFields value={paidMethod} onChange={setPaidMethod} idPrefix="transfer-paid" />
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCostDialog({ open: false, cost: null })}>Cancel</Button>
             <Button
-              disabled={busy || !costForm.typeId || !costForm.paidToSupplierId || !costForm.amount}
+              disabled={
+                busy || !costForm.typeId || !costForm.paidToSupplierId || !costForm.amount ||
+                (!costDialog.cost && costForm.paidNow && !!paymentMethodProblems(paidMethod, paymentConfig).error)
+              }
               onClick={async () => {
                 const body = {
                   ...costForm,
                   reason: costForm.reason || undefined,
-                  paidNow: !costDialog.cost && costForm.paidNow ? { paymentMethod: costForm.paymentMethod } : undefined,
+                  paidNow: !costDialog.cost && costForm.paidNow ? paymentMethodBody(paidMethod) : undefined,
                 }
                 const ok = costDialog.cost
                   ? await call(`/costs/${costDialog.cost.id}`, "PATCH", body, "Cost updated")

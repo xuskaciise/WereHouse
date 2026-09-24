@@ -22,6 +22,7 @@ import {
 import { useToast } from "@/components/ui/use-toast"
 import { useCan, useCurrentUser } from "@/components/providers/current-user-provider"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { PaymentMethodFields, emptyPaymentMethod, paymentMethodBody, paymentMethodProblems, usePaymentConfig, type PaymentMethodValue } from "@/components/payment-method-fields"
 
 export const METHOD_LABELS: Record<string, string> = {
   VALUE: "By value",
@@ -50,7 +51,6 @@ interface CostForm {
   notes: string
   reason: string
   paidNow: boolean
-  paymentMethod: string
 }
 
 const emptyForm = (): CostForm => ({
@@ -66,7 +66,6 @@ const emptyForm = (): CostForm => ({
   notes: "",
   reason: "",
   paidNow: false,
-  paymentMethod: "BANK_TRANSFER",
 })
 
 function toBody(form: CostForm) {
@@ -106,6 +105,8 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
   const [form, setForm] = useState<CostForm>(emptyForm)
   const [preview, setPreview] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
+  const paymentConfig = usePaymentConfig()
+  const [paidMethod, setPaidMethod] = useState<PaymentMethodValue>(emptyPaymentMethod("BANK_TRANSFER"))
   const [reopenReason, setReopenReason] = useState("")
   const [reopenOpen, setReopenOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
@@ -186,7 +187,7 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
         body: JSON.stringify({
           ...toBody(form),
           reason: form.reason || undefined,
-          paidNow: !dialog.cost && form.paidNow ? { paymentMethod: form.paymentMethod } : undefined,
+          paidNow: !dialog.cost && form.paidNow ? paymentMethodBody(paidMethod) : undefined,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -194,6 +195,7 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
       setView(data)
       setDialog({ open: false, cost: null })
       toast({ title: dialog.cost ? "Cost updated" : "Cost added", description: "Allocation and product costs were recalculated." })
+      for (const warning of data.warnings ?? []) toast({ title: "Please check", description: warning })
     } catch (e) {
       toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" })
     } finally {
@@ -485,22 +487,12 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
               </div>
             )}
             {!dialog.cost && canPay && (
-              <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+              <div className="space-y-3 sm:col-span-2">
                 <label className="flex items-center gap-2 text-sm">
                   <Checkbox checked={form.paidNow} onCheckedChange={(c) => setForm({ ...form, paidNow: c === true })} />
                   Paid now (records a supplier payment)
                 </label>
-                {form.paidNow && (
-                  <Select value={form.paymentMethod} onValueChange={(paymentMethod) => setForm({ ...form, paymentMethod })}>
-                    <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CASH">Cash</SelectItem>
-                      <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-                      <SelectItem value="CHECK">Check</SelectItem>
-                      <SelectItem value="OTHER">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
+                {form.paidNow && <PaymentMethodFields value={paidMethod} onChange={setPaidMethod} idPrefix="landed-paid" />}
               </div>
             )}
           </div>
@@ -572,7 +564,13 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialog({ open: false, cost: null })}>Cancel</Button>
-            <Button onClick={save} disabled={saving || !!preview?.error || !form.typeId || !form.paidToSupplierId || !form.value}>
+            <Button
+              onClick={save}
+              disabled={
+                saving || !!preview?.error || !form.typeId || !form.paidToSupplierId || !form.value ||
+                (!dialog.cost && form.paidNow && !!paymentMethodProblems(paidMethod, paymentConfig).error)
+              }
+            >
               {saving ? "Saving..." : "Save cost"}
             </Button>
           </DialogFooter>

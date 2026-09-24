@@ -1,5 +1,6 @@
 import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
+import { parsePaymentFields } from "@/lib/payment-fields"
 import { HttpError } from "@/lib/auth-guard"
 import { requirePermission } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
@@ -46,10 +47,8 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
   const paidNow = body.paidNow && typeof body.paidNow === "object" ? body.paidNow : null
   if (paidNow) {
     requirePermission(user, ["supplier_payments", "create"], "Your role cannot record supplier payments")
-    if (typeof paidNow.paymentMethod !== "string" || !paidNow.paymentMethod) {
-      throw new HttpError(400, "Payment method is required to mark the cost as paid")
-    }
   }
+  const paidMethod = paidNow ? await parsePaymentFields(paidNow) : null
 
   const costId = await prisma.$transaction(async (tx) => {
     const po = await lockPurchaseOrder(tx, purchaseOrderId)
@@ -95,7 +94,9 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
           supplierId: input.paidToSupplierId,
           landedCostId: cost.id,
           amount,
-          paymentMethod: paidNow.paymentMethod,
+          paymentMethod: paidMethod!.paymentMethod,
+          payerPhone: paidMethod!.payerPhone,
+          transactionId: paidMethod!.transactionId,
           reference: typeof paidNow.reference === "string" ? paidNow.reference.trim() || null : input.reference,
           notes: `Landed cost: ${type.name}`,
           userId: user.id,
@@ -114,5 +115,5 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
   }, TX_OPTIONS)
 
   const view = await landedCostView(prisma, purchaseOrderId)
-  return json({ ...view, createdId: costId }, { status: 201 })
+  return json({ ...view, createdId: costId, warnings: paidMethod?.warnings ?? [] }, { status: 201 })
 }, { permission: ["landed_costs", "create"] })

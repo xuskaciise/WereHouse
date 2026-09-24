@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { formatCurrency } from "@/lib/utils"
 import { purchaseStatusLabel } from "@/lib/purchase-rules"
 import { totalDiscountOf } from "@/lib/discount-rules"
+import { methodLabel } from "@/lib/payment-methods"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
 import { can } from "@/lib/permission-rules"
 
@@ -61,6 +62,7 @@ export default function ReportsPage() {
   // Profit needs costs: product_cost plus a sales or finance report.
   const showProfit = can(permissions, "product_cost", "view") && (showSales || showPayments)
   const [profit, setProfit] = useState<any | null>(null)
+  const [byMethod, setByMethod] = useState<any[]>([])
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(true)
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([])
@@ -115,6 +117,10 @@ export default function ReportsPage() {
       setSalesOrders(soData || [])
       setSupplierPayments(spData || [])
       setCustomerPayments(cpData || [])
+      if (showPayments) {
+        const res = await fetch(`/api/reports/payments-by-method?${new URLSearchParams(from ? { from } : {})}`)
+        setByMethod(res.ok ? await res.json() : [])
+      }
       if (showProfit) {
         const res = await fetch(`/api/reports/profit?${new URLSearchParams(from ? { from } : {})}`)
         setProfit(res.ok ? await res.json() : null)
@@ -566,7 +572,42 @@ export default function ReportsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="payments">
+        <TabsContent value="payments" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Payments by method</CardTitle>
+              <CardDescription>Totals in the selected period: received from customers, paid to suppliers (incl. landed / transfer costs) and expenses.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Method</TableHead>
+                    <TableHead className="text-right">Received</TableHead>
+                    <TableHead className="text-right">Paid to suppliers</TableHead>
+                    <TableHead className="text-right">Expenses</TableHead>
+                    <TableHead className="text-right">Transactions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {byMethod.length === 0 ? (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No payments in this period.</TableCell></TableRow>
+                  ) : (
+                    byMethod.map((row) => (
+                      <TableRow key={row.method}>
+                        <TableCell className="font-medium">{methodLabel(row.method)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(row.received)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(row.paid)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(row.expenses)}</TableCell>
+                        <TableCell className="text-right">{row.count}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Payment Tracking</CardTitle>
