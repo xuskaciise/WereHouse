@@ -31,6 +31,7 @@ import { MovementType } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { PaginationControls } from "@/components/ui/pagination-controls"
 import { useCan } from "@/components/providers/current-user-provider"
+import Link from "next/link"
 
 const PAGE_SIZE = 25
 
@@ -243,7 +244,13 @@ export default function StockMovementsPage() {
                       {movement.quantity > 0 ? "+" : ""}
                       {movement.quantity}
                     </TableCell>
-                    <TableCell>{movement.reference || "-"}</TableCell>
+                    <TableCell>
+                      {movement.reference?.startsWith("TR-") && movement.referenceId ? (
+                        <Link className="underline" href={`/transfers/${movement.referenceId}`}>{movement.reference}</Link>
+                      ) : (
+                        movement.reference || "-"
+                      )}
+                    </TableCell>
                     <TableCell>{movement.user?.username || movement.user?.name || "N/A"}</TableCell>
                   </TableRow>
                   ))

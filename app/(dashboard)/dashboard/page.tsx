@@ -25,6 +25,7 @@ export default function DashboardPage() {
     totalProducts: 0,
     totalStockValue: 0,
     grossProfit: undefined as number | undefined,
+    inTransitValue: 0,
     marginPercent: undefined as number | undefined,
     totalSales: 0,
     totalSalesDiscounts: 0,
@@ -86,7 +87,11 @@ export default function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(stats.totalStockValue)}</div>
             <p className="text-xs text-muted-foreground">
-              {stats.totalStockValue === 0 ? "No stock data" : "At average landed cost"}
+              {stats.totalStockValue === 0
+                ? "No stock data"
+                : Number(stats.inTransitValue) > 0
+                  ? `At average cost, incl. ${formatCurrency(stats.inTransitValue)} in transit`
+                  : "At average landed cost"}
             </p>
           </CardContent>
         </Card>

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { json, withAuth } from "@/lib/api"
 import { hasPermission, isOwnScope, scopeWhere } from "@/lib/permissions"
 import { salesProfit } from "@/lib/profit"
+import { inTransitStock } from "@/lib/stock-transfers"
 
 const CHART_MONTHS = 6
 
@@ -86,10 +87,16 @@ export const GET = withAuth(async (_request, { user }) => {
     hasPermission(user, [["reports_sales", "view"], ["reports_finance", "view"]])
   const profit = showProfit ? (await salesProfit({ where, adjustmentWhere: where })).totals : null
 
+  // Goods in transit belong to neither warehouse but are part of the stock value.
+  const inTransit = await inTransitStock(own ? { userId: user.id } : {})
+  const warehouseValue = Number(stockSummary[0]?.stockValue ?? 0)
+
   return json({
+    inTransitValue: inTransit.inTransitValue,
+    warehouseStockValue: warehouseValue,
     ...(profit && { grossProfit: profit.grossProfit, marginPercent: profit.marginPercent, cogs: profit.cogs }),
     totalProducts,
-    totalStockValue: Number(stockSummary[0]?.stockValue ?? 0),
+    totalStockValue: inTransit.inTransitValue.plus(warehouseValue),
     totalSales: salesSum._sum.total ?? 0,
     // Order-level + item discounts, same scope as totalSales.
     totalSalesDiscounts: (salesSum._sum.discount ?? new Prisma.Decimal(0)).plus(salesSum._sum.itemDiscount ?? 0),

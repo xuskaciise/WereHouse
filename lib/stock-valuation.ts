@@ -52,7 +52,8 @@ export async function receiveIntoStock(
     value: Money
     userId: string
     purchaseOrderItemId?: string
-    entryType?: "RECEIPT" | "TRANSFER_IN"
+    stockTransferItemId?: string
+    entryType?: "RECEIPT" | "TRANSFER_IN" | "TRANSFER_RETURN"
   }
 ): Promise<Money> {
   const { productId, warehouseId, quantity, value, userId } = input
@@ -75,6 +76,7 @@ export async function receiveIntoStock(
       quantity,
       amount: roundMoney(value),
       purchaseOrderItemId: input.purchaseOrderItemId ?? null,
+      stockTransferItemId: input.stockTransferItemId ?? null,
       userId,
     },
   })
@@ -96,7 +98,8 @@ export async function applyLandedCostDelta(
     receivedUnits: number
     delta: Money
     userId: string
-    purchaseOrderItemId: string
+    purchaseOrderItemId?: string
+    stockTransferItemId?: string
     landedCostId?: string | null
   }
 ): Promise<{ stockPart: Money; cogsPart: Money }> {
@@ -113,7 +116,14 @@ export async function applyLandedCostDelta(
     if (avg.isNegative()) throw new HttpError(400, "This change would make the average cost negative")
     await tx.stock.update({ where: { id: stock.id }, data: { avgCost: avg } })
   }
-  const base = { productId, warehouseId, userId, purchaseOrderItemId: input.purchaseOrderItemId, landedCostId: input.landedCostId ?? null }
+  const base = {
+    productId,
+    warehouseId,
+    userId,
+    purchaseOrderItemId: input.purchaseOrderItemId ?? null,
+    stockTransferItemId: input.stockTransferItemId ?? null,
+    landedCostId: input.landedCostId ?? null,
+  }
   if (!stockPart.isZero()) {
     await tx.inventoryValuationEntry.create({ data: { ...base, type: "LANDED_COST", quantity: inStock, amount: stockPart } })
   }
@@ -126,22 +136,59 @@ export async function applyLandedCostDelta(
 }
 
 /**
- * Moves units between warehouses carrying the source average cost (used by
- * the stock transfer feature). Guarded like a sale: fails if not enough
- * unreserved stock.
+ * Takes units out of a warehouse for a transfer: guarded like a sale (fails
+ * without enough unreserved stock, never negative). The units leave at the
+ * current average cost, which is returned as their value in transit.
+ */
+export async function dispatchFromStock(
+  tx: Tx,
+  input: { productId: string; warehouseId: string; quantity: number; userId: string; stockTransferItemId?: string }
+): Promise<{ unitCost: Money; value: Money }> {
+  const { productId, warehouseId, quantity, userId } = input
+  const unitCost = await averageCost(tx, productId, warehouseId)
+  await decrementStock(tx, { productId, warehouseId, quantity })
+  const value = roundMoney(unitCost.times(quantity))
+  await tx.inventoryValuationEntry.create({
+    data: {
+      type: "TRANSFER_OUT",
+      productId,
+      warehouseId,
+      quantity,
+      amount: value,
+      stockTransferItemId: input.stockTransferItemId ?? null,
+      userId,
+    },
+  })
+  return { unitCost, value }
+}
+
+/**
+ * Moves units between warehouses in one step, carrying the source average
+ * cost: the destination average is re-weighted like a receipt. Stock
+ * transfers (lib/stock-transfers.ts) use the two halves separately, with the
+ * goods in transit in between.
  */
 export async function transferWithCost(
   tx: Tx,
-  input: { productId: string; fromWarehouseId: string; toWarehouseId: string; quantity: number; userId: string }
+  input: { productId: string; fromWarehouseId: string; toWarehouseId: string; quantity: number; userId: string; extraCost?: Money; stockTransferItemId?: string }
 ): Promise<{ unitCost: Money; value: Money }> {
   const { productId, fromWarehouseId, toWarehouseId, quantity, userId } = input
   if (fromWarehouseId === toWarehouseId) throw new HttpError(400, "Source and destination warehouse must differ")
-  const unitCost = await averageCost(tx, productId, fromWarehouseId)
-  await decrementStock(tx, { productId, warehouseId: fromWarehouseId, quantity })
-  const value = roundMoney(unitCost.times(quantity))
-  await tx.inventoryValuationEntry.create({
-    data: { type: "TRANSFER_OUT", productId, warehouseId: fromWarehouseId, quantity, amount: value, userId },
+  const { unitCost, value } = await dispatchFromStock(tx, {
+    productId,
+    warehouseId: fromWarehouseId,
+    quantity,
+    userId,
+    stockTransferItemId: input.stockTransferItemId,
   })
-  await receiveIntoStock(tx, { productId, warehouseId: toWarehouseId, quantity, value, userId, entryType: "TRANSFER_IN" })
+  await receiveIntoStock(tx, {
+    productId,
+    warehouseId: toWarehouseId,
+    quantity,
+    value: value.plus(input.extraCost ?? ZERO),
+    userId,
+    entryType: "TRANSFER_IN",
+    stockTransferItemId: input.stockTransferItemId,
+  })
   return { unitCost, value }
 }

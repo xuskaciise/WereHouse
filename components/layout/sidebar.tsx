@@ -21,6 +21,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Tags,
+  ArrowLeftRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
@@ -70,6 +71,7 @@ const navigationSections: NavSection[] = [
   {
     title: "Inventory Control",
     items: [
+      { name: "Stock Transfers", href: "/transfers", icon: ArrowLeftRight },
       { name: "Stock Movements", href: "/inventory/movements", icon: TrendingUp },
       { name: "Low Stock Alerts", href: "/inventory/low-stock", icon: AlertTriangle },
       { name: "Expenses", href: "/expenses", icon: DollarSign },

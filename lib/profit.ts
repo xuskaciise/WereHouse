@@ -9,6 +9,8 @@ import { type Money, Decimal, ZERO, roundMoney, sumMoney } from "@/lib/money"
 //             the period (landed costs added after the goods were sold)
 //   gross profit = revenue - COGS; margin % = gross profit / revenue
 // Lines sold before cost tracking carry an estimated cost (costEstimated).
+// Optionally (finance view): stock losses from transfers in the period
+// (TRANSFER_LOSS) and "profit after losses"; gross profit is not changed.
 
 export function marginPercent(revenue: Money, profit: Money): Money {
   return revenue.isZero() ? ZERO : profit.times(100).div(revenue).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
@@ -20,6 +22,7 @@ export async function salesProfit(options: {
   adjustmentWhere?: Prisma.InventoryValuationEntryWhereInput
   from?: Date | null
   to?: Date | null
+  includeLosses?: boolean
 }) {
   const dateRange = {
     ...(options.from && { gte: options.from }),
@@ -45,6 +48,17 @@ export async function salesProfit(options: {
     },
     _sum: { amount: true },
   })
+
+  const losses = options.includeLosses
+    ? await prisma.inventoryValuationEntry.aggregate({
+        where: {
+          type: "TRANSFER_LOSS",
+          ...options.adjustmentWhere,
+          ...(Object.keys(dateRange).length && { createdAt: dateRange }),
+        },
+        _sum: { amount: true },
+      })
+    : null
 
   const rows = orders.map((order) => {
     const revenue = order.subtotal.minus(order.discount)
@@ -75,6 +89,10 @@ export async function salesProfit(options: {
       grossProfit,
       marginPercent: marginPercent(revenue, grossProfit),
       estimatedOrders: rows.filter((r) => r.estimated).length,
+      ...(losses && {
+        stockLosses: losses._sum.amount ?? ZERO,
+        profitAfterLosses: grossProfit.minus(losses._sum.amount ?? ZERO),
+      }),
     },
   }
 }

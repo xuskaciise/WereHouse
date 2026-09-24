@@ -36,11 +36,17 @@ import { StockStatus } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { useCan } from "@/components/providers/current-user-provider"
 import { formatCurrency } from "@/lib/utils"
+import Link from "next/link"
 
 export default function InventoryPage() {
   // Hide what the role may not do; the API enforces the same permissions.
   const canCreate = useCan("stock", "edit")
   const seesCost = useCan("product_cost", "view")
+  // Goods between warehouses (Stock Transfers), shown separately.
+  const [inTransit, setInTransit] = useState<any | null>(null)
+  useEffect(() => {
+    fetch("/api/stock-transfers/in-transit").then(async (r) => r.ok && setInTransit(await r.json()))
+  }, [])
   const canEdit = useCan("stock", "edit")
   const canDelete = useCan("stock", "delete")
   const { toast } = useToast()
@@ -206,6 +212,44 @@ export default function InventoryPage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {inTransit && inTransit.rows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>In transit</CardTitle>
+            <CardDescription>
+              Dispatched between warehouses and not yet received: counted in neither warehouse below and not available for sale.
+              {seesCost && ` Value ${formatCurrency(inTransit.inTransitValue)}.`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Transfer</TableHead>
+                  <TableHead>Product</TableHead>
+                  <TableHead>From → To</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  {seesCost && <TableHead className="text-right">Value</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {inTransit.rows.map((row: any) => (
+                  <TableRow key={row.id}>
+                    <TableCell>
+                      <Link className="underline" href={`/transfers/${row.stockTransfer.id}`}>{row.stockTransfer.transferNumber}</Link>
+                    </TableCell>
+                    <TableCell>{row.product?.name}</TableCell>
+                    <TableCell>{row.stockTransfer.fromWarehouse?.name} → {row.stockTransfer.toWarehouse?.name}</TableCell>
+                    <TableCell className="text-right">{row.inTransitQuantity}</TableCell>
+                    {seesCost && <TableCell className="text-right">{formatCurrency(row.inTransitValue)}</TableCell>}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

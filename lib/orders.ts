@@ -45,7 +45,7 @@ function isOrderNumberConflict(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === "P2002" &&
-    JSON.stringify(error.meta ?? {}).includes("orderNumber")
+    /orderNumber|transferNumber/.test(JSON.stringify(error.meta ?? {}))
   )
 }
 
@@ -55,7 +55,7 @@ function isOrderNumberConflict(error: unknown): boolean {
  * retried with the next number instead of failing.
  */
 export async function createWithOrderNumber<T>(
-  prefix: "PO" | "SO",
+  prefix: "PO" | "SO" | "TR",
   currentCount: () => Promise<number>,
   create: (orderNumber: string) => Promise<T>
 ): Promise<T> {

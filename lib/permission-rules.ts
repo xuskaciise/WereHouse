@@ -22,6 +22,7 @@ export const MODULES = [
   "landed_cost_types",
   "product_cost",
   "stock",
+  "stock_transfers",
   "stock_movements",
   "low_stock",
   "customers",
@@ -77,6 +78,7 @@ export const MODULE_LABELS: Record<Module, string> = {
   landed_cost_types: "Landed cost types (global list)",
   product_cost: "Product cost, stock value, COGS & profit (view)",
   stock: "Stock",
+  stock_transfers: "Stock transfers between warehouses",
   stock_movements: "Stock movements",
   low_stock: "Low stock alerts",
   customers: "Customers",
@@ -141,6 +143,7 @@ export const DEFAULT_PERMISSIONS: Record<EditableRole, PermissionMap> = {
     landed_costs: { view: true, create: true, edit: true },
     product_cost: VIEW,
     stock: FULL,
+    stock_transfers: FULL,
     stock_movements: FULL,
     low_stock: FULL,
     customers: VIEW,
@@ -158,6 +161,7 @@ export const DEFAULT_PERMISSIONS: Record<EditableRole, PermissionMap> = {
     categories: VIEW,
     warehouses: VIEW,
     stock: VIEW,
+    stock_transfers: VIEW,
     low_stock: VIEW,
     product_cost: VIEW,
   }),
@@ -191,6 +195,7 @@ export const DEFAULT_PERMISSIONS: Record<EditableRole, PermissionMap> = {
     sales: VIEW,
     products: VIEW,
     stock: VIEW,
+    stock_transfers: VIEW,
   }),
   // Sandbox: everything on the student's own data, as before this change.
   STUDENT: build(
@@ -208,6 +213,7 @@ export const DEFAULT_PERMISSIONS: Record<EditableRole, PermissionMap> = {
       landed_cost_types: { ...VIEW, scope: "ALL" },
       product_cost: VIEW,
       stock: FULL,
+      stock_transfers: FULL,
       stock_movements: VIEW,
       low_stock: VIEW,
       customers: FULL,
@@ -244,6 +250,8 @@ export const PAGE_MODULES: [string, Module | Module[]][] = [
   ["/landed-costs", "landed_costs"],
   ["/landed-cost-types", "landed_cost_types"],
   ["/purchases", "purchases"],
+  ["/transfers/new", "stock_transfers"],
+  ["/transfers", "stock_transfers"],
   ["/inventory/movements", "stock_movements"],
   ["/inventory/low-stock", "low_stock"],
   ["/inventory", "stock"],
@@ -259,7 +267,7 @@ export const PAGE_MODULES: [string, Module | Module[]][] = [
 ]
 
 /** Extra action needed on top of "view" for creation pages. */
-const PAGE_ACTIONS: Record<string, Action> = { "/purchases/new": "create", "/sales/new": "create" }
+const PAGE_ACTIONS: Record<string, Action> = { "/purchases/new": "create", "/sales/new": "create", "/transfers/new": "create" }
 
 export function canOpenPage(permissions: PermissionMap | null | undefined, pathname: string): boolean {
   const entry = PAGE_MODULES.filter(([prefix]) => pathname === prefix || pathname.startsWith(prefix + "/")).sort(

@@ -503,6 +503,27 @@ export default function ReportsPage() {
             </div>
           )}
 
+          {profitSummary && profit?.totals?.stockLosses !== undefined && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Stock losses (transfers)</CardDescription>
+                  <CardTitle className="text-2xl text-destructive">{formatCurrency(Number(profit.totals.stockLosses))}</CardTitle>
+                  <p className="text-xs text-muted-foreground">Damaged, lost or written-off goods in transit and their transfer costs, in the period.</p>
+                </CardHeader>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardDescription>Profit after losses</CardDescription>
+                  <CardTitle className="text-2xl">
+                    {formatCurrency(profitSummary.grossProfit - Number(profit.totals.stockLosses))}
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">Gross profit minus stock losses (gross profit itself is unchanged).</p>
+                </CardHeader>
+              </Card>
+            </div>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Sales Orders</CardTitle>

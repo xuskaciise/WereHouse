@@ -5,6 +5,7 @@ import { type Money, ZERO } from "@/lib/money"
 // (single source of truth), never stored:
 //   supplier balance = SUM(non-cancelled purchase order totals)
 //                    + SUM(landed costs owed to the supplier, on non-cancelled POs)
+//                    + SUM(stock transfer costs owed to the supplier)
 //                    - SUM(supplier payments)
 //   customer balance = SUM(non-cancelled sales order totals)    - SUM(customer payments)
 // Each is computed with two grouped aggregate queries, however many rows.
@@ -18,7 +19,7 @@ export async function getSupplierBalances(supplierIds: string[]): Promise<Map<st
   const balances = new Map<string, Money>(ids.map((id) => [id, ZERO]))
   if (ids.length === 0) return balances
 
-  const [orders, landedCosts, payments] = await Promise.all([
+  const [orders, landedCosts, transferCosts, payments] = await Promise.all([
     prisma.purchaseOrder.groupBy({
       by: ["supplierId"],
       where: { supplierId: { in: ids }, status: { not: "CANCELLED" } },
@@ -27,6 +28,12 @@ export async function getSupplierBalances(supplierIds: string[]): Promise<Map<st
     prisma.purchaseLandedCost.groupBy({
       by: ["paidToSupplierId"],
       where: { paidToSupplierId: { in: ids }, purchaseOrder: { status: { not: "CANCELLED" } } },
+      _sum: { amount: true },
+    }),
+    // A transfer cost stays owed even if the transfer is cancelled (the service was used).
+    prisma.stockTransferCost.groupBy({
+      by: ["paidToSupplierId"],
+      where: { paidToSupplierId: { in: ids } },
       _sum: { amount: true },
     }),
     prisma.supplierPayment.groupBy({
@@ -38,6 +45,9 @@ export async function getSupplierBalances(supplierIds: string[]): Promise<Map<st
 
   for (const row of orders) {
     balances.set(row.supplierId, (balances.get(row.supplierId) ?? ZERO).plus(row._sum.total ?? ZERO))
+  }
+  for (const row of transferCosts) {
+    balances.set(row.paidToSupplierId, (balances.get(row.paidToSupplierId) ?? ZERO).plus(row._sum.amount ?? ZERO))
   }
   for (const row of landedCosts) {
     balances.set(row.paidToSupplierId, (balances.get(row.paidToSupplierId) ?? ZERO).plus(row._sum.amount ?? ZERO))

@@ -76,6 +76,12 @@ export const COST_FIELDS = new Set([
   "cogsAdjustments",
   "grossProfit",
   "marginPercent",
+  "inTransitValue",
+  "warehouseStockValue",
+  "allocatedCost",
+  "lossCost",
+  "stockLosses",
+  "profitAfterLosses",
 ])
 
 function omitCostFields(value: unknown): unknown {

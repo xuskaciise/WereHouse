@@ -1,6 +1,6 @@
 import { json, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
-import { requirePermission, scopeWhere } from "@/lib/permissions"
+import { hasPermission, requirePermission, scopeWhere } from "@/lib/permissions"
 import { salesProfit } from "@/lib/profit"
 
 function parseDate(value: string | null, endOfDay = false): Date | null {
@@ -23,6 +23,8 @@ export const GET = withAuth(async (request, { user }) => {
       adjustmentWhere: own,
       from: parseDate(params.get("from")),
       to: parseDate(params.get("to"), true),
+      // Stock losses (transfers) are a finance figure.
+      includeLosses: hasPermission(user, ["reports_finance", "view"]),
     })
   )
 }, { permission: [["reports_sales", "view"], ["reports_finance", "view"]] })

@@ -756,7 +756,12 @@ function PaymentForm({
         : {
             ...(isEdit ? {} : { supplierId: formData.supplierId }),
             ...(isEdit ? {} : { purchaseOrderId: formData.purchaseOrderId || null }),
-            ...(isEdit ? {} : { landedCostId: formData.landedCostId || null }),
+            // The linked cost is a purchase landed cost or a stock transfer cost.
+            ...(isEdit
+              ? {}
+              : landedCosts.find((c) => c.id === formData.landedCostId)?.kind === "TRANSFER_COST"
+                ? { stockTransferCostId: formData.landedCostId }
+                : { landedCostId: formData.landedCostId || null }),
             amount: formData.amount,
             paymentDate: formData.paymentDate,
             paymentMethod: formData.paymentMethod,
@@ -921,11 +926,11 @@ function PaymentForm({
 
           {landedCosts.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="landedCost">Landed cost (optional)</Label>
+              <Label htmlFor="landedCost">Landed / transfer cost (optional)</Label>
               <Combobox
                 options={landedCosts.map((cost) => ({
                   value: cost.id,
-                  label: `${cost.purchaseOrder?.orderNumber} - ${cost.type?.name} - ${formatCurrency(cost.amount)} (open ${formatCurrency(cost.openAmount)})`,
+                  label: `${cost.documentNumber} - ${cost.type?.name} - ${formatCurrency(cost.amount)} (open ${formatCurrency(cost.openAmount)})`,
                 }))}
                 value={formData.landedCostId}
                 onValueChange={(value) => {

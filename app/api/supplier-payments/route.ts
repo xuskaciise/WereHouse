@@ -19,7 +19,7 @@ export const GET = withAuth(async (request, { user }) => {
 }, { permission: [["supplier_payments", "view"], ["reports_finance", "view"]] })
 
 export const POST = withAuth(async (request, { user }) => {
-  const { supplierId, purchaseOrderId, landedCostId, amount, paymentDate, paymentMethod, reference, notes } =
+  const { supplierId, purchaseOrderId, landedCostId, stockTransferCostId, amount, paymentDate, paymentMethod, reference, notes } =
     await readJson(request)
 
   if (!supplierId || !paymentMethod) {
@@ -44,6 +44,14 @@ export const POST = withAuth(async (request, { user }) => {
     })
     if (!cost) throw new HttpError(400, "Landed cost not found for this supplier")
   }
+  if (stockTransferCostId) {
+    const cost = await prisma.stockTransferCost.findFirst({
+      where: { id: stockTransferCostId, paidToSupplierId: supplierId, stockTransfer: scopeWhere(user, "stock_transfers") },
+      select: { id: true },
+    })
+    if (!cost) throw new HttpError(400, "Transfer cost not found for this supplier")
+  }
+  if (landedCostId && stockTransferCostId) throw new HttpError(400, "Link the payment to one cost only")
 
   // The supplier balance is derived from orders and payments (lib/balances.ts),
   // so recording the payment is all that is needed.
@@ -52,6 +60,7 @@ export const POST = withAuth(async (request, { user }) => {
       supplierId,
       purchaseOrderId: purchaseOrderId || null,
       landedCostId: landedCostId || null,
+      stockTransferCostId: stockTransferCostId || null,
       amount: parsedAmount,
       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
       paymentMethod,
