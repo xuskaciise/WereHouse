@@ -23,6 +23,7 @@ import {
   Tags,
   ArrowLeftRight,
   CalendarClock,
+  Undo2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
@@ -65,6 +66,7 @@ const navigationSections: NavSection[] = [
     title: "Procurement (Inbound)",
     items: [
       { name: "Purchases", href: "/purchases", icon: ShoppingBag },
+      { name: "Purchase Returns", href: "/purchases/returns", icon: Undo2 },
       { name: "Landed Cost Types", href: "/landed-cost-types", icon: Tags },
       { name: "Stock (In-hand)", href: "/inventory", icon: Package },
     ],

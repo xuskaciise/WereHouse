@@ -21,6 +21,8 @@ export const RESET_DELETE_TABLES = [
   "landed_cost_logs",
   "purchase_landed_cost_allocations",
   "purchase_landed_costs",
+  "purchase_return_items",
+  "purchase_returns",
   "purchase_order_item_adjustments",
   "purchase_receive_items",
   "purchase_receives",

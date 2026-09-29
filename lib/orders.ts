@@ -54,6 +54,20 @@ export async function lastSequenceNumber(table: string, column: string): Promise
   return rows[0]?.n ?? 0
 }
 
+/**
+ * Next number of a document inside the current transaction (DN-000001, ...).
+ * A transaction-scoped advisory lock serializes concurrent numbering; the
+ * unique index stays the final guard.
+ */
+export async function nextDocumentNumber(tx: Prisma.TransactionClient, prefix: string, table: string, column: string): Promise<string> {
+  if (!/^[a-z_]+$/.test(table) || !/^[A-Za-z]+$/.test(column)) throw new Error("invalid identifier")
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`doc-number:${table}`}))`
+  const rows = await tx.$queryRawUnsafe<{ n: number | null }[]>(
+    `SELECT max(substring("${column}" from '[0-9]+$')::int) AS n FROM "${table}"`
+  )
+  return `${prefix}-${String((rows[0]?.n ?? 0) + 1).padStart(6, "0")}`
+}
+
 function isOrderNumberConflict(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&

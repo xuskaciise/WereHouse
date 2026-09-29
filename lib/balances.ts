@@ -8,6 +8,7 @@ import { type Money, ZERO } from "@/lib/money"
 //                    + SUM(landed costs owed to the supplier, on non-cancelled POs)
 //                    + SUM(stock transfer costs owed to the supplier)
 //                    - SUM(supplier payments)
+//                    - SUM(purchase return credits) + SUM(refunds received on returns)
 //   customer balance = SUM(sales delivery totals) - SUM(customer payments)
 //                      (debt arises at delivery, not when the order is confirmed)
 // Each is computed with two grouped aggregate queries, however many rows.
@@ -21,7 +22,7 @@ export async function getSupplierBalances(supplierIds: string[]): Promise<Map<st
   const balances = new Map<string, Money>(ids.map((id) => [id, ZERO]))
   if (ids.length === 0) return balances
 
-  const [orders, landedCosts, transferCosts, payments] = await Promise.all([
+  const [orders, landedCosts, transferCosts, payments, returns] = await Promise.all([
     prisma.purchaseOrder.groupBy({
       by: ["supplierId"],
       where: { supplierId: { in: ids }, status: { not: "CANCELLED" } },
@@ -43,6 +44,11 @@ export async function getSupplierBalances(supplierIds: string[]): Promise<Map<st
       where: { supplierId: { in: ids } },
       _sum: { amount: true },
     }),
+    prisma.purchaseReturn.groupBy({
+      by: ["supplierId"],
+      where: { supplierId: { in: ids } },
+      _sum: { creditTotal: true, refundAmount: true },
+    }),
   ])
 
   for (const row of orders) {
@@ -56,6 +62,10 @@ export async function getSupplierBalances(supplierIds: string[]): Promise<Map<st
   }
   for (const row of payments) {
     balances.set(row.supplierId, (balances.get(row.supplierId) ?? ZERO).minus(row._sum.amount ?? ZERO))
+  }
+  for (const row of returns) {
+    const net = (row._sum.creditTotal ?? ZERO).minus(row._sum.refundAmount ?? ZERO)
+    balances.set(row.supplierId, (balances.get(row.supplierId) ?? ZERO).minus(net))
   }
   return balances
 }

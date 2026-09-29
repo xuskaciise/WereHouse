@@ -3,7 +3,7 @@ import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { HttpError } from "@/lib/http-error"
 import { type Money, ZERO, roundMoney, sumMoney } from "@/lib/money"
 import { allocateAmount } from "@/lib/landed-costs"
-import { createWithOrderNumber, lastSequenceNumber, parseOrderItems } from "@/lib/orders"
+import { createWithOrderNumber, lastSequenceNumber, nextDocumentNumber, parseOrderItems } from "@/lib/orders"
 import { assertCanReference } from "@/lib/ownership"
 import type { Module } from "@/lib/permission-rules"
 import { type PermissionUser, hasPermission, isOwnScope, requirePermission, salesDiscountLimit } from "@/lib/permissions"
@@ -159,19 +159,6 @@ async function addEvent(tx: Tx, e: { salesOrderId: string; type: string; userId:
       data: (e.data ?? undefined) as Prisma.InputJsonValue | undefined,
     },
   })
-}
-
-/**
- * Next number of a document inside the current transaction (DN-000001, ...).
- * A transaction-scoped advisory lock serializes concurrent numbering; the
- * unique index stays the final guard.
- */
-export async function nextDocumentNumber(tx: Tx, prefix: string, table: string, column: string): Promise<string> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`doc-number:${table}`}))`
-  const rows = await tx.$queryRawUnsafe<{ n: number | null }[]>(
-    `SELECT max(substring("${column}" from '[0-9]+$')::int) AS n FROM "${table}"`
-  )
-  return `${prefix}-${String((rows[0]?.n ?? 0) + 1).padStart(6, "0")}`
 }
 
 // --- Input (create / edit) ---------------------------------------------------------

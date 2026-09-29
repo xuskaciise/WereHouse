@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, PackageCheck, Pencil, Printer } from "lucide-react"
+import Link from "next/link"
+import { AlertTriangle, PackageCheck, Pencil, Printer, Undo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -100,6 +101,7 @@ export function PurchaseOrderDetailsSheet({
   const canAdjust = useCan("purchase_receive", "edit")
   const canEditOrder = useCan("purchases", "edit")
   const canViewLandedCosts = useCan("landed_costs", "view")
+  const canReturn = useCan("purchase_returns", "create")
 
   const [receiveOpen, setReceiveOpen] = useState(false)
   const [receiveNote, setReceiveNote] = useState("")
@@ -304,6 +306,14 @@ export function PurchaseOrderDetailsSheet({
                   <Button type="button" variant="default" size="sm" onClick={openReceiveDialog}>
                     <PackageCheck className="mr-2 h-4 w-4" />
                     Receive Order
+                  </Button>
+                )}
+                {canReturn && order.items?.some((i: any) => totalReceivedForLineItem(i) > 0) && (
+                  <Button asChild type="button" variant="outline" size="sm">
+                    <Link href={`/purchases/returns/new?po=${order.id}`}>
+                      <Undo2 className="mr-2 h-4 w-4" />
+                      Return to supplier
+                    </Link>
                   </Button>
                 )}
                 <Button type="button" variant="outline" size="sm" onClick={() => window.print()}>
