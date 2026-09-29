@@ -32,6 +32,8 @@ export default function SettingsPage() {
   const [resetConfirmText, setResetConfirmText] = useState("")
   const [resetPassword, setResetPassword] = useState("")
   const [isResettingSystem, setIsResettingSystem] = useState(false)
+  // null = unknown / not an admin; false = locked on this server (production).
+  const [resetEnabled, setResetEnabled] = useState<boolean | null>(null)
   const [settings, setSettings] = useState({
     companyName: "",
     companyAddress: "",
@@ -51,6 +53,14 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchSettings()
   }, [])
+
+  useEffect(() => {
+    if (currentUser.role !== "ADMIN") return
+    fetch("/api/admin/system-reset")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => setResetEnabled(data ? data.enabled === true : false))
+      .catch(() => setResetEnabled(false))
+  }, [currentUser.role])
 
   const fetchSettings = async () => {
     try {
@@ -115,7 +125,7 @@ export default function SettingsPage() {
   const isTruncateConfirmed = resetConfirmText.trim().toUpperCase() === "TRUNCATE"
 
   const canSubmitSystemReset =
-    isTruncateConfirmed && resetPassword.trim().length > 0 && isAdminUser && !isResettingSystem
+    isTruncateConfirmed && resetPassword.trim().length > 0 && isAdminUser && resetEnabled === true && !isResettingSystem
 
   const handleSystemReset = async () => {
     if (!isAdminUser) {
@@ -164,7 +174,7 @@ export default function SettingsPage() {
 
       toast({
         title: "System Reset Complete",
-        description: "All operational data was truncated successfully. Users were preserved.",
+        description: "All business data was deleted. Users, permissions, settings and landed cost types were kept.",
       })
       setResetConfirmText("")
       setResetPassword("")
@@ -403,14 +413,21 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle className="text-destructive">Danger Zone</CardTitle>
             <CardDescription>
-              Permanently truncate operational data and reset auto-increment IDs. Users are never deleted.
+              Permanently delete all business data. Users, permissions, settings and landed cost types are kept.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-muted-foreground">
-              This action will clear warehouses, products, categories, purchases, sales, stock movements, expenses,
-              payments, and customers. This cannot be undone.
+              This action will clear warehouses, products, categories, suppliers, customers, purchases, landed costs,
+              sales, payments, stock, stock movements, transfers, expenses and expense categories. This cannot be undone.
             </div>
+
+            {isAdminUser && resetEnabled === false && (
+              <p className="text-sm text-muted-foreground">
+                The system reset is locked on this server (ALLOW_SYSTEM_RESET is not enabled). Production data resets
+                are done by the operator with a verified backup (scripts/reset/reset-test-data.sh).
+              </p>
+            )}
 
             {!isAdminUser && (
               <p className="text-sm text-destructive">
@@ -420,7 +437,7 @@ export default function SettingsPage() {
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button type="button" variant="destructive" disabled={!isAdminUser}>
+                <Button type="button" variant="destructive" disabled={!isAdminUser || resetEnabled !== true}>
                   Reset System Data (TRUNCATE)
                 </Button>
               </AlertDialogTrigger>
@@ -429,7 +446,7 @@ export default function SettingsPage() {
                   <AlertDialogTitle>Confirm System Reset</AlertDialogTitle>
                   <AlertDialogDescription>
                     Type <span className="font-semibold text-foreground">TRUNCATE</span> in all caps to enable reset.
-                    Users table will remain intact.
+                    Users, permissions and settings will remain intact.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
 

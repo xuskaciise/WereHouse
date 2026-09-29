@@ -86,6 +86,7 @@ jobs:
             docker-compose.yml
             deploy.sh
             scripts/backup-warehouse-db.sh
+            scripts/reset/
           sparse-checkout-cone-mode: false
 
       - name: Setup SSH (pinned host key)
@@ -117,10 +118,11 @@ jobs:
       # only the deploy files are copied; code and migrations come in the images.
       - name: Upload deploy files
         run: |
-          ssh deploy-target "mkdir -p '$REMOTE_DIR/scripts'"
+          ssh deploy-target "mkdir -p '$REMOTE_DIR/scripts/reset'"
           scp docker-compose.yml deploy.sh deploy-target:"$REMOTE_DIR/"
           scp scripts/backup-warehouse-db.sh deploy-target:"$REMOTE_DIR/scripts/"
-          ssh deploy-target "chmod 755 '$REMOTE_DIR/deploy.sh' '$REMOTE_DIR/scripts/backup-warehouse-db.sh'"
+          scp scripts/reset/reset-test-data.sh scripts/reset/reset-test-data.sql deploy-target:"$REMOTE_DIR/scripts/reset/"
+          ssh deploy-target "chmod 755 '$REMOTE_DIR/deploy.sh' '$REMOTE_DIR/scripts/backup-warehouse-db.sh' '$REMOTE_DIR/scripts/reset/reset-test-data.sh'"
 
       - name: Pull images on the VPS
         env:

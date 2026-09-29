@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "next lint && node scripts/check-route-guards.mjs",
+    "lint": "next lint && node scripts/check-route-guards.mjs && node scripts/check-reset-tables.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
