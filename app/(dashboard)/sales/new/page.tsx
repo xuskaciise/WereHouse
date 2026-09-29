@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
-import { useCurrentUser } from "@/components/providers/current-user-provider"
+import { useCan, useCurrentUser } from "@/components/providers/current-user-provider"
 import {
   DISCOUNT_REASON_MAX_LENGTH,
   type DiscountTypeValue,
@@ -100,6 +100,12 @@ export default function NewSalesOrderPage() {
   const unlimitedDiscount = discountLimit === null
   const maxDiscountPercent = discountLimit ?? 100
   const reasonLimit = currentUser.discountReasonReferenceLimit
+  // Buttons follow the permissions; the server enforces the same.
+  const canDraft = useCan("sales", "create")
+  const canConfirm = useCan("sales_confirm", "create")
+  const canDeliver = useCan("sales_deliver", "create")
+  // ?edit=<id>: edit a draft, or a confirmed order before any delivery.
+  const [editing, setEditing] = useState<any | null>(null)
   const [customers, setCustomers] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
   const [warehouses, setWarehouses] = useState<any[]>([])
@@ -117,13 +123,36 @@ export default function NewSalesOrderPage() {
   useEffect(() => {
     fetch("/api/settings").then(async (r) => r.ok && setTaxRate(resolveTaxRate(await r.json(), "sales")))
   }, [])
-  const orderNumber = "SO-2023-0042"
+  const orderNumber = editing?.orderNumber ?? "New order"
 
   useEffect(() => {
     fetchCustomers()
     fetchProducts()
     fetchWarehouses()
     fetchStock()
+    const editId = new URLSearchParams(window.location.search).get("edit")
+    if (editId) {
+      fetch(`/api/sales-orders/${editId}`).then(async (r) => {
+        if (!r.ok) return
+        const order = await r.json()
+        setEditing(order)
+        setCustomerId(order.customerId)
+        setWarehouseId(order.warehouseId)
+        setExpectedDelivery(order.expectedDeliveryDate ? String(order.expectedDeliveryDate).slice(0, 10) : "")
+        setItems(
+          order.items.map((i: any) => ({
+            productId: i.productId,
+            quantity: i.quantity,
+            unitPrice: Number(i.unitPrice),
+            discountType: i.discountType ?? "PERCENT",
+            discountValue: i.discountValue ? String(Number(i.discountValue)) : "",
+          }))
+        )
+        if (order.discountType) setOrderDiscountType(order.discountType)
+        if (order.discountValue) setOrderDiscountValue(String(Number(order.discountValue)))
+        setDiscountReason(order.discountReason ?? "")
+      })
+    }
   }, [])
 
   const fetchCustomers = async () => {
@@ -208,7 +237,13 @@ export default function NewSalesOrderPage() {
     const stockItem = stock.find(
       (s) => s.productId === productId && s.warehouseId === warehouseId
     )
-    return stockItem ? stockItem.quantity - stockItem.reservedQuantity : 0
+    const available = stockItem ? stockItem.quantity - stockItem.reservedQuantity : 0
+    // A confirmed order being edited may reuse its own reservation.
+    const own =
+      editing?.status === "CONFIRMED" && editing.warehouseId === warehouseId
+        ? editing.items.filter((i: any) => i.productId === productId).reduce((sum: number, i: any) => sum + i.remainingQuantity, 0)
+        : 0
+    return available + own
   }
 
   const getInsufficientStockItems = () => {
@@ -307,7 +342,8 @@ export default function NewSalesOrderPage() {
   const discountPayload = (type: DiscountTypeValue, value: string) =>
     value.trim() === "" || Number(value) === 0 ? null : { type, value }
 
-  const handleSubmit = async (isDraft: boolean = false) => {
+  const handleSubmit = async (mode: "draft" | "confirm" | "sell_now") => {
+    const isDraft = mode === "draft"
     if (!customerId || !warehouseId || items.length === 0) {
       toast({
         title: "Validation Error",
@@ -333,8 +369,9 @@ export default function NewSalesOrderPage() {
       return
     }
 
-    // Validate available stock per selected warehouse before submit
-    const insufficientItems = items
+    // Stock is only reserved / delivered on confirm (a draft never touches stock)
+    const needsStock = !isDraft || editing?.status === "CONFIRMED"
+    const insufficientItems = (needsStock ? items : [])
       .map((item) => ({
         item,
         available: getAvailableStock(item.productId),
@@ -356,8 +393,8 @@ export default function NewSalesOrderPage() {
     setIsSaving(true)
 
     try {
-      const response = await fetch("/api/sales-orders", {
-        method: "POST",
+      const response = await fetch(editing ? `/api/sales-orders/${editing.id}` : "/api/sales-orders", {
+        method: editing ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
@@ -373,19 +410,24 @@ export default function NewSalesOrderPage() {
           })),
           discount: discountPayload(orderDiscountType, orderDiscountValue),
           discountReason: discountReason.trim() || null,
-          notes: null,
-          status: isDraft ? "PENDING" : "CONFIRMED",
+          notes: editing?.notes ?? null,
+          mode,
         }),
       })
 
       if (response.ok) {
+        const saved = await response.json()
         toast({
-          title: isDraft ? "Draft Saved" : "Sales Order Created",
-          description: isDraft
-            ? "Sales order has been saved as draft."
-            : "Sales order has been created successfully.",
+          title: editing ? "Order updated" : mode === "sell_now" ? "Sold and delivered" : mode === "confirm" ? "Order confirmed" : "Draft saved",
+          description: editing
+            ? "The changes are saved."
+            : mode === "sell_now"
+            ? "The stock left the warehouse and the sale is recorded."
+            : mode === "confirm"
+            ? "The stock is reserved for this customer until it is delivered."
+            : "The draft does not reserve or deduct any stock.",
         })
-        router.push("/sales")
+        router.push(`/sales/${saved.id}`)
       } else {
         const error = await response.json()
         const serverMessage =
@@ -453,7 +495,7 @@ export default function NewSalesOrderPage() {
         </Link>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            Create New Sale Order
+            {editing ? `Edit ${editing.orderNumber}` : "Create New Sale Order"}
           </h1>
           <p className="text-muted-foreground">
             Create a new sales order for a customer
@@ -722,23 +764,44 @@ export default function NewSalesOrderPage() {
             </Card>
           )}
 
-          <div className="flex gap-2">
+          {editing ? (
             <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => handleSubmit(true)}
-              disabled={isSaving || discountErrors.length > 0}
+              className="w-full"
+              onClick={() => handleSubmit("draft")}
+              disabled={isSaving || discountErrors.length > 0 || (editing.status === "CONFIRMED" && hasInsufficientStock)}
             >
-              {isSaving ? "Saving..." : "Save Draft"}
+              {isSaving ? "Saving..." : editing.status === "CONFIRMED" ? "Save changes (reservation is adjusted)" : "Save draft"}
             </Button>
-            <Button
-              className="flex-1"
-              onClick={() => handleSubmit(false)}
-              disabled={isSaving || hasInsufficientStock || discountErrors.length > 0}
-            >
-              {isSaving ? "Creating..." : hasInsufficientStock ? "Insufficient Stock" : "Finalize & Post"}
-            </Button>
-          </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                {canDraft && (
+                  <Button variant="outline" className="flex-1" onClick={() => handleSubmit("draft")} disabled={isSaving || discountErrors.length > 0}>
+                    {isSaving ? "Saving..." : "Save draft"}
+                  </Button>
+                )}
+                {canConfirm && (
+                  <Button
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => handleSubmit("confirm")}
+                    disabled={isSaving || hasInsufficientStock || discountErrors.length > 0}
+                  >
+                    {hasInsufficientStock ? "Insufficient stock" : "Confirm (reserve stock)"}
+                  </Button>
+                )}
+                {canConfirm && canDeliver && (
+                  <Button className="flex-1" onClick={() => handleSubmit("sell_now")} disabled={isSaving || hasInsufficientStock || discountErrors.length > 0}>
+                    {hasInsufficientStock ? "Insufficient stock" : "Sell & deliver now"}
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Draft: no stock is touched. Confirm: the stock is reserved for the customer until it is delivered. Sell &amp;
+                deliver now: the goods leave the warehouse at once (counter sale).
+              </p>
+            </div>
+          )}
 
           <Card>
             <CardContent className="pt-6">

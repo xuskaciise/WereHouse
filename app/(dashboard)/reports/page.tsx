@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { formatCurrency } from "@/lib/utils"
 import { purchaseStatusLabel } from "@/lib/purchase-rules"
 import { totalDiscountOf } from "@/lib/discount-rules"
+import { SALES_STATUS } from "@/lib/sales-labels"
 import { methodLabel } from "@/lib/payment-methods"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
 import { can } from "@/lib/permission-rules"
@@ -210,7 +211,8 @@ export default function ReportsPage() {
     let totalCents = 0
     let discountCents = 0
     for (const order of filteredSalesOrders) {
-      if (order.status === "CANCELLED") continue
+      // Confirmed or delivered orders only (drafts and cancelled orders are not sales).
+      if (order.status === "CANCELLED" || order.status === "DRAFT") continue
       totalCents += Math.round(Number(order.total || 0) * 100)
       discountCents += Math.round(totalDiscountOf(order) * 100)
     }
@@ -456,7 +458,7 @@ export default function ReportsPage() {
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Total sales (after discounts)</CardDescription>
+                <CardDescription>Ordered value, confirmed + delivered (after discounts)</CardDescription>
                 <CardTitle className="text-2xl">{formatCurrency(salesSummary.total)}</CardTitle>
               </CardHeader>
             </Card>
@@ -560,7 +562,7 @@ export default function ReportsPage() {
                         <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
                         <TableCell>{order.warehouse?.name || "N/A"}</TableCell>
                         <TableCell>{order.customer?.name || "N/A"}</TableCell>
-                        <TableCell><Badge variant="outline">{order.status}</Badge></TableCell>
+                        <TableCell><Badge variant={SALES_STATUS[order.status]?.variant ?? "outline"}>{SALES_STATUS[order.status]?.label ?? order.status}</Badge></TableCell>
                         <TableCell className="text-right">{totalDiscountOf(order) > 0 ? `-${formatCurrency(totalDiscountOf(order))}` : "-"}</TableCell>
                         <TableCell className="text-right">{formatCurrency(order.total || 0)}</TableCell>
                       </TableRow>

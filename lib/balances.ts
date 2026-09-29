@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { type Money, ZERO } from "@/lib/money"
 
@@ -7,7 +8,8 @@ import { type Money, ZERO } from "@/lib/money"
 //                    + SUM(landed costs owed to the supplier, on non-cancelled POs)
 //                    + SUM(stock transfer costs owed to the supplier)
 //                    - SUM(supplier payments)
-//   customer balance = SUM(non-cancelled sales order totals)    - SUM(customer payments)
+//   customer balance = SUM(sales delivery totals) - SUM(customer payments)
+//                      (debt arises at delivery, not when the order is confirmed)
 // Each is computed with two grouped aggregate queries, however many rows.
 
 function unique(ids: string[]): string[] {
@@ -64,11 +66,11 @@ export async function getCustomerBalances(customerIds: string[]): Promise<Map<st
   if (ids.length === 0) return balances
 
   const [orders, payments] = await Promise.all([
-    prisma.salesOrder.groupBy({
-      by: ["customerId"],
-      where: { customerId: { in: ids }, status: { not: "CANCELLED" } },
-      _sum: { total: true },
-    }),
+    prisma.$queryRaw<{ customerId: string; total: Prisma.Decimal | null }[]>`
+      SELECT so."customerId", SUM(d."total") AS "total"
+      FROM "sales_deliveries" d JOIN "sales_orders" so ON so."id" = d."salesOrderId"
+      WHERE so."customerId" IN (${Prisma.join(ids)})
+      GROUP BY so."customerId"`,
     prisma.customerPayment.groupBy({
       by: ["customerId"],
       where: { customerId: { in: ids } },
@@ -77,7 +79,7 @@ export async function getCustomerBalances(customerIds: string[]): Promise<Map<st
   ])
 
   for (const row of orders) {
-    balances.set(row.customerId, (balances.get(row.customerId) ?? ZERO).plus(row._sum.total ?? ZERO))
+    balances.set(row.customerId, (balances.get(row.customerId) ?? ZERO).plus(row.total ?? ZERO))
   }
   for (const row of payments) {
     balances.set(row.customerId, (balances.get(row.customerId) ?? ZERO).minus(row._sum.amount ?? ZERO))

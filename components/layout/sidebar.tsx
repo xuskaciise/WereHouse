@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Tags,
   ArrowLeftRight,
+  CalendarClock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
@@ -81,6 +82,7 @@ const navigationSections: NavSection[] = [
     title: "Sales & Finance",
     items: [
       { name: "Sales", href: "/sales", icon: ShoppingCart },
+      { name: "Reservations", href: "/sales/reservations", icon: CalendarClock },
       { name: "Payments", href: "/payments", icon: CreditCard },
     ],
   },

@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Package, TrendingUp, ShoppingBag, ShoppingCart, AlertTriangle } from "lucide-react"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { totalDiscountOf } from "@/lib/discount-rules"
+import { SALES_STATUS } from "@/lib/sales-labels"
 import { useCan } from "@/components/providers/current-user-provider"
 import {
   BarChart,
@@ -278,16 +279,8 @@ export default function DashboardPage() {
                     <TableCell>{totalDiscountOf(order) > 0 ? `-${formatCurrency(totalDiscountOf(order))}` : "-"}</TableCell>
                     <TableCell>{formatCurrency(order.total)}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant={
-                          order.status === "DELIVERED"
-                            ? "default"
-                            : order.status === "SHIPPED"
-                            ? "default"
-                            : "secondary"
-                        }
-                      >
-                        {order.status}
+                      <Badge variant={SALES_STATUS[order.status]?.variant ?? "secondary"}>
+                        {SALES_STATUS[order.status]?.label ?? order.status}
                       </Badge>
                     </TableCell>
                   </TableRow>

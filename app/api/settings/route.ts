@@ -24,6 +24,8 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   salesTaxRate: "0",
   purchaseTaxRate: "0",
   lowStockThreshold: "10",
+  // Days a confirmed sales order holds its stock (1-365, lib/sales-orders.ts).
+  salesReservationDays: "7",
   // Enabled payment methods and mobile money prefixes (lib/payment-methods.ts).
   [PAYMENT_METHOD_SETTING]: JSON.stringify(DEFAULT_PAYMENT_CONFIG),
   dateFormat: "MM/DD/YYYY",
@@ -84,6 +86,12 @@ export const PUT = withAuth(
       if (key in TAX_KEYS) {
         if (!isValidTaxRateInput(value)) throw new HttpError(400, `${TAX_KEYS[key]} must be between 0 and 100 (max 2 decimals)`)
         body[key] = String(value).trim()
+        continue
+      }
+      if (key === "salesReservationDays") {
+        const days = Number(value)
+        if (!Number.isInteger(days) || days < 1 || days > 365) throw new HttpError(400, "Reservation days must be a whole number from 1 to 365")
+        body[key] = String(days)
         continue
       }
       if (key === "defaultCurrency") {

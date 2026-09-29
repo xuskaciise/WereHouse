@@ -45,6 +45,7 @@ export default function SettingsPage() {
     salesTaxRate: "",
     purchaseTaxRate: "",
     lowStockThreshold: "",
+    salesReservationDays: "",
     dateFormat: "",
     timezone: "",
     paymentMethodConfig: "",
@@ -365,6 +366,22 @@ export default function SettingsPage() {
               />
               <p className="text-sm text-muted-foreground">
                 Products below this quantity will be marked as low stock
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="salesReservationDays">Sales reservation (days)</Label>
+              <Input
+                id="salesReservationDays"
+                type="number"
+                min="1"
+                max="365"
+                value={settings.salesReservationDays}
+                onChange={(e) => setSettings({ ...settings, salesReservationDays: e.target.value })}
+                placeholder="7"
+              />
+              <p className="text-sm text-muted-foreground">
+                A confirmed sales order holds its stock this many days. Expired reservations are listed under Sales →
+                Reservations (they are never released automatically).
               </p>
             </div>
           </CardContent>

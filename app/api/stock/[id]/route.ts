@@ -19,7 +19,8 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
   const existing = await prisma.stock.findUnique({ where: { id: params.id } })
   assertInScope(user, "stock", existing, NOT_FOUND)
 
-  const { quantity, reservedQuantity } = await readJson(request)
+  // reservedQuantity is never set by hand: only sales orders reserve stock (lib/sales-orders.ts).
+  const { quantity } = await readJson(request)
   if (quantity === undefined) throw new HttpError(400, "Quantity is required")
   const newQuantity = parseQuantity(quantity, { allowZero: true })
 
@@ -31,11 +32,6 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
       userId: user.id,
     })
 
-    if (reservedQuantity !== undefined) {
-      const reserved = parseQuantity(reservedQuantity, { allowZero: true })
-      if (reserved > newQuantity) throw new HttpError(400, "Reserved quantity cannot exceed quantity")
-      await tx.stock.update({ where: { id: params.id }, data: { reservedQuantity: reserved } })
-    }
 
     if (newQuantity !== oldQuantity) {
       await tx.stockMovement.create({
@@ -63,6 +59,10 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
 export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }) => {
   const existing = await prisma.stock.findUnique({ where: { id: params.id } })
   assertInScope(user, "stock", existing, NOT_FOUND)
+  // Only empty rows: deleting units would lose stock without a movement.
+  if (existing.quantity > 0 || existing.reservedQuantity > 0) {
+    throw new HttpError(400, "Only a stock row with quantity 0 and nothing reserved can be deleted; adjust the stock to 0 first")
+  }
 
   await prisma.stock.delete({ where: { id: params.id } })
   return json({ message: "Stock deleted successfully" })

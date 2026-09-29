@@ -49,9 +49,11 @@ export default function LowStockPage() {
     }
   }
 
+  // Available = on hand - reserved for confirmed sales orders (same rule as the server).
+  const availableOf = (item: any) => item.quantity - (item.reservedQuantity || 0)
   const lowStockItems = stock.filter((item) => {
     if (!item.product) return false
-    return item.quantity <= (item.product.reorderLevel || 0)
+    return availableOf(item) <= (item.product.reorderLevel || 0)
   })
 
   return (
@@ -91,7 +93,9 @@ export default function LowStockPage() {
                 <TableRow>
                   <TableHead>Product</TableHead>
                   <TableHead>Warehouse</TableHead>
-                  <TableHead>Current Stock</TableHead>
+                  <TableHead>On Hand</TableHead>
+                  <TableHead>Reserved</TableHead>
+                  <TableHead>Available</TableHead>
                   <TableHead>Reorder Level</TableHead>
                   <TableHead>Shortage</TableHead>
                   {seesCost && <TableHead>Avg. Cost</TableHead>}
@@ -101,22 +105,24 @@ export default function LowStockPage() {
               <TableBody>
                 {lowStockItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={seesCost ? 7 : 6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={seesCost ? 9 : 8} className="text-center text-muted-foreground py-8">
                       No low stock items. All products are well stocked!
                     </TableCell>
                   </TableRow>
                 ) : (
                   lowStockItems.map((item) => {
                     const reorderLevel = item.product?.reorderLevel || 0
-                    const shortage = reorderLevel - item.quantity
+                    const shortage = reorderLevel - availableOf(item)
                     return (
                       <TableRow key={item.id}>
                         <TableCell className="font-medium">
                           {item.product?.name || "N/A"}
                         </TableCell>
                         <TableCell>{item.warehouse?.name || "N/A"}</TableCell>
+                        <TableCell>{item.quantity}</TableCell>
+                        <TableCell>{item.reservedQuantity || 0}</TableCell>
                         <TableCell className="text-red-600 font-medium">
-                          {item.quantity}
+                          {availableOf(item)}
                         </TableCell>
                         <TableCell>{reorderLevel}</TableCell>
                         <TableCell className="text-red-600 font-medium">
@@ -124,7 +130,7 @@ export default function LowStockPage() {
                         </TableCell>
                         {seesCost && <TableCell>{formatCurrency(item.avgCost || 0)}</TableCell>}
                         <TableCell>
-                          {item.quantity === 0 ? (
+                          {availableOf(item) <= 0 ? (
                             <Badge variant="destructive">Out of Stock</Badge>
                           ) : (
                             <Badge variant="warning">Low Stock</Badge>

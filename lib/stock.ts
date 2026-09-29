@@ -25,17 +25,18 @@ export function parseQuantity(value: unknown, { allowZero = false } = {}): numbe
 }
 
 /**
- * Recomputes the status column from the current quantity and the product's
- * own reorder level, in one statement (no stale reads). Same rule as the Low
- * Stock page and the dashboard: LOW_STOCK when quantity <= reorderLevel.
+ * Recomputes the status column from the AVAILABLE quantity (quantity -
+ * reserved) and the product's own reorder level, in one statement (no stale
+ * reads). Same rule as the Low Stock page and the dashboard: LOW_STOCK when
+ * available <= reorderLevel.
  */
 export async function refreshStockStatus(tx: Tx, productId: string, warehouseId?: string): Promise<void> {
   if (warehouseId) {
     await tx.$executeRaw`
       UPDATE "stock" AS s
       SET "status" = (CASE
-            WHEN s."quantity" <= 0 THEN 'OUT_OF_STOCK'
-            WHEN s."quantity" <= p."reorderLevel" THEN 'LOW_STOCK'
+            WHEN s."quantity" - s."reservedQuantity" <= 0 THEN 'OUT_OF_STOCK'
+            WHEN s."quantity" - s."reservedQuantity" <= p."reorderLevel" THEN 'LOW_STOCK'
             ELSE 'IN_STOCK' END)::"StockStatus"
       FROM "products" AS p
       WHERE p."id" = s."productId" AND s."productId" = ${productId} AND s."warehouseId" = ${warehouseId}`
@@ -43,8 +44,8 @@ export async function refreshStockStatus(tx: Tx, productId: string, warehouseId?
     await tx.$executeRaw`
       UPDATE "stock" AS s
       SET "status" = (CASE
-            WHEN s."quantity" <= 0 THEN 'OUT_OF_STOCK'
-            WHEN s."quantity" <= p."reorderLevel" THEN 'LOW_STOCK'
+            WHEN s."quantity" - s."reservedQuantity" <= 0 THEN 'OUT_OF_STOCK'
+            WHEN s."quantity" - s."reservedQuantity" <= p."reorderLevel" THEN 'LOW_STOCK'
             ELSE 'IN_STOCK' END)::"StockStatus"
       FROM "products" AS p
       WHERE p."id" = s."productId" AND s."productId" = ${productId}`
@@ -145,4 +146,52 @@ export async function setStockQuantity(
   })
   await refreshStockStatus(tx, productId, warehouseId)
   return { oldQuantity, newQuantity: quantity }
+}
+
+// --- Reservations (sales orders, lib/sales-orders.ts) ------------------------
+// reservedQuantity is only ever changed by these three helpers. Each is one
+// guarded UPDATE; the CHECK constraint 0 <= reserved <= quantity backs them up.
+
+/** Reserves units for a confirmed order; 400 (nothing changed) if not enough is available. */
+export async function reserveStock(tx: Tx, { productId, warehouseId, quantity }: StockKey & { quantity: number }): Promise<void> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`
+    UPDATE "stock"
+    SET "reservedQuantity" = "reservedQuantity" + ${quantity}, "updatedAt" = NOW()
+    WHERE "productId" = ${productId} AND "warehouseId" = ${warehouseId}
+      AND "quantity" - "reservedQuantity" >= ${quantity}
+    RETURNING "id"`
+  if (rows.length === 0) {
+    const current = await tx.stock.findUnique({
+      where: { productId_warehouseId: { productId, warehouseId } },
+      select: { quantity: true, reservedQuantity: true, product: { select: { name: true } } },
+    })
+    const product = current?.product.name ?? (await tx.product.findUnique({ where: { id: productId }, select: { name: true } }))?.name
+    const available = current ? current.quantity - current.reservedQuantity : 0
+    throw new HttpError(400, `Insufficient stock for ${product ?? "a product"}. Available: ${available}, Requested: ${quantity}`)
+  }
+  await refreshStockStatus(tx, productId, warehouseId)
+}
+
+/** Gives reserved units back to "available" (cancel, edit, released reservation). */
+export async function releaseReservedStock(tx: Tx, { productId, warehouseId, quantity }: StockKey & { quantity: number }): Promise<void> {
+  if (quantity <= 0) return
+  const count = await tx.$executeRaw`
+    UPDATE "stock"
+    SET "reservedQuantity" = "reservedQuantity" - ${quantity}, "updatedAt" = NOW()
+    WHERE "productId" = ${productId} AND "warehouseId" = ${warehouseId} AND "reservedQuantity" >= ${quantity}`
+  if (count === 0) throw new HttpError(409, "The stock reservation is inconsistent (run the reservation check)")
+  await refreshStockStatus(tx, productId, warehouseId)
+}
+
+/** Delivery of reserved units: they leave the warehouse and the reservation ends. */
+export async function fulfilReservedStock(tx: Tx, { productId, warehouseId, quantity }: StockKey & { quantity: number }): Promise<number> {
+  const rows = await tx.$queryRaw<{ quantity: number }[]>`
+    UPDATE "stock"
+    SET "quantity" = "quantity" - ${quantity}, "reservedQuantity" = "reservedQuantity" - ${quantity}, "updatedAt" = NOW()
+    WHERE "productId" = ${productId} AND "warehouseId" = ${warehouseId}
+      AND "reservedQuantity" >= ${quantity} AND "quantity" >= ${quantity}
+    RETURNING "quantity"`
+  if (rows.length === 0) throw new HttpError(409, "The stock reservation is inconsistent (run the reservation check)")
+  await refreshStockStatus(tx, productId, warehouseId)
+  return rows[0].quantity
 }

@@ -14,6 +14,8 @@ export type OrderStatus =
   | "DELIVERED"
   | "CANCELLED"
 
+export type SalesOrderStatus = "DRAFT" | "CONFIRMED" | "PARTIALLY_DELIVERED" | "DELIVERED" | "CANCELLED"
+
 export type PaymentStatus = "PENDING" | "PAID" | "PARTIAL" | "OVERDUE"
 
 export interface User {
@@ -187,7 +189,8 @@ export interface SalesOrder {
   warehouse: Warehouse
   orderDate: Date
   expectedDeliveryDate: Date | null
-  status: OrderStatus
+  status: SalesOrderStatus
+  reservedUntil: Date | null
   subtotal: number
   tax: number
   discount: number
@@ -206,6 +209,8 @@ export interface SalesOrderItem {
   productId: string
   product: Product
   quantity: number
+  deliveredQuantity: number
+  releasedQuantity: number
   unitPrice: number
   subtotal: number
   createdAt: Date

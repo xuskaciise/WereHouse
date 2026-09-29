@@ -16,6 +16,7 @@ export const GET = withAuth(async (_request, { user }) => {
   const own = isOwnScope(user, "dashboard")
   const stockOwner = own ? Prisma.sql`AND s."userId" = ${user.id}` : Prisma.empty
   const orderOwner = own ? Prisma.sql`AND "userId" = ${user.id}` : Prisma.empty
+  const deliveryOwner = own ? Prisma.sql`AND so."userId" = ${user.id}` : Prisma.empty
 
   const now = new Date()
   const chartStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (CHART_MONTHS - 1), 1))
@@ -34,11 +35,22 @@ export const GET = withAuth(async (_request, { user }) => {
     prisma.$queryRaw<{ stockValue: Prisma.Decimal | null; lowStockCount: bigint }[]>`
       SELECT
         SUM(s."quantity" * s."avgCost") AS "stockValue",
-        COUNT(*) FILTER (WHERE s."quantity" <= p."reorderLevel") AS "lowStockCount"
+        COUNT(*) FILTER (WHERE s."quantity" - s."reservedQuantity" <= p."reorderLevel") AS "lowStockCount"
       FROM "stock" s
       JOIN "products" p ON p."id" = s."productId"
       WHERE TRUE ${stockOwner}`,
-    prisma.salesOrder.aggregate({ where, _sum: { total: true, discount: true, itemDiscount: true } }),
+    // Sales = deliveries (revenue arises at delivery; drafts, open and
+    // cancelled orders are not sales). Discounts: the delivered share of the
+    // order discount + of the line discounts.
+    prisma.$queryRaw<{ total: Prisma.Decimal | null; discount: Prisma.Decimal | null; itemDiscount: Prisma.Decimal | null }[]>`
+      SELECT
+        (SELECT SUM(d."total") FROM "sales_deliveries" d JOIN "sales_orders" so ON so."id" = d."salesOrderId" WHERE TRUE ${deliveryOwner}) AS "total",
+        (SELECT SUM(d."discount") FROM "sales_deliveries" d JOIN "sales_orders" so ON so."id" = d."salesOrderId" WHERE TRUE ${deliveryOwner}) AS "discount",
+        (SELECT SUM(ROUND(di."quantity" * i."discountAmount" / NULLIF(i."quantity", 0), 2))
+           FROM "sales_delivery_items" di
+           JOIN "sales_order_items" i ON i."id" = di."salesOrderItemId"
+           JOIN "sales_orders" so ON so."id" = i."salesOrderId"
+          WHERE TRUE ${deliveryOwner}) AS "itemDiscount"`,
     prisma.purchaseOrder.aggregate({ where, _sum: { total: true } }),
     prisma.stockMovement.findMany({
       where,
@@ -57,9 +69,9 @@ export const GET = withAuth(async (_request, { user }) => {
       take: 5,
     }),
     prisma.$queryRaw<{ month: string; total: Prisma.Decimal }[]>`
-      SELECT to_char(date_trunc('month', "orderDate"), 'YYYY-MM') AS month, SUM("total") AS total
-      FROM "sales_orders"
-      WHERE "orderDate" >= ${chartStart} ${orderOwner}
+      SELECT to_char(date_trunc('month', d."deliveredAt"), 'YYYY-MM') AS month, SUM(d."total") AS total
+      FROM "sales_deliveries" d JOIN "sales_orders" so ON so."id" = d."salesOrderId"
+      WHERE d."deliveredAt" >= ${chartStart} ${deliveryOwner}
       GROUP BY 1`,
     prisma.$queryRaw<{ month: string; total: Prisma.Decimal }[]>`
       SELECT to_char(date_trunc('month', "orderDate"), 'YYYY-MM') AS month, SUM("total") AS total
@@ -97,9 +109,9 @@ export const GET = withAuth(async (_request, { user }) => {
     ...(profit && { grossProfit: profit.grossProfit, marginPercent: profit.marginPercent, cogs: profit.cogs }),
     totalProducts,
     totalStockValue: inTransit.inTransitValue.plus(warehouseValue),
-    totalSales: salesSum._sum.total ?? 0,
-    // Order-level + item discounts, same scope as totalSales.
-    totalSalesDiscounts: (salesSum._sum.discount ?? new Prisma.Decimal(0)).plus(salesSum._sum.itemDiscount ?? 0),
+    totalSales: salesSum[0]?.total ?? 0,
+    // Order-level + item discounts of the delivered goods, same scope as totalSales.
+    totalSalesDiscounts: (salesSum[0]?.discount ?? new Prisma.Decimal(0)).plus(salesSum[0]?.itemDiscount ?? 0),
     totalPurchases: purchaseSum._sum.total ?? 0,
     lowStockCount: Number(stockSummary[0]?.lowStockCount ?? 0),
     recentMovements,

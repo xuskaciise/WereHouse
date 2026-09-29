@@ -1,11 +1,13 @@
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
-import { type Money, Decimal, ZERO, roundMoney, sumMoney } from "@/lib/money"
+import { type Money, Decimal, ZERO, sumMoney } from "@/lib/money"
 
-// Gross profit of sales, in Decimal:
-//   revenue = amount after all discounts, excluding tax (subtotal - discount)
-//   COGS    = quantity x unit cost stored on each sales line at the moment of
-//             sale (warehouse average cost), plus COGS adjustments booked in
+// Gross profit of sales, in Decimal, from the DELIVERIES in the period
+// (revenue and COGS arise at delivery, not when an order is confirmed):
+//   revenue = delivered amount after all discounts, excluding tax
+//             (delivery subtotal - delivery discount)
+//   COGS    = delivered quantity x the warehouse average cost at delivery
+//             (stored on each delivery line), plus COGS adjustments booked in
 //             the period (landed costs added after the goods were sold)
 //   gross profit = revenue - COGS; margin % = gross profit / revenue
 // Lines sold before cost tracking carry an estimated cost (costEstimated).
@@ -28,18 +30,32 @@ export async function salesProfit(options: {
     ...(options.from && { gte: options.from }),
     ...(options.to && { lte: options.to }),
   }
-  const orders = await prisma.salesOrder.findMany({
-    where: { ...options.where, status: { not: "CANCELLED" }, ...(Object.keys(dateRange).length && { orderDate: dateRange }) },
+  const deliveries = await prisma.salesDelivery.findMany({
+    where: { salesOrder: options.where, ...(Object.keys(dateRange).length && { deliveredAt: dateRange }) },
     select: {
-      id: true,
-      orderNumber: true,
-      orderDate: true,
       subtotal: true,
       discount: true,
-      items: { select: { quantity: true, unitCost: true, costEstimated: true } },
+      cogs: true,
+      deliveredAt: true,
+      salesOrder: { select: { id: true, orderNumber: true, orderDate: true, items: { select: { costEstimated: true } } } },
     },
-    orderBy: { orderDate: "desc" },
+    orderBy: { deliveredAt: "desc" },
   })
+  // One row per order (all of its deliveries in the period).
+  const byOrder = new Map<string, { id: string; orderNumber: string; orderDate: Date; revenue: Money; cogs: Money; estimated: boolean }>()
+  for (const d of deliveries) {
+    const row = byOrder.get(d.salesOrder.id) ?? {
+      id: d.salesOrder.id,
+      orderNumber: d.salesOrder.orderNumber,
+      orderDate: d.salesOrder.orderDate,
+      revenue: ZERO,
+      cogs: ZERO,
+      estimated: d.salesOrder.items.some((i) => i.costEstimated),
+    }
+    row.revenue = row.revenue.plus(d.subtotal.minus(d.discount))
+    row.cogs = row.cogs.plus(d.cogs)
+    byOrder.set(row.id, row)
+  }
   const adjustments = await prisma.inventoryValuationEntry.aggregate({
     where: {
       type: "COGS_ADJUSTMENT",
@@ -60,20 +76,9 @@ export async function salesProfit(options: {
       })
     : null
 
-  const rows = orders.map((order) => {
-    const revenue = order.subtotal.minus(order.discount)
-    const cogs = sumMoney(order.items.map((i) => roundMoney(i.unitCost.times(i.quantity))))
-    const grossProfit = revenue.minus(cogs)
-    return {
-      id: order.id,
-      orderNumber: order.orderNumber,
-      orderDate: order.orderDate,
-      revenue,
-      cogs,
-      grossProfit,
-      marginPercent: marginPercent(revenue, grossProfit),
-      estimated: order.items.some((i) => i.costEstimated),
-    }
+  const rows = Array.from(byOrder.values()).map((order) => {
+    const grossProfit = order.revenue.minus(order.cogs)
+    return { ...order, grossProfit, marginPercent: marginPercent(order.revenue, grossProfit) }
   })
 
   const revenue = sumMoney(rows.map((r) => r.revenue))

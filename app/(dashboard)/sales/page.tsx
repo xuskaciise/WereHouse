@@ -1,33 +1,34 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, Eye, Printer } from "lucide-react"
+import { CalendarClock, Eye, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import Link from "next/link"
-import Image from "next/image"
-import { discountLabel, totalDiscountOf } from "@/lib/discount-rules"
-import { taxLabel } from "@/lib/tax-rules"
+import { totalDiscountOf } from "@/lib/discount-rules"
 import { useCan } from "@/components/providers/current-user-provider"
+import { SALES_STATUS, isOpenSalesStatus } from "@/lib/sales-labels"
 
 export default function SalesPage() {
   // Hide what the role may not do; the API enforces the same permissions.
   const canCreate = useCan("sales", "create")
+  const canSeeReservations = useCan("sales_reservations", "view")
   const [salesOrders, setSalesOrders] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
+  const [statusFilter, setStatusFilter] = useState("ALL")
 
   useEffect(() => {
-    fetchSalesOrders()
-  }, [])
+    fetchSalesOrders(statusFilter)
+  }, [statusFilter])
 
-  const fetchSalesOrders = async () => {
+  const fetchSalesOrders = async (status: string) => {
+    setIsLoading(true)
     try {
-      const response = await fetch("/api/sales-orders")
+      const response = await fetch(`/api/sales-orders${status === "ALL" ? "" : `?status=${status}`}`)
       if (response.ok) {
         const data = await response.json()
         setSalesOrders(data)
@@ -39,7 +40,7 @@ export default function SalesPage() {
     }
   }
 
-  // Calculate total sales today
+  // Delivered (invoiced) today: deliveries are what count as sales.
   const calculateTotalSalesToday = () => {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -48,20 +49,15 @@ export default function SalesPage() {
 
     return salesOrders
       .filter((order) => {
-        const orderDate = new Date(order.orderDate || order.createdAt)
-        return orderDate >= today && orderDate < tomorrow
+        const deliveredAt = order.deliveredAt ? new Date(order.deliveredAt) : null
+        return order.status === "DELIVERED" && deliveredAt && deliveredAt >= today && deliveredAt < tomorrow
       })
-      .reduce((sum, order) => sum + (order.total || 0), 0)
+      .reduce((sum, order) => sum + Number(order.total || 0), 0)
   }
 
-  // Calculate pending shipments (orders that are not delivered)
-  const calculatePendingShipments = () => {
-    return salesOrders.filter(
-      (order) =>
-        order.status !== "DELIVERED" &&
-        order.status !== "CANCELLED"
-    ).length
-  }
+  // Pending shipments: confirmed or partly delivered (drafts are not orders yet).
+  const calculatePendingShipments = () => salesOrders.filter((order) => isOpenSalesStatus(order.status)).length
+  const isExpired = (order: any) => isOpenSalesStatus(order.status) && order.reservedUntil && new Date(order.reservedUntil) < new Date()
 
   return (
     <div className="space-y-6">
@@ -72,20 +68,27 @@ export default function SalesPage() {
             Manage customer orders and track sales
           </p>
         </div>
-        {canCreate && (
-          <Link href="/sales/new">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New Sales Order
+        <div className="flex gap-2">
+          {canSeeReservations && (
+            <Button asChild variant="outline">
+              <Link href="/sales/reservations"><CalendarClock className="mr-2 h-4 w-4" /> Reservations</Link>
             </Button>
-          </Link>
-        )}
+          )}
+          {canCreate && (
+            <Link href="/sales/new">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                New Sales Order
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Total Sales Today</CardTitle>
+            <CardTitle>Fully delivered today</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(calculateTotalSalesToday())}</div>
@@ -103,8 +106,21 @@ export default function SalesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent Sales Orders</CardTitle>
-          <CardDescription>List of all sales orders</CardDescription>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>Recent Sales Orders</CardTitle>
+              <CardDescription>Drafts reserve nothing; confirmed orders hold stock until delivered</CardDescription>
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All statuses</SelectItem>
+                {Object.entries(SALES_STATUS).map(([value, s]) => (
+                  <SelectItem key={value} value={value}>{s.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -116,19 +132,20 @@ export default function SalesPage() {
                 <TableHead>Discount</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Reserved until</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : salesOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     No sales orders found. Click &quot;New Sales Order&quot; to create your first order.
                   </TableCell>
                 </TableRow>
@@ -145,25 +162,23 @@ export default function SalesPage() {
                   </TableCell>
                   <TableCell className="font-medium">{formatCurrency(order.total)}</TableCell>
                   <TableCell>
-                    <Badge
-                      variant={
-                        order.status === "DELIVERED"
-                          ? "default"
-                          : order.status === "SHIPPED"
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      {order.status}
+                    <Badge variant={SALES_STATUS[order.status]?.variant ?? "secondary"}>
+                      {SALES_STATUS[order.status]?.label ?? order.status}
                     </Badge>
                   </TableCell>
+                  <TableCell>
+                    {isOpenSalesStatus(order.status) && order.reservedUntil ? (
+                      <span className={isExpired(order) ? "font-medium text-destructive" : ""}>
+                        {formatDate(order.reservedUntil)}
+                        {isExpired(order) && <Badge variant="destructive" className="ml-2">Expired</Badge>}
+                      </span>
+                    ) : (
+                      "-"
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={() => setSelectedOrder(order)}
-                    >
-                      <Eye className="h-4 w-4" />
+                    <Button asChild variant="ghost" size="icon" title="Open">
+                      <Link href={`/sales/${order.id}`}><Eye className="h-4 w-4" /></Link>
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -173,178 +188,6 @@ export default function SalesPage() {
           </Table>
         </CardContent>
       </Card>
-
-      <SalesOrderDetailsSheet
-        order={selectedOrder}
-        open={!!selectedOrder}
-        onOpenChange={(open) => !open && setSelectedOrder(null)}
-      />
     </div>
-  )
-}
-
-function SalesOrderDetailsSheet({
-  order,
-  open,
-  onOpenChange,
-}: {
-  order: any
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  if (!order) return null
-
-  const handlePrintInvoice = () => {
-    window.print()
-  }
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-2xl overflow-y-auto">
-        <SheetHeader className="print:mb-4">
-          <div className="flex items-start justify-between gap-3 print:block">
-            <div>
-              <SheetTitle>Sales Order Details</SheetTitle>
-              <SheetDescription>
-                Order Number: {order.orderNumber}
-              </SheetDescription>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePrintInvoice}
-              className="print:hidden"
-            >
-              <Printer className="mr-2 h-4 w-4" />
-              Print Invoice
-            </Button>
-          </div>
-        </SheetHeader>
-        <div className="mt-6 space-y-6">
-          <div className="flex justify-center border-b pb-4">
-            <Image
-              src="/siu_logo.png"
-              alt="SIU Warehouse logo"
-              width={84}
-              height={84}
-              className="h-16 w-auto"
-              priority
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="text-sm font-medium text-muted-foreground">Customer</div>
-              <div className="text-base font-semibold">{order.customer?.name || "N/A"}</div>
-            </div>
-            <div>
-              <div className="text-sm font-medium text-muted-foreground">Warehouse</div>
-              <div className="text-base font-semibold">{order.warehouse?.name || "N/A"}</div>
-            </div>
-            <div>
-              <div className="text-sm font-medium text-muted-foreground">Order Date</div>
-              <div className="text-base">{formatDate(order.orderDate)}</div>
-            </div>
-            <div>
-              <div className="text-sm font-medium text-muted-foreground">Status</div>
-              <Badge variant={order.status === "DELIVERED" ? "default" : "secondary"}>
-                {order.status}
-              </Badge>
-            </div>
-            {order.expectedDeliveryDate && (
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Expected Delivery</div>
-                <div className="text-base">{formatDate(order.expectedDeliveryDate)}</div>
-              </div>
-            )}
-            <div>
-              <div className="text-sm font-medium text-muted-foreground">Created By</div>
-              <div className="text-base">{order.user?.username || order.user?.name || "N/A"}</div>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-sm font-medium text-muted-foreground mb-2">Items</div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Unit Price</TableHead>
-                  <TableHead>Discount</TableHead>
-                  <TableHead className="text-right">Subtotal</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {order.items?.map((item: any) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{item.product?.name || "N/A"}</TableCell>
-                    <TableCell>{item.quantity}</TableCell>
-                    <TableCell>{formatCurrency(item.unitPrice)}</TableCell>
-                    <TableCell>
-                      {Number(item.discountAmount) > 0
-                        ? `-${formatCurrency(item.discountAmount)}${discountLabel(item.discountType, item.discountValue) ? ` (${discountLabel(item.discountType, item.discountValue)})` : ""}`
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-right">{formatCurrency(item.subtotal)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className="border-t pt-4 space-y-2">
-            <div className="flex justify-between text-sm">
-              <span>Subtotal (before discounts)</span>
-              <span>{formatCurrency(Number(order.subtotal) + Number(order.itemDiscount || 0))}</span>
-            </div>
-            {Number(order.itemDiscount) > 0 && (
-              <div className="flex justify-between text-sm text-green-600">
-                <span>Item discounts</span>
-                <span>-{formatCurrency(order.itemDiscount)}</span>
-              </div>
-            )}
-            {Number(order.discount) > 0 && (
-              <div className="flex justify-between text-sm text-green-600">
-                <span>
-                  Order discount
-                  {discountLabel(order.discountType, order.discountValue) &&
-                    ` (${discountLabel(order.discountType, order.discountValue)})`}
-                </span>
-                <span>-{formatCurrency(order.discount)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-sm">
-              <span>Taxable amount</span>
-              <span>{formatCurrency(Number(order.subtotal) - Number(order.discount || 0))}</span>
-            </div>
-            {Number(order.tax) !== 0 && (
-              <div className="flex justify-between text-sm">
-                <span>{taxLabel(order.taxRate)}</span>
-                <span>{formatCurrency(order.tax)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-lg font-bold border-t pt-2">
-              <span>Total</span>
-              <span className="text-primary">{formatCurrency(order.total)}</span>
-            </div>
-          </div>
-
-          {order.discountReason && (
-            <div>
-              <div className="text-sm font-medium text-muted-foreground mb-2">Discount reason</div>
-              <div className="text-sm">{order.discountReason}</div>
-            </div>
-          )}
-
-          {order.notes && (
-            <div>
-              <div className="text-sm font-medium text-muted-foreground mb-2">Notes</div>
-              <div className="text-sm">{order.notes}</div>
-            </div>
-          )}
-        </div>
-      </SheetContent>
-    </Sheet>
   )
 }
