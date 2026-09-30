@@ -415,7 +415,7 @@ export default function PaymentsPage() {
                       <TableHead>Payment Date</TableHead>
                       <TableHead>Payment Method</TableHead>
                       <TableHead>Reference</TableHead>
-                      <TableHead>Balance After</TableHead>
+                      <TableHead>Payable now</TableHead>
                       <TableHead>Created By</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -934,7 +934,7 @@ function PaymentForm({
             <Combobox
               options={suppliers.map((supplier) => ({
                 value: supplier.id,
-                label: `${supplier.name} (Balance: ${formatCurrency(supplier.balance || 0)})`,
+                label: `${supplier.name} (Payable: ${formatCurrency(supplier.balance || 0)})`,
               }))}
               value={formData.supplierId}
               onValueChange={(value) => {
@@ -947,7 +947,10 @@ function PaymentForm({
             />
             {selectedSupplier && (
               <div className="text-sm text-muted-foreground">
-                Current Balance: <span className={selectedSupplier.balance >= 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>{formatCurrency(selectedSupplier.balance || 0)}</span>
+                Payable now: <span className={selectedSupplier.balance >= 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>{formatCurrency(selectedSupplier.balance || 0)}</span>
+                {Number(selectedSupplier.orderedNotReceived) > 0 && (
+                  <span className="ml-3">Ordered, not received: {formatCurrency(selectedSupplier.orderedNotReceived)}</span>
+                )}
               </div>
             )}
           </div>

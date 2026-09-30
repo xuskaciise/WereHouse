@@ -32,7 +32,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Supplier } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
-import { formatDate } from "@/lib/utils"
+import { formatCurrency, formatDate } from "@/lib/utils"
 import { useCan } from "@/components/providers/current-user-provider"
 
 export default function SuppliersPage() {
@@ -163,13 +163,15 @@ export default function SuppliersPage() {
                   <TableHead>Phone</TableHead>
                   <TableHead>City</TableHead>
                   <TableHead>Contact Person</TableHead>
+                  <TableHead className="text-right" title="Owed now: received goods and costs minus payments and returns (= Accounts Payable)">Payable</TableHead>
+                  <TableHead className="text-right" title="Open purchase orders not received yet (not owed yet)">Ordered, not received</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {suppliers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                       No suppliers found. Click &quot;Add Supplier&quot; to create your first supplier.
                     </TableCell>
                   </TableRow>
@@ -186,6 +188,10 @@ export default function SuppliersPage() {
                       <TableCell>{supplier.phone || "-"}</TableCell>
                       <TableCell>{supplier.city || "-"}</TableCell>
                       <TableCell>{supplier.contactPerson || "-"}</TableCell>
+                      <TableCell className={`text-right font-medium ${Number((supplier as any).payable) < 0 ? "text-green-600" : ""}`}>
+                        {formatCurrency((supplier as any).payable ?? 0)}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">{formatCurrency((supplier as any).orderedNotReceived ?? 0)}</TableCell>
                       <TableCell className="text-right">
                         {(canEdit || canDelete) && (
                           <DropdownMenu>

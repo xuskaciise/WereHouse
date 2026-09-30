@@ -159,7 +159,11 @@ class AccountBook {
 
 // --- Desired journal per document ---------------------------------------------------
 
-interface Posting {
+interface Party {
+  supplierId?: string | null
+  customerId?: string | null
+}
+interface Posting extends Party {
   accountId: string
   amount: Money // + debit, - credit
   memo?: string
@@ -172,8 +176,8 @@ interface Desired {
   lines: Posting[]
 }
 
-const dr = (accountId: string, amount: Money, memo?: string): Posting => ({ accountId, amount, memo })
-const cr = (accountId: string, amount: Money, memo?: string): Posting => ({ accountId, amount: amount.neg(), memo })
+const dr = (accountId: string, amount: Money, memo?: string, party: Party = {}): Posting => ({ accountId, amount, memo, ...party })
+const cr = (accountId: string, amount: Money, memo?: string, party: Party = {}): Posting => ({ accountId, amount: amount.neg(), memo, ...party })
 
 async function desiredValuation(tx: Tx, book: AccountBook, id: string): Promise<Desired | null> {
   const v = await tx.inventoryValuationEntry.findUnique({
@@ -273,7 +277,7 @@ async function desiredPurchaseOrder(tx: Tx, book: AccountBook, id: string): Prom
       dr(book.sys("PURCHASE_CLEARING"), goods, "Received goods at order price"),
       dr(book.sys("PURCHASE_TAX"), tax),
       cr(book.sys("PURCHASE_DISCOUNTS"), discount),
-      cr(book.sys("AP"), goods.plus(tax).minus(discount)),
+      cr(book.sys("AP"), goods.plus(tax).minus(discount), undefined, { supplierId: po.supplierId }),
     ],
   }
 }
@@ -289,7 +293,7 @@ async function desiredLandedCost(tx: Tx, book: AccountBook, id: string): Promise
     description: `${c.type.name} for ${c.purchaseOrder.orderNumber} (${c.paidToSupplier.name})`,
     reference: c.purchaseOrder.orderNumber,
     userId: c.userId,
-    lines: [dr(book.sys("PURCHASE_CLEARING"), c.amount), cr(book.sys("AP"), c.amount)],
+    lines: [dr(book.sys("PURCHASE_CLEARING"), c.amount), cr(book.sys("AP"), c.amount, undefined, { supplierId: c.paidToSupplierId })],
   }
 }
 
@@ -304,17 +308,17 @@ async function desiredTransferCost(tx: Tx, book: AccountBook, id: string): Promi
     description: `${c.type.name} for ${c.stockTransfer.transferNumber} (${c.paidToSupplier.name})`,
     reference: c.stockTransfer.transferNumber,
     userId: c.userId,
-    lines: [dr(book.sys("PURCHASE_CLEARING"), c.amount), cr(book.sys("AP"), c.amount)],
+    lines: [dr(book.sys("PURCHASE_CLEARING"), c.amount), cr(book.sys("AP"), c.amount, undefined, { supplierId: c.paidToSupplierId })],
   }
 }
 
 async function desiredDelivery(tx: Tx, book: AccountBook, id: string): Promise<Desired | null> {
   const d = await tx.salesDelivery.findUnique({
     where: { id },
-    include: { items: true, salesOrder: { select: { orderNumber: true, customer: { select: { name: true } } } } },
+    include: { items: true, salesOrder: { select: { orderNumber: true, customerId: true, customer: { select: { name: true } } } } },
   })
   if (!d) return null
-  const lines: Posting[] = [dr(book.sys("AR"), d.total), cr(book.sys("SALES_TAX"), d.tax)]
+  const lines: Posting[] = [dr(book.sys("AR"), d.total, undefined, { customerId: d.salesOrder.customerId }), cr(book.sys("SALES_TAX"), d.tax)]
   for (const i of d.items) {
     lines.push(cr(await book.product(i.productId, "sales"), i.amount.minus(i.discount)))
     lines.push(dr(await book.product(i.productId, "cogs"), i.cogs), cr(await book.product(i.productId, "inventory"), i.cogs))
@@ -331,24 +335,24 @@ async function desiredDelivery(tx: Tx, book: AccountBook, id: string): Promise<D
 async function desiredSalesReturn(tx: Tx, book: AccountBook, id: string): Promise<Desired | null> {
   const r = await tx.salesReturn.findUnique({ where: { id }, include: { items: true, customer: { select: { name: true } } } })
   if (!r) return null
-  const lines: Posting[] = [cr(book.sys("AR"), r.total), dr(book.sys("SALES_TAX"), r.tax)]
+  const lines: Posting[] = [cr(book.sys("AR"), r.total, undefined, { customerId: r.customerId }), dr(book.sys("SALES_TAX"), r.tax)]
   for (const i of r.items) {
     lines.push(dr(book.sys("SALES_RETURNS"), i.amount.minus(i.discount)))
     const back = i.condition === "RESELLABLE" ? await book.product(i.productId, "inventory") : book.sys("INVENTORY_LOSSES")
     lines.push(dr(back, i.cogs, i.condition === "DAMAGED" ? "Damaged return" : undefined), cr(await book.product(i.productId, "cogs"), i.cogs))
   }
-  if (r.refundAmount.gt(0)) lines.push(dr(book.sys("AR"), r.refundAmount, "Refund"), cr(book.payment(r.refundMethod), r.refundAmount, "Refund"))
+  if (r.refundAmount.gt(0)) lines.push(dr(book.sys("AR"), r.refundAmount, "Refund", { customerId: r.customerId }), cr(book.payment(r.refundMethod), r.refundAmount, "Refund"))
   return { date: r.returnDate, description: `Credit note ${r.returnNumber} for ${r.customer.name}`, reference: r.returnNumber, userId: r.userId, lines }
 }
 
 async function desiredPurchaseReturn(tx: Tx, book: AccountBook, id: string): Promise<Desired | null> {
   const r = await tx.purchaseReturn.findUnique({ where: { id }, include: { items: true, supplier: { select: { name: true } } } })
   if (!r) return null
-  const lines: Posting[] = [dr(book.sys("AP"), r.creditTotal), dr(book.sys("PURCHASE_DISCOUNTS"), r.discount), cr(book.sys("PURCHASE_TAX"), r.tax)]
+  const lines: Posting[] = [dr(book.sys("AP"), r.creditTotal, undefined, { supplierId: r.supplierId }), dr(book.sys("PURCHASE_DISCOUNTS"), r.discount), cr(book.sys("PURCHASE_TAX"), r.tax)]
   for (const i of r.items) lines.push(cr(await book.product(i.productId, "inventory"), i.costValue))
   // Goods credited at the purchase price vs. their stock value (landed cost not refunded, price changes).
   lines.push(cr(book.sys("PURCHASE_RETURN_DIFF"), r.goodsAmount.minus(r.costValue)))
-  if (r.refundAmount.gt(0)) lines.push(dr(book.payment(r.refundMethod), r.refundAmount, "Refund"), cr(book.sys("AP"), r.refundAmount, "Refund"))
+  if (r.refundAmount.gt(0)) lines.push(dr(book.payment(r.refundMethod), r.refundAmount, "Refund"), cr(book.sys("AP"), r.refundAmount, "Refund", { supplierId: r.supplierId }))
   return { date: r.returnDate, description: `Return ${r.returnNumber} to ${r.supplier.name}`, reference: r.returnNumber, userId: r.userId, lines }
 }
 
@@ -360,7 +364,7 @@ async function desiredCustomerPayment(tx: Tx, book: AccountBook, id: string): Pr
     description: `Payment from ${p.customer.name}${p.salesOrder ? ` (${p.salesOrder.orderNumber})` : ""}`,
     reference: p.reference ?? p.salesOrder?.orderNumber ?? null,
     userId: p.userId,
-    lines: [dr(book.payment(p.paymentMethod), p.amount), cr(book.sys("AR"), p.amount)],
+    lines: [dr(book.payment(p.paymentMethod), p.amount), cr(book.sys("AR"), p.amount, undefined, { customerId: p.customerId })],
   }
 }
 
@@ -372,7 +376,7 @@ async function desiredSupplierPayment(tx: Tx, book: AccountBook, id: string): Pr
     description: `Payment to ${p.supplier.name}${p.purchaseOrder ? ` (${p.purchaseOrder.orderNumber})` : ""}`,
     reference: p.reference ?? p.purchaseOrder?.orderNumber ?? null,
     userId: p.userId,
-    lines: [dr(book.sys("AP"), p.amount), cr(book.payment(p.paymentMethod), p.amount)],
+    lines: [dr(book.sys("AP"), p.amount, undefined, { supplierId: p.supplierId }), cr(book.payment(p.paymentMethod), p.amount)],
   }
 }
 
@@ -403,9 +407,13 @@ const DESIRED: Record<Exclude<SourceType, "OPENING_BALANCE">, (tx: Tx, book: Acc
 
 // --- Posting ---------------------------------------------------------------------------
 
+/** Net per account AND sub-ledger party ("account|supplier|customer"). */
+const lineKey = (l: { accountId: string; supplierId?: string | null; customerId?: string | null }) =>
+  `${l.accountId}|${l.supplierId ?? ""}|${l.customerId ?? ""}`
+
 function netByAccount(lines: Posting[]): Map<string, Money> {
   const map = new Map<string, Money>()
-  for (const l of lines) map.set(l.accountId, (map.get(l.accountId) ?? ZERO).plus(l.amount))
+  for (const l of lines) map.set(lineKey(l), (map.get(lineKey(l)) ?? ZERO).plus(l.amount))
   return map
 }
 
@@ -417,14 +425,14 @@ async function syncSource(tx: Tx, book: AccountBook, type: Exclude<SourceType, "
   const want = netByAccount(desired?.lines ?? [])
   if (!sumMoney([...want.values()]).isZero()) throw new HttpError(500, `Unbalanced journal for ${type} ${id}`)
 
-  const posted = await tx.$queryRaw<{ accountId: string; net: Prisma.Decimal }[]>`
-    SELECT l."accountId", SUM(l."debit" - l."credit") AS net
+  const posted = await tx.$queryRaw<{ accountId: string; supplierId: string | null; customerId: string | null; net: Prisma.Decimal }[]>`
+    SELECT l."accountId", l."supplierId", l."customerId", SUM(l."debit" - l."credit") AS net
     FROM "journal_lines" l JOIN "journal_entries" e ON e."id" = l."entryId"
     WHERE e."sourceType" = ${type} AND e."sourceId" = ${id}
-    GROUP BY l."accountId"`
+    GROUP BY l."accountId", l."supplierId", l."customerId"`
   const first = posted.length === 0
   const diff = new Map(want)
-  for (const p of posted) diff.set(p.accountId, (diff.get(p.accountId) ?? ZERO).minus(p.net))
+  for (const p of posted) diff.set(lineKey(p), (diff.get(lineKey(p)) ?? ZERO).minus(p.net))
   const lines = [...diff].filter(([, amount]) => !amount.isZero())
   if (lines.length === 0) return false
 
@@ -444,12 +452,17 @@ async function syncSource(tx: Tx, book: AccountBook, type: Exclude<SourceType, "
       // The document's owner (OWN-scope reports); the actor only for deleted documents.
       userId: desired?.userId ?? actorId ?? null,
       lines: {
-        create: lines.map(([accountId, amount]) => ({
-          accountId,
-          debit: amount.gt(0) ? amount : ZERO,
-          credit: amount.lt(0) ? amount.neg() : ZERO,
-          memo: memo.get(accountId) ?? null,
-        })),
+        create: lines.map(([key, amount]) => {
+          const [accountId, supplierId, customerId] = key.split("|")
+          return {
+            accountId,
+            supplierId: supplierId || null,
+            customerId: customerId || null,
+            debit: amount.gt(0) ? amount : ZERO,
+            credit: amount.lt(0) ? amount.neg() : ZERO,
+            memo: memo.get(accountId) ?? null,
+          }
+        }),
       },
     },
   })

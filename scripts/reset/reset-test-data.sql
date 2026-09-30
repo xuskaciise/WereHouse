@@ -1,8 +1,11 @@
 -- Test-data reset: deletes ALL business data and all users except one admin.
 --
 -- Keeps: that admin, role permissions and their change log, settings
--- (incl. payment methods / prefixes) and landed cost types (restored to the
--- five defaults). Re-seeds default expense categories.
+-- (incl. payment methods / prefixes), landed cost types (restored to the
+-- five defaults) and the chart of accounts (every account, unchanged).
+-- Deletes: all journal entries and lines and every business record.
+-- Re-seeds default expense categories, each linked to the expense account
+-- of the same name (created when missing).
 --
 -- Never run this file directly: use scripts/reset/reset-test-data.sh, which
 -- takes a verified backup first and sets the parameters below. It runs as one
@@ -111,15 +114,19 @@ BEGIN
     ('ec_fees', 'Bank & Mobile Money Fees', 'bank & mobile money fees', 'Bank charges and EVC Plus / ZAAD / E-Dahab fees', true, admin_id, now(), now()),
     ('ec_other', 'Other', 'other', 'Anything that fits no other category', true, admin_id, now(), now());
 
-  -- Chart of accounts is kept; the automatic accounts of the deleted expense
-  -- categories go, and each default category gets its own expense account.
-  DELETE FROM accounts WHERE "systemKey" IS NULL AND id LIKE 'acc_exp_%';
+  -- Chart of accounts: kept as it is (configuration). Each default category
+  -- is linked to the expense account with its name; a missing one is created
+  -- with the next free code 6001-6899.
+  UPDATE expense_categories c SET "accountId" = (
+    SELECT a.id FROM accounts a
+    WHERE a.type = 'EXPENSE' AND a."isActive" AND lower(trim(a.name)) = c."nameKey"
+    ORDER BY a.code LIMIT 1);
   INSERT INTO accounts (id, code, name, type, "group", "updatedAt")
-  SELECT 'acc_exp_' || c.id, (6000 + row_number() OVER (ORDER BY c.name))::text, c.name, 'EXPENSE', 'OPERATING_EXPENSE', now()
-  FROM expense_categories c
-  ON CONFLICT DO NOTHING;
-  UPDATE expense_categories c SET "accountId" = 'acc_exp_' || c.id
-  WHERE EXISTS (SELECT 1 FROM accounts a WHERE a.id = 'acc_exp_' || c.id);
+  SELECT 'acc_exp_' || c.id,
+         ((SELECT COALESCE(MAX(code::int), 6000) FROM accounts WHERE code ~ '^6[0-8][0-9][0-9]$') + row_number() OVER (ORDER BY c.name))::text,
+         c.name, 'EXPENSE', 'OPERATING_EXPENSE', now()
+  FROM expense_categories c WHERE c."accountId" IS NULL;
+  UPDATE expense_categories c SET "accountId" = 'acc_exp_' || c.id WHERE c."accountId" IS NULL;
 
   -- Guards: configuration unchanged, exactly the one admin left.
   FOREACH tbl IN ARRAY guarded_tables LOOP
@@ -128,6 +135,10 @@ BEGIN
       RAISE EXCEPTION 'guard: % changed (% -> %) - rolled back', tbl, before_counts ->> tbl, n;
     END IF;
   END LOOP;
+  IF (SELECT count(*) FROM accounts) < (before_counts ->> 'accounts')::bigint
+     OR (SELECT count(*) FROM accounts WHERE "systemKey" IS NOT NULL) < 21 THEN
+    RAISE EXCEPTION 'guard: accounts were deleted - rolled back';
+  END IF;
   IF (SELECT count(*) FROM users) <> 1 OR NOT EXISTS (SELECT 1 FROM users WHERE id = admin_id AND role = 'ADMIN') THEN
     RAISE EXCEPTION 'guard: the kept admin is missing - rolled back';
   END IF;

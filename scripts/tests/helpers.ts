@@ -5,6 +5,7 @@ import { Decimal } from "@/lib/money"
 import { ADMIN_PERMISSIONS, DEFAULT_PERMISSIONS, type EditableRole } from "@/lib/permission-rules"
 import type { SessionUser } from "@/lib/auth-guard"
 import { receiveIntoStock } from "@/lib/stock-valuation"
+import { postAccounting } from "@/lib/accounting"
 
 export function assertDevDatabase() {
   const host = new URL(process.env.DATABASE_URL!).hostname
@@ -104,6 +105,8 @@ export async function receivedPurchase(
         data: { productId: i.productId, warehouseId: f.warehouseId, type: "IN", quantity: i.quantity, reference: po.orderNumber, referenceId: receive.id, userId: user.id },
       })
     }
+    // Journal like the receive route (payable, stock value).
+    await postAccounting(tx, {}, user.id)
     return po
-  }, TX_OPTIONS)
+  }, { ...TX_OPTIONS, timeout: 120_000 }) // the dev database is remote and slow
 }

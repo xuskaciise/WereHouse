@@ -158,6 +158,7 @@ model Supplier {
   landedCosts      PurchaseLandedCost[]
   transferCosts    StockTransferCost[]
   purchaseReturns  PurchaseReturn[]
+  journalLines     JournalLine[]
 
   @@index([userId])
   @@map("suppliers")
@@ -181,6 +182,7 @@ model Customer {
   salesOrders      SalesOrder[]
   customerPayments CustomerPayment[]
   salesReturns     SalesReturn[]
+  journalLines     JournalLine[]
 
   @@index([userId])
   @@map("customers")
@@ -1253,16 +1255,24 @@ model JournalEntry {
 }
 
 model JournalLine {
-  id        String       @id @default(cuid())
-  entryId   String
-  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  accountId String
-  account   Account      @relation(fields: [accountId], references: [id])
-  debit     Decimal      @default(0) @db.Decimal(12, 2)
-  credit    Decimal      @default(0) @db.Decimal(12, 2)
-  memo      String?
+  id         String       @id @default(cuid())
+  entryId    String
+  entry      JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    Account      @relation(fields: [accountId], references: [id])
+  debit      Decimal      @default(0) @db.Decimal(12, 2)
+  credit     Decimal      @default(0) @db.Decimal(12, 2)
+  memo       String?
+  // Sub-ledger party of Accounts Payable / Receivable lines: a supplier's
+  // payable is exactly the sum of its AP lines (lib/balances.ts).
+  supplierId String?
+  supplier   Supplier?    @relation(fields: [supplierId], references: [id])
+  customerId String?
+  customer   Customer?    @relation(fields: [customerId], references: [id])
 
   @@index([entryId])
   @@index([accountId])
+  @@index([supplierId])
+  @@index([customerId])
   @@map("journal_lines")
 }

@@ -1,74 +1,83 @@
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
-import { type Money, ZERO } from "@/lib/money"
+import { type Money, ZERO, roundMoney, sumMoney } from "@/lib/money"
 
-// Supplier/customer balances are always derived from the source records
-// (single source of truth), never stored:
-//   supplier balance = SUM(non-cancelled purchase order totals)
-//                    + SUM(landed costs owed to the supplier, on non-cancelled POs)
-//                    + SUM(stock transfer costs owed to the supplier)
-//                    - SUM(supplier payments)
-//                    - SUM(purchase return credits) + SUM(refunds received on returns)
+// Supplier and customer balances, never stored:
+//   supplier PAYABLE = the supplier's lines on Accounts Payable in the journal
+//                      (received goods with their tax / discount share,
+//                      landed and transfer costs owed to them, payments,
+//                      purchase return credits and refunds) - so it always
+//                      equals the Accounts Payable ledger
+//   supplier ORDERED, NOT RECEIVED = value of open purchase orders not yet
+//                      received (order total minus the received share)
+//   supplier balance   = payable (what is owed now)
 //   customer balance = SUM(sales delivery totals) - SUM(customer payments)
 //                      - SUM(sales return credit notes) + SUM(refunds paid on returns)
 //                      (debt arises at delivery, not when the order is confirmed)
-// Each is computed with two grouped aggregate queries, however many rows.
 
 function unique(ids: string[]): string[] {
   return Array.from(new Set(ids.filter(Boolean)))
 }
 
-export async function getSupplierBalances(supplierIds: string[]): Promise<Map<string, Money>> {
-  const ids = unique(supplierIds)
-  const balances = new Map<string, Money>(ids.map((id) => [id, ZERO]))
-  if (ids.length === 0) return balances
+export interface SupplierPosition {
+  payable: Money
+  orderedNotReceived: Money
+}
 
-  const [orders, landedCosts, transferCosts, payments, returns] = await Promise.all([
-    prisma.purchaseOrder.groupBy({
-      by: ["supplierId"],
-      where: { supplierId: { in: ids }, status: { not: "CANCELLED" } },
-      _sum: { total: true },
-    }),
-    prisma.purchaseLandedCost.groupBy({
-      by: ["paidToSupplierId"],
-      where: { paidToSupplierId: { in: ids }, purchaseOrder: { status: { not: "CANCELLED" } } },
-      _sum: { amount: true },
-    }),
-    // A transfer cost stays owed even if the transfer is cancelled (the service was used).
-    prisma.stockTransferCost.groupBy({
-      by: ["paidToSupplierId"],
-      where: { paidToSupplierId: { in: ids } },
-      _sum: { amount: true },
-    }),
-    prisma.supplierPayment.groupBy({
-      by: ["supplierId"],
-      where: { supplierId: { in: ids } },
-      _sum: { amount: true },
-    }),
-    prisma.purchaseReturn.groupBy({
-      by: ["supplierId"],
-      where: { supplierId: { in: ids } },
-      _sum: { creditTotal: true, refundAmount: true },
+/** Payable (from the journal) and ordered-not-received value per supplier. */
+export async function getSupplierPositions(supplierIds: string[]): Promise<Map<string, SupplierPosition>> {
+  const ids = unique(supplierIds)
+  const positions = new Map<string, SupplierPosition>(ids.map((id) => [id, { payable: ZERO, orderedNotReceived: ZERO }]))
+  if (ids.length === 0) return positions
+
+  const [payables, openOrders] = await Promise.all([
+    prisma.$queryRaw<{ supplierId: string; net: Prisma.Decimal }[]>`
+      SELECT l."supplierId", SUM(l."credit" - l."debit") AS net
+      FROM "journal_lines" l JOIN "accounts" a ON a."id" = l."accountId"
+      WHERE a."systemKey" = 'AP' AND l."supplierId" IN (${Prisma.join(ids)})
+      GROUP BY l."supplierId"`,
+    // Orders not fully received (fully received ones have nothing left).
+    prisma.purchaseOrder.findMany({
+      where: { supplierId: { in: ids }, status: { in: ["PENDING", "PARTIALLY_RECEIVED"] } },
+      select: {
+        supplierId: true,
+        subtotal: true,
+        tax: true,
+        discount: true,
+        total: true,
+        items: { select: { unitPrice: true, receiveItems: { select: { quantityReceived: true } } } },
+      },
     }),
   ])
+  for (const row of payables) positions.get(row.supplierId)!.payable = new Prisma.Decimal(row.net)
+  for (const po of openOrders) {
+    positions.get(po.supplierId)!.orderedNotReceived = positions.get(po.supplierId)!.orderedNotReceived.plus(notReceivedValue(po))
+  }
+  return positions
+}
 
-  for (const row of orders) {
-    balances.set(row.supplierId, (balances.get(row.supplierId) ?? ZERO).plus(row._sum.total ?? ZERO))
-  }
-  for (const row of transferCosts) {
-    balances.set(row.paidToSupplierId, (balances.get(row.paidToSupplierId) ?? ZERO).plus(row._sum.amount ?? ZERO))
-  }
-  for (const row of landedCosts) {
-    balances.set(row.paidToSupplierId, (balances.get(row.paidToSupplierId) ?? ZERO).plus(row._sum.amount ?? ZERO))
-  }
-  for (const row of payments) {
-    balances.set(row.supplierId, (balances.get(row.supplierId) ?? ZERO).minus(row._sum.amount ?? ZERO))
-  }
-  for (const row of returns) {
-    const net = (row._sum.creditTotal ?? ZERO).minus(row._sum.refundAmount ?? ZERO)
-    balances.set(row.supplierId, (balances.get(row.supplierId) ?? ZERO).minus(net))
-  }
-  return balances
+/**
+ * Order total minus the received share, computed exactly like the payable of
+ * the receipts in lib/accounting.ts, so payable + not received = order total.
+ */
+export function notReceivedValue(po: {
+  subtotal: Money
+  tax: Money
+  discount: Money
+  total: Money
+  items: { unitPrice: Money; receiveItems: { quantityReceived: number }[] }[]
+}): Money {
+  const goods = sumMoney(po.items.map((i) => roundMoney(i.unitPrice.times(i.receiveItems.reduce((s, r) => s + r.quantityReceived, 0)))))
+  if (goods.isZero()) return po.total
+  if (po.subtotal.isZero() || goods.gte(po.subtotal)) return ZERO
+  const share = (v: Money) => roundMoney(v.times(goods).div(po.subtotal))
+  return po.total.minus(goods.plus(share(po.tax)).minus(share(po.discount)))
+}
+
+/** What is owed to each supplier now (= their Accounts Payable in the journal). */
+export async function getSupplierBalances(supplierIds: string[]): Promise<Map<string, Money>> {
+  const positions = await getSupplierPositions(supplierIds)
+  return new Map([...positions].map(([id, p]) => [id, p.payable]))
 }
 
 export async function getCustomerBalances(customerIds: string[]): Promise<Map<string, Money>> {
@@ -107,9 +116,13 @@ export async function getCustomerBalances(customerIds: string[]): Promise<Map<st
   return balances
 }
 
+/** balance = payable (owed now); orderedNotReceived shown separately. */
 export async function withSupplierBalance<T extends { id: string }>(suppliers: T[]) {
-  const balances = await getSupplierBalances(suppliers.map((s) => s.id))
-  return suppliers.map((s) => ({ ...s, balance: balances.get(s.id) ?? ZERO }))
+  const positions = await getSupplierPositions(suppliers.map((s) => s.id))
+  return suppliers.map((s) => {
+    const p = positions.get(s.id) ?? { payable: ZERO, orderedNotReceived: ZERO }
+    return { ...s, balance: p.payable, payable: p.payable, orderedNotReceived: p.orderedNotReceived }
+  })
 }
 
 export async function withCustomerBalance<T extends { id: string }>(customers: T[]) {
@@ -119,8 +132,11 @@ export async function withCustomerBalance<T extends { id: string }>(customers: T
 
 /** Adds `balance` to the nested `supplier` of each row (e.g. payments). */
 export async function withNestedSupplierBalance<T extends { supplier: { id: string } }>(rows: T[]) {
-  const balances = await getSupplierBalances(rows.map((r) => r.supplier.id))
-  return rows.map((r) => ({ ...r, supplier: { ...r.supplier, balance: balances.get(r.supplier.id) ?? ZERO } }))
+  const positions = await getSupplierPositions(rows.map((r) => r.supplier.id))
+  return rows.map((r) => {
+    const p = positions.get(r.supplier.id) ?? { payable: ZERO, orderedNotReceived: ZERO }
+    return { ...r, supplier: { ...r.supplier, balance: p.payable, orderedNotReceived: p.orderedNotReceived } }
+  })
 }
 
 /** Adds `balance` to the nested `customer` of each row (e.g. payments). */
