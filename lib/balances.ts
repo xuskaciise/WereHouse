@@ -10,6 +10,7 @@ import { type Money, ZERO } from "@/lib/money"
 //                    - SUM(supplier payments)
 //                    - SUM(purchase return credits) + SUM(refunds received on returns)
 //   customer balance = SUM(sales delivery totals) - SUM(customer payments)
+//                      - SUM(sales return credit notes) + SUM(refunds paid on returns)
 //                      (debt arises at delivery, not when the order is confirmed)
 // Each is computed with two grouped aggregate queries, however many rows.
 
@@ -75,7 +76,7 @@ export async function getCustomerBalances(customerIds: string[]): Promise<Map<st
   const balances = new Map<string, Money>(ids.map((id) => [id, ZERO]))
   if (ids.length === 0) return balances
 
-  const [orders, payments] = await Promise.all([
+  const [orders, payments, returns] = await Promise.all([
     prisma.$queryRaw<{ customerId: string; total: Prisma.Decimal | null }[]>`
       SELECT so."customerId", SUM(d."total") AS "total"
       FROM "sales_deliveries" d JOIN "sales_orders" so ON so."id" = d."salesOrderId"
@@ -86,6 +87,11 @@ export async function getCustomerBalances(customerIds: string[]): Promise<Map<st
       where: { customerId: { in: ids } },
       _sum: { amount: true },
     }),
+    prisma.salesReturn.groupBy({
+      by: ["customerId"],
+      where: { customerId: { in: ids } },
+      _sum: { total: true, refundAmount: true },
+    }),
   ])
 
   for (const row of orders) {
@@ -93,6 +99,10 @@ export async function getCustomerBalances(customerIds: string[]): Promise<Map<st
   }
   for (const row of payments) {
     balances.set(row.customerId, (balances.get(row.customerId) ?? ZERO).minus(row._sum.amount ?? ZERO))
+  }
+  for (const row of returns) {
+    const net = (row._sum.total ?? ZERO).minus(row._sum.refundAmount ?? ZERO)
+    balances.set(row.customerId, (balances.get(row.customerId) ?? ZERO).minus(net))
   }
   return balances
 }

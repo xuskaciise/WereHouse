@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useParams, useRouter } from "next/navigation"
-import { AlertTriangle, ArrowLeft, CalendarClock, CheckCircle2, Pencil, Printer, Trash2, Truck, Unlock, X } from "lucide-react"
+import { AlertTriangle, ArrowLeft, CalendarClock, CheckCircle2, Pencil, Printer, Trash2, Truck, Undo2, Unlock, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -26,6 +26,7 @@ export default function SalesOrderPage() {
   const router = useRouter()
   const { toast } = useToast()
   const seesCost = useCan("product_cost", "view")
+  const canReturn = useCan("sales_returns", "create")
 
   const [o, setO] = useState<any | null>(null)
   const [error, setError] = useState("")
@@ -148,6 +149,11 @@ export default function SalesOrderPage() {
               <Trash2 className="mr-2 h-4 w-4" /> Delete draft
             </Button>
           )}
+          {canReturn && o.items.some((i: any) => i.deliveredQuantity > i.returnedQuantity) && (
+            <Button asChild variant="outline">
+              <Link href={`/sales/returns/new?order=${o.id}`}><Undo2 className="mr-2 h-4 w-4" /> Return goods</Link>
+            </Button>
+          )}
           <Button variant="outline" onClick={() => window.print()}>
             <Printer className="mr-2 h-4 w-4" /> Print invoice
           </Button>
@@ -196,6 +202,7 @@ export default function SalesOrderPage() {
                   <TableHead>Product</TableHead>
                   <TableHead className="text-right">Ordered</TableHead>
                   <TableHead className="text-right">Delivered</TableHead>
+                  <TableHead className="text-right print:hidden">Returned</TableHead>
                   <TableHead className="text-right print:hidden">Released</TableHead>
                   <TableHead className="text-right print:hidden">{open ? "Reserved" : "Remaining"}</TableHead>
                   <TableHead className="text-right">Unit price</TableHead>
@@ -213,6 +220,7 @@ export default function SalesOrderPage() {
                     </TableCell>
                     <TableCell className="text-right">{i.quantity}</TableCell>
                     <TableCell className="text-right">{i.deliveredQuantity}</TableCell>
+                    <TableCell className="text-right print:hidden">{i.returnedQuantity || "-"}</TableCell>
                     <TableCell className="text-right print:hidden">{i.releasedQuantity || "-"}</TableCell>
                     <TableCell className="text-right font-medium print:hidden">{o.status === "DRAFT" ? "-" : i.remainingQuantity || "-"}</TableCell>
                     <TableCell className="text-right">{formatCurrency(i.unitPrice)}</TableCell>
@@ -239,6 +247,9 @@ export default function SalesOrderPage() {
             {Number(o.tax) !== 0 && <div className="flex justify-between"><span>{taxLabel(o.taxRate)}</span><span>{formatCurrency(o.tax)}</span></div>}
             <div className="flex justify-between border-t pt-1 text-base font-bold"><span>Total</span><span>{formatCurrency(o.total)}</span></div>
             <div className="flex justify-between text-muted-foreground"><span>Delivered (invoiced)</span><span>{formatCurrency(o.deliveredTotal)}</span></div>
+            {Number(o.returnedTotal) > 0 && (
+              <div className="flex justify-between text-muted-foreground"><span>Returned (credit notes)</span><span>-{formatCurrency(o.returnedTotal)}</span></div>
+            )}
             <div className="flex justify-between text-muted-foreground"><span>Paid</span><span>{formatCurrency(paid)}</span></div>
           </div>
           {o.discountReason && <p className="text-sm text-muted-foreground">Discount reason: {o.discountReason}</p>}
@@ -286,6 +297,36 @@ export default function SalesOrderPage() {
         </CardContent>
       </Card>
 
+      {o.returns?.length > 0 && (
+        <Card className="print:hidden">
+          <CardHeader>
+            <CardTitle>Returns</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Credit note</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {o.returns.map((r: any) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="font-medium"><Link className="underline" href={`/sales/returns/${r.id}`}>{r.returnNumber}</Link></TableCell>
+                    <TableCell>{formatDate(r.returnDate)}</TableCell>
+                    <TableCell>{r.reason}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(r.total)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
       {o.customerPayments.length > 0 && (
         <Card className="print:hidden">
           <CardHeader>
@@ -327,6 +368,7 @@ export default function SalesOrderPage() {
                 <div className="font-medium">{SALES_EVENTS[e.type] ?? e.type}</div>
                 <div className="text-muted-foreground">
                   {when(e.createdAt)} · {e.user?.username}
+                  {e.data?.returnNumber && ` · ${e.data.returnNumber} (${formatCurrency(e.data.total)})`}
                   {e.data?.deliveryNumber && ` · ${e.data.deliveryNumber} (${formatCurrency(e.data.total)})`}
                   {e.data?.reservedUntil && ` · until ${formatDate(e.data.reservedUntil)}`}
                   {e.data?.to && ` · until ${formatDate(e.data.to)}`}

@@ -85,6 +85,7 @@ const navigationSections: NavSection[] = [
     items: [
       { name: "Sales", href: "/sales", icon: ShoppingCart },
       { name: "Reservations", href: "/sales/reservations", icon: CalendarClock },
+      { name: "Sales Returns", href: "/sales/returns", icon: Undo2 },
       { name: "Payments", href: "/payments", icon: CreditCard },
     ],
   },

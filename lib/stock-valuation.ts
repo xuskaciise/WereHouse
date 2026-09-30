@@ -53,7 +53,7 @@ export async function receiveIntoStock(
     userId: string
     purchaseOrderItemId?: string
     stockTransferItemId?: string
-    entryType?: "RECEIPT" | "TRANSFER_IN" | "TRANSFER_RETURN"
+    entryType?: "RECEIPT" | "TRANSFER_IN" | "TRANSFER_RETURN" | "SALES_RETURN"
   }
 ): Promise<Money> {
   const { productId, warehouseId, quantity, value, userId } = input

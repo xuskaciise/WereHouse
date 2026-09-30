@@ -568,12 +568,14 @@ export async function salesOrderDetail(user: PermissionUser, id: string) {
       deliveries: { orderBy: { deliveredAt: "asc" }, include: { user: userSelect, items: true } },
       events: { orderBy: { createdAt: "asc" }, include: { user: userSelect } },
       customerPayments: { orderBy: { paymentDate: "asc" } },
+      returns: { orderBy: { returnDate: "asc" }, select: { id: true, returnNumber: true, returnDate: true, total: true, refundAmount: true, reason: true } },
     },
   })
   return {
     ...order,
     items: order.items.map((i) => ({ ...i, remainingQuantity: remainingOf(i) })),
     deliveredTotal: sumMoney(order.deliveries.map((d) => d.total)),
+    returnedTotal: sumMoney(order.returns.map((r) => r.total)),
     reservationExpired: !!order.reservedUntil && OPEN_STATUSES.includes(order.status) && order.reservedUntil.getTime() < Date.now(),
     allowedActions: allowedSalesActions(user, order),
   }

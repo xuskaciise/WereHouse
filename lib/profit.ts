@@ -11,8 +11,10 @@ import { type Money, Decimal, ZERO, sumMoney } from "@/lib/money"
 //             the period (landed costs added after the goods were sold)
 //   gross profit = revenue - COGS; margin % = gross profit / revenue
 // Lines sold before cost tracking carry an estimated cost (costEstimated).
-// Optionally (finance view): stock losses from transfers in the period
-// (TRANSFER_LOSS) and "profit after losses"; gross profit is not changed.
+// Sales returns in the period reverse revenue (subtotal - discount) and COGS
+// (original unit cost) of the returned units, on the order they belong to.
+// Optionally (finance view): stock losses in the period (transfer losses and
+// damaged customer returns) and "profit after losses"; gross profit is not changed.
 
 export function marginPercent(revenue: Money, profit: Money): Money {
   return revenue.isZero() ? ZERO : profit.times(100).div(revenue).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
@@ -41,7 +43,16 @@ export async function salesProfit(options: {
     },
     orderBy: { deliveredAt: "desc" },
   })
-  // One row per order (all of its deliveries in the period).
+  const returns = await prisma.salesReturn.findMany({
+    where: { salesOrder: options.where, ...(Object.keys(dateRange).length && { returnDate: dateRange }) },
+    select: {
+      subtotal: true,
+      discount: true,
+      cogs: true,
+      salesOrder: { select: { id: true, orderNumber: true, orderDate: true, items: { select: { costEstimated: true } } } },
+    },
+  })
+  // One row per order (all of its deliveries and returns in the period).
   const byOrder = new Map<string, { id: string; orderNumber: string; orderDate: Date; revenue: Money; cogs: Money; estimated: boolean }>()
   for (const d of deliveries) {
     const row = byOrder.get(d.salesOrder.id) ?? {
@@ -56,6 +67,21 @@ export async function salesProfit(options: {
     row.cogs = row.cogs.plus(d.cogs)
     byOrder.set(row.id, row)
   }
+  let returnedRevenue = ZERO
+  for (const r of returns) {
+    const row = byOrder.get(r.salesOrder.id) ?? {
+      id: r.salesOrder.id,
+      orderNumber: r.salesOrder.orderNumber,
+      orderDate: r.salesOrder.orderDate,
+      revenue: ZERO,
+      cogs: ZERO,
+      estimated: r.salesOrder.items.some((i) => i.costEstimated),
+    }
+    row.revenue = row.revenue.minus(r.subtotal.minus(r.discount))
+    row.cogs = row.cogs.minus(r.cogs)
+    returnedRevenue = returnedRevenue.plus(r.subtotal.minus(r.discount))
+    byOrder.set(row.id, row)
+  }
   const adjustments = await prisma.inventoryValuationEntry.aggregate({
     where: {
       type: "COGS_ADJUSTMENT",
@@ -68,7 +94,7 @@ export async function salesProfit(options: {
   const losses = options.includeLosses
     ? await prisma.inventoryValuationEntry.aggregate({
         where: {
-          type: "TRANSFER_LOSS",
+          type: { in: ["TRANSFER_LOSS", "SALES_RETURN_LOSS"] },
           ...options.adjustmentWhere,
           ...(Object.keys(dateRange).length && { createdAt: dateRange }),
         },
@@ -89,6 +115,8 @@ export async function salesProfit(options: {
     orders: rows,
     totals: {
       revenue,
+      // Revenue reversed by sales returns in the period (already deducted above).
+      returnedRevenue,
       cogs,
       cogsAdjustments,
       grossProfit,

@@ -29,6 +29,8 @@ export const RESET_DELETE_TABLES = [
   "purchase_order_items",
   "purchase_orders",
   "supplier_payments",
+  "sales_return_items",
+  "sales_returns",
   "sales_order_events",
   "sales_delivery_items",
   "sales_deliveries",

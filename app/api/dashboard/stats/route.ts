@@ -42,9 +42,10 @@ export const GET = withAuth(async (_request, { user }) => {
     // Sales = deliveries (revenue arises at delivery; drafts, open and
     // cancelled orders are not sales). Discounts: the delivered share of the
     // order discount + of the line discounts.
-    prisma.$queryRaw<{ total: Prisma.Decimal | null; discount: Prisma.Decimal | null; itemDiscount: Prisma.Decimal | null }[]>`
+    prisma.$queryRaw<{ total: Prisma.Decimal | null; returned: Prisma.Decimal | null; discount: Prisma.Decimal | null; itemDiscount: Prisma.Decimal | null }[]>`
       SELECT
         (SELECT SUM(d."total") FROM "sales_deliveries" d JOIN "sales_orders" so ON so."id" = d."salesOrderId" WHERE TRUE ${deliveryOwner}) AS "total",
+        (SELECT SUM(r."total") FROM "sales_returns" r JOIN "sales_orders" so ON so."id" = r."salesOrderId" WHERE TRUE ${deliveryOwner}) AS "returned",
         (SELECT SUM(d."discount") FROM "sales_deliveries" d JOIN "sales_orders" so ON so."id" = d."salesOrderId" WHERE TRUE ${deliveryOwner}) AS "discount",
         (SELECT SUM(ROUND(di."quantity" * i."discountAmount" / NULLIF(i."quantity", 0), 2))
            FROM "sales_delivery_items" di
@@ -69,9 +70,14 @@ export const GET = withAuth(async (_request, { user }) => {
       take: 5,
     }),
     prisma.$queryRaw<{ month: string; total: Prisma.Decimal }[]>`
-      SELECT to_char(date_trunc('month', d."deliveredAt"), 'YYYY-MM') AS month, SUM(d."total") AS total
-      FROM "sales_deliveries" d JOIN "sales_orders" so ON so."id" = d."salesOrderId"
-      WHERE d."deliveredAt" >= ${chartStart} ${deliveryOwner}
+      SELECT to_char(date_trunc('month', x."at"), 'YYYY-MM') AS month, SUM(x."total") AS total
+      FROM (
+        SELECT d."deliveredAt" AS "at", d."total" FROM "sales_deliveries" d JOIN "sales_orders" so ON so."id" = d."salesOrderId"
+        WHERE d."deliveredAt" >= ${chartStart} ${deliveryOwner}
+        UNION ALL
+        SELECT r."returnDate", -r."total" FROM "sales_returns" r JOIN "sales_orders" so ON so."id" = r."salesOrderId"
+        WHERE r."returnDate" >= ${chartStart} ${deliveryOwner}
+      ) x
       GROUP BY 1`,
     prisma.$queryRaw<{ month: string; total: Prisma.Decimal }[]>`
       SELECT to_char(date_trunc('month', "orderDate"), 'YYYY-MM') AS month, SUM("total") AS total
@@ -109,7 +115,8 @@ export const GET = withAuth(async (_request, { user }) => {
     ...(profit && { grossProfit: profit.grossProfit, marginPercent: profit.marginPercent, cogs: profit.cogs }),
     totalProducts,
     totalStockValue: inTransit.inTransitValue.plus(warehouseValue),
-    totalSales: salesSum[0]?.total ?? 0,
+    // Delivered minus returned (credit notes).
+    totalSales: (salesSum[0]?.total ?? new Prisma.Decimal(0)).minus(salesSum[0]?.returned ?? 0),
     // Order-level + item discounts of the delivered goods, same scope as totalSales.
     totalSalesDiscounts: (salesSum[0]?.discount ?? new Prisma.Decimal(0)).plus(salesSum[0]?.itemDiscount ?? 0),
     totalPurchases: purchaseSum._sum.total ?? 0,
