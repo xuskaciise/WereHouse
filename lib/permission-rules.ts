@@ -292,6 +292,7 @@ export const PAGE_MODULES: [string, Module | Module[]][] = [
   ["/sales", "sales"],
   ["/payments", ["customer_payments", "supplier_payments"]],
   ["/expenses", ["expenses", "expense_categories"]],
+  ["/reports/expenses", "reports_finance"],
   ["/reports", ["reports_stock", "reports_sales", "reports_finance"]],
   ["/users", "users"],
   ["/settings", "settings"],

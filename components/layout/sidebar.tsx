@@ -24,6 +24,7 @@ import {
   ArrowLeftRight,
   CalendarClock,
   Undo2,
+  PieChart,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
@@ -93,6 +94,7 @@ const navigationSections: NavSection[] = [
     title: "System",
     items: [
       { name: "Reports", href: "/reports", icon: FileText },
+      { name: "Expense Reports", href: "/reports/expenses", icon: PieChart },
       { name: "Users", href: "/users", icon: Users },
       { name: "Roles & Permissions", href: "/roles", icon: ShieldCheck },
       { name: "Settings", href: "/settings", icon: Settings },
