@@ -106,6 +106,7 @@ const navigationSections: NavSection[] = [
     items: [
       { name: "Reports", href: "/reports", icon: FileText },
       { name: "Expense Reports", href: "/reports/expenses", icon: PieChart },
+      { name: "Profit & Loss", href: "/reports/profit-loss", icon: TrendingUp },
       { name: "Users", href: "/users", icon: Users },
       { name: "Roles & Permissions", href: "/roles", icon: ShieldCheck },
       { name: "Settings", href: "/settings", icon: Settings },
