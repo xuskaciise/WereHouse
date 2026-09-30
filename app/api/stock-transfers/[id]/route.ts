@@ -3,6 +3,7 @@ import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
 import { addEvent, assertTransferInScope, lockTransfer, parseTransferInput, transferDetail } from "@/lib/stock-transfers"
+import { postAccounting } from "@/lib/accounting"
 
 export const GET = withAuth<{ id: string }>(async (_request, { user, params }) => {
   await assertTransferInScope(user, params.id)
@@ -31,6 +32,7 @@ export const PATCH = withAuth<{ id: string }>(async (request, { user, params }) 
       },
     })
     await addEvent(tx, { stockTransferId: t.id, type: "DRAFT_UPDATED", userId: user.id })
+    await postAccounting(tx, {}, user.id)
   }, TX_OPTIONS)
 
   return json(await transferDetail(params.id))

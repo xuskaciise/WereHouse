@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma"
+import { TX_OPTIONS, prisma } from "@/lib/prisma"
+import { postAccounting } from "@/lib/accounting"
 import { json, readJson, withAuth } from "@/lib/api"
 import { parsePaymentFields } from "@/lib/payment-fields"
 import { HttpError } from "@/lib/auth-guard"
@@ -39,19 +40,23 @@ export const POST = withAuth(async (request, { user }) => {
   if (!category) throw new HttpError(400, "Expense category not found")
   if (!category.isActive) throw new HttpError(400, "This expense category is inactive; choose another one")
 
-  const expense = await prisma.expense.create({
-    data: {
-      categoryId,
-      amount: parsedAmount,
-      description,
-      expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
-      paymentMethod: method.paymentMethod,
-      payerPhone: method.payerPhone,
-      transactionId: method.transactionId,
-      reference: reference || null,
-      userId: user.id,
-    },
-    include: expenseInclude,
-  })
+  const expense = await prisma.$transaction(async (tx) => {
+    const created = await tx.expense.create({
+      data: {
+        categoryId,
+        amount: parsedAmount,
+        description,
+        expenseDate: expenseDate ? new Date(expenseDate) : new Date(),
+        paymentMethod: method.paymentMethod,
+        payerPhone: method.payerPhone,
+        transactionId: method.transactionId,
+        reference: reference || null,
+        userId: user.id,
+      },
+      include: expenseInclude,
+    })
+    await postAccounting(tx, {}, user.id)
+    return created
+  }, TX_OPTIONS)
   return json({ ...expense, warnings: method.warnings }, { status: 201 })
 }, { permission: ["expenses", "create"] })

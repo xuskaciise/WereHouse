@@ -20,6 +20,7 @@ import {
   lockPurchaseOrder,
   logLandedCost,
 } from "@/lib/landed-cost-service"
+import { postAccounting } from "@/lib/accounting"
 
 type Params = { id: string; costId: string }
 
@@ -88,6 +89,7 @@ export const PATCH = withAuth<Params>(async (request, { user, params }) => {
       after: await costSnapshot(tx, costId),
       reason,
     })
+    await postAccounting(tx, {}, user.id)
   }, TX_OPTIONS)
 
   return json(await landedCostView(prisma, purchaseOrderId))
@@ -111,6 +113,8 @@ export const DELETE = withAuth<Params>(async (request, { user, params }) => {
     await tx.purchaseLandedCost.delete({ where: { id: costId } })
     await syncLandedCosts(tx, purchaseOrderId, user.id)
     await logLandedCost(tx, { purchaseOrderId, userId: user.id, action: "DELETE", landedCostId: costId, before, reason })
+    // Reverses the deleted cost's journal.
+    await postAccounting(tx, { LANDED_COST: [costId] }, user.id)
   }, TX_OPTIONS)
 
   return json(await landedCostView(prisma, purchaseOrderId))

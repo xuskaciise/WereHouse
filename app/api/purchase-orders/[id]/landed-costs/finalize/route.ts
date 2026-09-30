@@ -2,6 +2,7 @@ import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError, isAdmin } from "@/lib/auth-guard"
 import { assertPurchaseOrderInScope, landedCostView, lockPurchaseOrder, logLandedCost } from "@/lib/landed-cost-service"
+import { postAccounting } from "@/lib/accounting"
 
 /**
  * Body: { finalized: true } marks the PO's costs as final (landed_costs_admin
@@ -34,6 +35,7 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
       })
       await logLandedCost(tx, { purchaseOrderId, userId: user.id, action: "REOPEN", reason })
     }
+    await postAccounting(tx, {}, user.id)
   }, TX_OPTIONS)
 
   return json(await landedCostView(prisma, purchaseOrderId))

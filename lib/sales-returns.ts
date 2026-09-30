@@ -8,6 +8,7 @@ import { type PermissionUser, hasPermission, isOwnScope, requirePermission } fro
 import { computeDelivery } from "@/lib/sales-orders"
 import { receiveIntoStock } from "@/lib/stock-valuation"
 import type { SessionUser } from "@/lib/auth-guard"
+import { postAccounting } from "@/lib/accounting"
 
 // Sales returns: delivered goods taken back from the customer (credit note
 // SR-000001).
@@ -258,6 +259,7 @@ export async function createSalesReturn(user: SessionUser, body: any): Promise<s
         data: { returnNumber, total: money.total.toFixed(2), lines: rows.map((r) => ({ itemId: r.salesOrderItemId, quantity: r.quantity, condition: r.condition })) },
       },
     })
+    await postAccounting(tx, {}, user.id)
     return created.id
   }, TX_OPTIONS)
 }

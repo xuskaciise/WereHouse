@@ -25,6 +25,9 @@ import {
   CalendarClock,
   Undo2,
   PieChart,
+  Landmark,
+  BookOpen,
+  Scale,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
@@ -88,6 +91,14 @@ const navigationSections: NavSection[] = [
       { name: "Reservations", href: "/sales/reservations", icon: CalendarClock },
       { name: "Sales Returns", href: "/sales/returns", icon: Undo2 },
       { name: "Payments", href: "/payments", icon: CreditCard },
+    ],
+  },
+  {
+    title: "Accounting",
+    items: [
+      { name: "Chart of Accounts", href: "/accounts", icon: Landmark },
+      { name: "Journal", href: "/accounts/journal", icon: BookOpen },
+      { name: "Trial Balance", href: "/accounts/trial-balance", icon: Scale },
     ],
   },
   {

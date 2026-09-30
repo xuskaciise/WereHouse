@@ -8,6 +8,7 @@ import { type PermissionUser, hasPermission, isOwnScope, requirePermission } fro
 import { decrementStock } from "@/lib/stock"
 import { averageCost } from "@/lib/stock-valuation"
 import type { SessionUser } from "@/lib/auth-guard"
+import { postAccounting } from "@/lib/accounting"
 
 // Purchase returns: received goods sent back to the supplier (PR-000001).
 //
@@ -236,6 +237,7 @@ export async function createPurchaseReturn(user: SessionUser, body: any): Promis
         },
       })
     }
+    await postAccounting(tx, {}, user.id)
     return created.id
   }, TX_OPTIONS)
 }

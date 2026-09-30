@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { listResponse } from "@/lib/pagination"
 import { createExpenseCategory, expenseCategorySelect, parseExpenseCategoryInput } from "@/lib/expense-categories"
+import { parseExpenseAccountLink } from "@/lib/accounts"
 
 // Expense categories are shared reference data: anyone who records or views
 // expenses sees all of them; managing them needs the expense_categories module.
@@ -22,8 +23,10 @@ export const GET = withAuth(async (request) => {
 
 export const POST = withAuth(
   async (request, { user }) => {
-    const input = parseExpenseCategoryInput(await readJson(request))
-    const category = await createExpenseCategory(input, user.id)
+    const body = await readJson(request)
+    const input = parseExpenseCategoryInput(body)
+    const { accountId } = await parseExpenseAccountLink(user, body)
+    const category = await createExpenseCategory(input, user.id, accountId)
     return json(category, { status: 201 })
   },
   { permission: ["expense_categories", "create"] }

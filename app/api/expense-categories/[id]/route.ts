@@ -1,11 +1,15 @@
 import { json, readJson, withAuth } from "@/lib/api"
 import { deleteExpenseCategory, parseExpenseCategoryInput, updateExpenseCategory } from "@/lib/expense-categories"
+import { parseExpenseAccountLink } from "@/lib/accounts"
 
 // Rename, change the description, or (de)activate a category.
 export const PATCH = withAuth<{ id: string }>(
-  async (request, { params }) => {
-    const input = parseExpenseCategoryInput(await readJson(request), { partial: true })
-    return json(await updateExpenseCategory(params.id, input))
+  async (request, { user, params }) => {
+    const body = await readJson(request)
+    const input = parseExpenseCategoryInput(body, { partial: true })
+    // Expense account of the category (accounting:edit only).
+    const { accountId } = await parseExpenseAccountLink(user, body)
+    return json(await updateExpenseCategory(params.id, input, accountId))
   },
   { permission: ["expense_categories", "edit"] }
 )

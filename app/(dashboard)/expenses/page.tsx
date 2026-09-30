@@ -53,19 +53,22 @@ import {
   EXPENSE_CATEGORY_DESCRIPTION_MAX_LENGTH,
   EXPENSE_CATEGORY_NAME_MAX_LENGTH,
 } from "@/lib/expense-rules"
+import { ExpenseAccountField } from "@/components/account-select"
 
 interface ExpenseCategory {
   id: string
   name: string
   description: string | null
   isActive: boolean
+  accountId?: string | null
+  account?: { id: string; code: string; name: string } | null
   _count?: { expenses: number }
 }
 
 const NEW_CATEGORY_VALUE = "__new_category__"
 
 async function saveCategory(
-  category: { name: string; description: string; isActive?: boolean },
+  category: { name: string; description: string; isActive?: boolean; accountId?: string | null },
   id?: string
 ): Promise<ExpenseCategory> {
   const response = await fetch(id ? `/api/expense-categories/${id}` : "/api/expense-categories", {
@@ -508,12 +511,14 @@ function CategoryDialog({
 }) {
   const { toast } = useToast()
   const [form, setForm] = useState({ name: "", description: "" })
+  const [accountId, setAccountId] = useState<string | null>(null)
   const [error, setError] = useState("")
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
     if (open) {
       setForm({ name: category?.name ?? "", description: category?.description ?? "" })
+      setAccountId(category?.accountId ?? null)
       setError("")
     }
   }, [open, category])
@@ -527,7 +532,7 @@ function CategoryDialog({
     setIsSaving(true)
     setError("")
     try {
-      await saveCategory({ name: form.name, description: form.description }, category?.id)
+      await saveCategory({ name: form.name, description: form.description, ...(accountId && { accountId }) }, category?.id)
       toast({ title: category ? "Category updated" : "Category created", description: form.name.trim() })
       onSaved()
     } catch (e) {
@@ -551,6 +556,7 @@ function CategoryDialog({
             description={form.description}
             onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
           />
+          <ExpenseAccountField value={accountId} onChange={setAccountId} />
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>

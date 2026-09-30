@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma"
+import { TX_OPTIONS, prisma } from "@/lib/prisma"
+import { postAccounting } from "@/lib/accounting"
 import { json, readJson, withAuth } from "@/lib/api"
 import { parsePaymentFields } from "@/lib/payment-fields"
 import { HttpError } from "@/lib/auth-guard"
@@ -59,23 +60,27 @@ export const POST = withAuth(async (request, { user }) => {
 
   // The supplier balance is derived from orders and payments (lib/balances.ts),
   // so recording the payment is all that is needed.
-  const payment = await prisma.supplierPayment.create({
-    data: {
-      supplierId,
-      purchaseOrderId: purchaseOrderId || null,
-      landedCostId: landedCostId || null,
-      stockTransferCostId: stockTransferCostId || null,
-      amount: parsedAmount,
-      paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
-      paymentMethod: method.paymentMethod,
-      payerPhone: method.payerPhone,
-      transactionId: method.transactionId,
-      reference: reference || null,
-      notes: notes || null,
-      userId: user.id,
-    },
-    include: paymentInclude,
-  })
+  const payment = await prisma.$transaction(async (tx) => {
+    const saved = await tx.supplierPayment.create({
+      data: {
+        supplierId,
+        purchaseOrderId: purchaseOrderId || null,
+        landedCostId: landedCostId || null,
+        stockTransferCostId: stockTransferCostId || null,
+        amount: parsedAmount,
+        paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+        paymentMethod: method.paymentMethod,
+        payerPhone: method.payerPhone,
+        transactionId: method.transactionId,
+        reference: reference || null,
+        notes: notes || null,
+        userId: user.id,
+      },
+      include: paymentInclude,
+    })
+    await postAccounting(tx, {}, user.id)
+    return saved
+  }, TX_OPTIONS)
 
   const [withBalance] = await withNestedSupplierBalance([payment])
   return json({ ...withBalance, warnings: method.warnings }, { status: 201 })

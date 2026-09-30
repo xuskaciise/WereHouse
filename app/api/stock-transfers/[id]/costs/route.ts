@@ -14,6 +14,7 @@ import {
   transferCostSnapshot,
   transferDetail,
 } from "@/lib/stock-transfers"
+import { postAccounting } from "@/lib/accounting"
 
 /**
  * Adds a transfer cost (e.g. transport between warehouses), allocated by
@@ -61,6 +62,7 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
       notes: reason,
       data: { after: await transferCostSnapshot(tx, cost.id) },
     })
+    await postAccounting(tx, {}, user.id)
   }, TX_OPTIONS)
 
   return json({ ...(await transferDetail(params.id)), warnings: paidMethod?.warnings ?? [] }, { status: 201 })

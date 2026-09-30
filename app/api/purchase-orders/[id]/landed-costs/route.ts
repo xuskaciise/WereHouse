@@ -22,6 +22,7 @@ import {
   lockPurchaseOrder,
   logLandedCost,
 } from "@/lib/landed-cost-service"
+import { postAccounting } from "@/lib/accounting"
 
 // Additional (landed) costs of a purchase order. See lib/landed-costs.ts.
 
@@ -111,6 +112,7 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
       after: await costSnapshot(tx, cost.id),
       reason,
     })
+    await postAccounting(tx, {}, user.id)
     return cost.id
   }, TX_OPTIONS)
 

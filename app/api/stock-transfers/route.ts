@@ -7,6 +7,7 @@ import { assertCanReference } from "@/lib/ownership"
 import { createWithOrderNumber } from "@/lib/orders"
 import { dateRangeWhere, listResponse } from "@/lib/pagination"
 import { addEvent, dispatchTransfer, parseTransferInput, receiveTransfer, transferInclude } from "@/lib/stock-transfers"
+import { postAccounting } from "@/lib/accounting"
 
 const STATUSES: TransferStatus[] = ["DRAFT", "IN_TRANSIT", "PARTIALLY_RECEIVED", "RECEIVED", "CANCELLED"]
 
@@ -85,6 +86,7 @@ export const POST = withAuth(async (request, { user }) => {
             "Instant transfer"
           )
         }
+        await postAccounting(tx, {}, user.id)
         return transfer.id
       }, TX_OPTIONS)
   )

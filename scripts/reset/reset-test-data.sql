@@ -18,7 +18,7 @@
 -- RESET_KEEP_TABLES in lib/reset-tables.ts (checked by `npm run lint`).
 DO $reset$
 DECLARE
-  keep_tables text[] := ARRAY['users', 'role_permissions', 'permission_change_logs', 'settings', 'landed_cost_types'];
+  keep_tables text[] := ARRAY['users', 'role_permissions', 'permission_change_logs', 'settings', 'landed_cost_types', 'accounts'];
   -- Must not change during the reset.
   guarded_tables text[] := ARRAY['role_permissions', 'permission_change_logs', 'settings'];
   run_mode text := current_setting('reset.mode', true);
@@ -110,6 +110,16 @@ BEGIN
     ('ec_office', 'Office Supplies', 'office supplies', 'Stationery, printing and cleaning supplies', true, admin_id, now(), now()),
     ('ec_fees', 'Bank & Mobile Money Fees', 'bank & mobile money fees', 'Bank charges and EVC Plus / ZAAD / E-Dahab fees', true, admin_id, now(), now()),
     ('ec_other', 'Other', 'other', 'Anything that fits no other category', true, admin_id, now(), now());
+
+  -- Chart of accounts is kept; the automatic accounts of the deleted expense
+  -- categories go, and each default category gets its own expense account.
+  DELETE FROM accounts WHERE "systemKey" IS NULL AND id LIKE 'acc_exp_%';
+  INSERT INTO accounts (id, code, name, type, "group", "updatedAt")
+  SELECT 'acc_exp_' || c.id, (6000 + row_number() OVER (ORDER BY c.name))::text, c.name, 'EXPENSE', 'OPERATING_EXPENSE', now()
+  FROM expense_categories c
+  ON CONFLICT DO NOTHING;
+  UPDATE expense_categories c SET "accountId" = 'acc_exp_' || c.id
+  WHERE EXISTS (SELECT 1 FROM accounts a WHERE a.id = 'acc_exp_' || c.id);
 
   -- Guards: configuration unchanged, exactly the one admin left.
   FOREACH tbl IN ARRAY guarded_tables LOOP

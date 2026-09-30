@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth, withConflictMessages } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { assertInScope } from "@/lib/permissions"
+import { parseAccountLinks } from "@/lib/accounts"
 
 const NOT_FOUND = "Category not found"
 
@@ -15,14 +16,16 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
   const existing = await prisma.category.findUnique({ where: { id: params.id } })
   assertInScope(user, "categories", existing, NOT_FOUND)
 
-  const { name, description } = await readJson(request)
+  const body = await readJson(request)
+  const { name, description } = body
   if (!name) throw new HttpError(400, "Category name is required")
+  const links = await parseAccountLinks(user, body)
 
   const category = await withConflictMessages(
     () =>
       prisma.category.update({
         where: { id: params.id },
-        data: { name, description: description || null },
+        data: { name, description: description || null, ...links },
       }),
     { unique: "Category with this name already exists" }
   )

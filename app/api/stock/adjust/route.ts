@@ -3,6 +3,8 @@ import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { assertCanReference } from "@/lib/ownership"
 import { decrementStock, incrementStock, parseQuantity, setStockQuantity } from "@/lib/stock"
+import { postAccounting } from "@/lib/accounting"
+import { recordStockValueChange } from "@/lib/stock-valuation"
 
 export const POST = withAuth(async (request, { user }) => {
   const { productId, warehouseId, adjustmentType, quantity, notes } = await readJson(request)
@@ -36,6 +38,8 @@ export const POST = withAuth(async (request, { user }) => {
     }
 
     if (delta !== 0) {
+      await recordStockValueChange(tx, { productId, warehouseId, delta, userId: user.id })
+      await postAccounting(tx, {}, user.id)
       await tx.stockMovement.create({
         data: {
           productId,

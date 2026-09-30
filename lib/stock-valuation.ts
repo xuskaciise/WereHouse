@@ -192,3 +192,26 @@ export async function transferWithCost(
   })
   return { unitCost, value }
 }
+
+/**
+ * Values a manual stock change (adjustment, or opening stock of a new
+ * product) at the current average cost, so the inventory ledger and the
+ * journal follow it. quantity / amount are signed (negative = units removed).
+ */
+export async function recordStockValueChange(
+  tx: Tx,
+  input: { productId: string; warehouseId: string; delta: number; userId: string; type?: "STOCK_ADJUSTMENT" | "OPENING_STOCK" }
+): Promise<void> {
+  if (input.delta === 0) return
+  const avg = await averageCost(tx, input.productId, input.warehouseId)
+  await tx.inventoryValuationEntry.create({
+    data: {
+      type: input.type ?? "STOCK_ADJUSTMENT",
+      productId: input.productId,
+      warehouseId: input.warehouseId,
+      quantity: input.delta,
+      amount: roundMoney(avg.times(input.delta)),
+      userId: input.userId,
+    },
+  })
+}

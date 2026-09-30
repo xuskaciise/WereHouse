@@ -51,6 +51,7 @@ model User {
   salesOrderEvents        SalesOrderEvent[]
   purchaseReturns         PurchaseReturn[]
   salesReturns            SalesReturn[]
+  journalEntries          JournalEntry[]
 
   @@map("users")
 }
@@ -71,13 +72,21 @@ enum UserStatus {
 }
 
 model Category {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  userId      String?
-  user        User?    @relation(fields: [userId], references: [id])
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  description        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  userId             String?
+  user               User?    @relation(fields: [userId], references: [id])
+  // Default accounts of the products in this category (null = the system
+  // accounts Inventory / Sales / Cost of Goods Sold).
+  inventoryAccountId String?
+  inventoryAccount   Account? @relation("CategoryInventoryAccount", fields: [inventoryAccountId], references: [id])
+  salesAccountId     String?
+  salesAccount       Account? @relation("CategorySalesAccount", fields: [salesAccountId], references: [id])
+  cogsAccountId      String?
+  cogsAccount        Account? @relation("CategoryCogsAccount", fields: [cogsAccountId], references: [id])
 
   products Product[]
 
@@ -86,24 +95,31 @@ model Category {
 }
 
 model Product {
-  id           String    @id @default(cuid())
-  name         String
-  sku          String    @unique
-  description  String?
-  categoryId   String
-  category     Category  @relation(fields: [categoryId], references: [id])
-  costPrice    Decimal   @default(0) @db.Decimal(12, 2)
-  sellingPrice Decimal   @default(0) @db.Decimal(12, 2)
-  reorderLevel Int       @default(10)
+  id                 String    @id @default(cuid())
+  name               String
+  sku                String    @unique
+  description        String?
+  categoryId         String
+  category           Category  @relation(fields: [categoryId], references: [id])
+  costPrice          Decimal   @default(0) @db.Decimal(12, 2)
+  sellingPrice       Decimal   @default(0) @db.Decimal(12, 2)
+  reorderLevel       Int       @default(10)
   // Optional, for allocating landed costs by weight (kg) or volume (m3) per unit.
-  weight       Decimal?  @db.Decimal(12, 3)
-  volume       Decimal?  @db.Decimal(12, 4)
-  issueDate    DateTime?
-  expireDate   DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  userId       String?
-  user         User?     @relation(fields: [userId], references: [id])
+  weight             Decimal?  @db.Decimal(12, 3)
+  volume             Decimal?  @db.Decimal(12, 4)
+  issueDate          DateTime?
+  expireDate         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  userId             String?
+  user               User?     @relation(fields: [userId], references: [id])
+  // Account overrides (null = the category's account, then the system account).
+  inventoryAccountId String?
+  inventoryAccount   Account?  @relation("ProductInventoryAccount", fields: [inventoryAccountId], references: [id])
+  salesAccountId     String?
+  salesAccount       Account?  @relation("ProductSalesAccount", fields: [salesAccountId], references: [id])
+  cogsAccountId      String?
+  cogsAccount        Account?  @relation("ProductCogsAccount", fields: [cogsAccountId], references: [id])
 
   stock               Stock[]
   stockMovements      StockMovement[]
@@ -789,6 +805,9 @@ model ExpenseCategory {
   updatedAt   DateTime @updatedAt
   userId      String?
   user        User?    @relation(fields: [userId], references: [id])
+  // Expense account the expenses of this category are booked to.
+  accountId   String?
+  account     Account? @relation(fields: [accountId], references: [id])
 
   expenses Expense[]
 
@@ -986,6 +1005,10 @@ enum ValuationEntryType {
   TRANSFER_RETURN
   // goods returned to the supplier, at the warehouse average cost
   PURCHASE_RETURN
+  // manual stock correction at the average cost (quantity and amount are signed)
+  STOCK_ADJUSTMENT
+  // initial stock entered with a new product (at its cost price)
+  OPENING_STOCK
   // resellable goods returned by a customer, back in stock at their original cost
   SALES_RETURN
   // damaged goods returned by a customer: a loss at their original cost
@@ -1147,4 +1170,99 @@ model SalesReturnItem {
   @@index([salesReturnId])
   @@index([salesOrderItemId])
   @@map("sales_return_items")
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+// Where an account appears in the reports (balance sheet sections, P&L lines).
+enum AccountGroup {
+  CASH_AND_BANK
+  RECEIVABLE
+  INVENTORY
+  OTHER_ASSET
+  PAYABLE
+  TAX
+  OTHER_LIABILITY
+  EQUITY
+  SALES
+  SALES_RETURNS
+  OTHER_INCOME
+  COGS
+  OPERATING_EXPENSE
+  LOSS
+  OTHER_EXPENSE
+}
+
+// Chart of accounts. systemKey marks the accounts the automatic journals use
+// (CASH, AR, INVENTORY, AP, SALES, COGS, ...); those cannot be deleted or
+// change type (lib/accounting.ts).
+model Account {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  name        String
+  type        AccountType
+  group       AccountGroup
+  systemKey   String?      @unique
+  description String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  lines                     JournalLine[]
+  categoryInventoryAccounts Category[]        @relation("CategoryInventoryAccount")
+  categorySalesAccounts     Category[]        @relation("CategorySalesAccount")
+  categoryCogsAccounts      Category[]        @relation("CategoryCogsAccount")
+  productInventoryAccounts  Product[]         @relation("ProductInventoryAccount")
+  productSalesAccounts      Product[]         @relation("ProductSalesAccount")
+  productCogsAccounts       Product[]         @relation("ProductCogsAccount")
+  expenseCategories         ExpenseCategory[]
+
+  @@index([type])
+  @@map("accounts")
+}
+
+// Double-entry journal, posted automatically from the business documents
+// (lib/accounting.ts). A document's journal is the SUM of all entries with its
+// (sourceType, sourceId): the first entry books it, later entries only book
+// the difference after an edit or a delete (never rewritten). Entries and
+// lines are immutable and every entry balances (database triggers).
+model JournalEntry {
+  id           String   @id @default(cuid())
+  entryNumber  String   @unique
+  date         DateTime
+  description  String
+  sourceType   String
+  sourceId     String
+  reference    String?
+  isAdjustment Boolean  @default(false)
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
+  createdAt    DateTime @default(now())
+
+  lines JournalLine[]
+
+  @@index([sourceType, sourceId])
+  @@index([date])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id        String       @id @default(cuid())
+  entryId   String
+  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId String
+  account   Account      @relation(fields: [accountId], references: [id])
+  debit     Decimal      @default(0) @db.Decimal(12, 2)
+  credit    Decimal      @default(0) @db.Decimal(12, 2)
+  memo      String?
+
+  @@index([entryId])
+  @@index([accountId])
+  @@map("journal_lines")
 }

@@ -19,6 +19,7 @@ import { fulfilReservedStock, releaseReservedStock, reserveStock } from "@/lib/s
 import { averageCost, roundUnitCost } from "@/lib/stock-valuation"
 import { currentTaxRate } from "@/lib/tax"
 import type { SessionUser } from "@/lib/auth-guard"
+import { postAccounting } from "@/lib/accounting"
 
 // Sales orders with stock reservations.
 //
@@ -456,7 +457,10 @@ export async function createSalesOrder(user: SessionUser, body: any): Promise<st
         })
         await addEvent(tx, { salesOrderId: order.id, type: "CREATED", userId: user.id, data: { total: input.order.total.toFixed(2) } })
         if (mode !== "draft") await confirmInTx(tx, order.id, user.id, days)
-        if (mode === "sell_now") await deliverInTx(tx, order.id, user.id, "all", "Sell & deliver now")
+        if (mode === "sell_now") {
+          await deliverInTx(tx, order.id, user.id, "all", "Sell & deliver now")
+          await postAccounting(tx, {}, user.id)
+        }
         return order.id
       }, TX_OPTIONS)
   )
@@ -519,7 +523,11 @@ export async function deliverSalesOrder(user: SessionUser, id: string, body: any
     lines === "all"
       ? "all"
       : (lines as any[]).map((l) => ({ itemId: String(l?.itemId ?? ""), quantity: Number(l?.quantity ?? 0) }))
-  return prisma.$transaction((tx) => deliverInTx(tx, id, user.id, parsed, notes), TX_OPTIONS)
+  return prisma.$transaction(async (tx) => {
+    const delivery = await deliverInTx(tx, id, user.id, parsed, notes)
+    await postAccounting(tx, {}, user.id)
+    return delivery
+  }, TX_OPTIONS)
 }
 
 export async function cancelSalesOrder(user: SessionUser, id: string, body: any) {

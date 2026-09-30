@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma"
 import { ADMIN_PERMISSIONS, DEFAULT_PERMISSIONS } from "@/lib/permission-rules"
 import type { SessionUser } from "@/lib/auth-guard"
 import { incrementStock } from "@/lib/stock"
+import { recordStockValueChange } from "@/lib/stock-valuation"
+import { postAccounting } from "@/lib/accounting"
 import {
   cancelSalesOrder, confirmSalesOrder, createSalesOrder, deliverSalesOrder, editSalesOrder,
   extendReservation, listReservations, releaseReservation, salesOrderDetail, deleteDraftSalesOrder,
@@ -50,7 +52,12 @@ async function main() {
   const cust = await prisma.customer.create({ data: { name: `Cust ${tag}`, email: "c@x.so", userId: admin.id } })
   const custO = await prisma.customer.create({ data: { name: `CustO ${tag}`, email: "o@x.so", userId: officer.id } })
   await prisma.$transaction(async (tx) => {
-    for (const p of [pA, pB, pC]) await incrementStock(tx, { productId: p.id, warehouseId: wh.id, quantity: 50, userId: admin.id })
+    for (const p of [pA, pB, pC]) {
+      await incrementStock(tx, { productId: p.id, warehouseId: wh.id, quantity: 50, userId: admin.id })
+      // Valued like opening stock of a new product, so the journal follows it.
+      await recordStockValueChange(tx, { productId: p.id, warehouseId: wh.id, delta: 50, userId: admin.id, type: "OPENING_STOCK" })
+    }
+    await postAccounting(tx, {}, admin.id)
   })
 
   const body = (extra: any = {}) => ({

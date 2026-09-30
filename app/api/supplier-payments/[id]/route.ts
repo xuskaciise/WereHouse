@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma"
+import { TX_OPTIONS, prisma } from "@/lib/prisma"
+import { postAccounting } from "@/lib/accounting"
 import { json, readJson, withAuth } from "@/lib/api"
 import { parsePaymentFields } from "@/lib/payment-fields"
 import { HttpError } from "@/lib/auth-guard"
@@ -29,19 +30,23 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
   const method = await parsePaymentFields(body, { existingMethod: current.paymentMethod })
   const parsedAmount = parseMoney(amount)
 
-  const payment = await prisma.supplierPayment.update({
-    where: { id: params.id },
-    data: {
-      amount: parsedAmount,
-      paymentDate: paymentDate ? new Date(paymentDate) : current.paymentDate,
-      paymentMethod: method.paymentMethod,
-      payerPhone: method.payerPhone,
-      transactionId: method.transactionId,
-      reference: reference || null,
-      notes: notes || null,
-    },
-    include: paymentInclude,
-  })
+  const payment = await prisma.$transaction(async (tx) => {
+    const saved = await tx.supplierPayment.update({
+      where: { id: params.id },
+      data: {
+        amount: parsedAmount,
+        paymentDate: paymentDate ? new Date(paymentDate) : current.paymentDate,
+        paymentMethod: method.paymentMethod,
+        payerPhone: method.payerPhone,
+        transactionId: method.transactionId,
+        reference: reference || null,
+        notes: notes || null,
+      },
+      include: paymentInclude,
+    })
+    await postAccounting(tx, {}, user.id)
+    return saved
+  }, TX_OPTIONS)
 
   const [withBalance] = await withNestedSupplierBalance([payment])
   return json({ ...withBalance, warnings: method.warnings })
@@ -51,6 +56,10 @@ export const DELETE = withAuth<{ id: string }>(async (_request, { user, params }
   const current = await prisma.supplierPayment.findUnique({ where: { id: params.id } })
   assertInScope(user, "supplier_payments", current, NOT_FOUND)
 
-  await prisma.supplierPayment.delete({ where: { id: params.id } })
+  await prisma.$transaction(async (tx) => {
+    await tx.supplierPayment.delete({ where: { id: params.id } })
+    // Reverses the deleted payment's journal.
+    await postAccounting(tx, { SUPPLIER_PAYMENT: [params.id] }, user.id)
+  }, TX_OPTIONS)
   return json({ message: "Payment deleted successfully" })
 }, { permission: ["supplier_payments", "delete"] })

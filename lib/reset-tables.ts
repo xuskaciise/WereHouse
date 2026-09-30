@@ -13,10 +13,14 @@ export const RESET_KEEP_TABLES = [
   "permission_change_logs",
   "settings",
   "landed_cost_types",
+  // Chart of accounts (the automatic journals need the system accounts).
+  "accounts",
 ] as const
 
 /** Business data (master data and transactions): deleted by a reset. */
 export const RESET_DELETE_TABLES = [
+  "journal_lines",
+  "journal_entries",
   "inventory_valuation_entries",
   "landed_cost_logs",
   "purchase_landed_cost_allocations",

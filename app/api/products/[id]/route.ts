@@ -7,6 +7,9 @@ import { parseMoney, parseOptionalMeasure } from "@/lib/money"
 import { can } from "@/lib/permission-rules"
 import { validateProductDates } from "@/lib/product-date-validation"
 import { parseQuantity, refreshStockStatus, setStockQuantity } from "@/lib/stock"
+import { postAccounting } from "@/lib/accounting"
+import { recordStockValueChange } from "@/lib/stock-valuation"
+import { parseAccountLinks } from "@/lib/accounts"
 
 const NOT_FOUND = "Product not found"
 
@@ -37,7 +40,9 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
     productionDate,
     expiryDate,
     stockUpdates,
+    ...rest
   } = await readJson(request)
+  const links = await parseAccountLinks(user, rest)
 
   if (!name || !sku || !categoryId) {
     throw new HttpError(400, "Name, SKU, and Category are required")
@@ -81,6 +86,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
             reorderLevel: reorderLevel === undefined || reorderLevel === null || reorderLevel === "" ? 10 : parseQuantity(reorderLevel, { allowZero: true }),
             issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
             expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
+            ...links,
           },
           include: { category: true },
         })
@@ -100,6 +106,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
             userId: user.id,
           })
           if (newQuantity !== oldQuantity) {
+            await recordStockValueChange(tx, { productId: id, warehouseId: stock.warehouseId, delta: newQuantity - oldQuantity, userId: user.id })
             await tx.stockMovement.create({
               data: {
                 productId: id,
@@ -116,6 +123,7 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
 
         // The reorder level may have changed, so recompute every stock status.
         await refreshStockStatus(tx, id)
+        await postAccounting(tx, {}, user.id)
         return updated
       }, TX_OPTIONS),
     { unique: "Product with this SKU already exists" }

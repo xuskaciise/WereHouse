@@ -3,6 +3,8 @@ import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { assertInScope } from "@/lib/permissions"
 import { parseQuantity, setStockQuantity } from "@/lib/stock"
+import { postAccounting } from "@/lib/accounting"
+import { recordStockValueChange } from "@/lib/stock-valuation"
 
 const NOT_FOUND = "Stock not found"
 
@@ -34,6 +36,8 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
 
 
     if (newQuantity !== oldQuantity) {
+      await recordStockValueChange(tx, { productId: existing.productId, warehouseId: existing.warehouseId, delta: newQuantity - oldQuantity, userId: user.id })
+      await postAccounting(tx, {}, user.id)
       await tx.stockMovement.create({
         data: {
           productId: existing.productId,

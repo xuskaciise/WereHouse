@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client"
-import { prisma } from "@/lib/prisma"
+import { TX_OPTIONS, prisma } from "@/lib/prisma"
+import { createExpenseAccountFor } from "@/lib/accounts"
 import { withConflictMessages } from "@/lib/api"
 import { HttpError } from "@/lib/http-error"
 import { EXPENSE_CATEGORY_DESCRIPTION_MAX_LENGTH, EXPENSE_CATEGORY_NAME_MAX_LENGTH } from "@/lib/expense-rules"
@@ -11,6 +12,8 @@ export const expenseCategorySelect = {
   isActive: true,
   createdAt: true,
   updatedAt: true,
+  accountId: true,
+  account: { select: { id: true, code: true, name: true } },
   _count: { select: { expenses: true } },
 } satisfies Prisma.ExpenseCategorySelect
 
@@ -57,7 +60,7 @@ export function parseExpenseCategoryInput(body: any, { partial = false } = {}): 
     input.isActive = body.isActive
   }
 
-  if (partial && Object.keys(input).length === 0) throw new HttpError(400, "Nothing to update")
+  if (partial && Object.keys(input).length === 0 && !body?.accountId) throw new HttpError(400, "Nothing to update")
   return input
 }
 
@@ -65,25 +68,31 @@ function duplicateMessage(name: string) {
   return `An expense category named "${name}" already exists (names are not case-sensitive)`
 }
 
-export async function createExpenseCategory(input: ExpenseCategoryInput, userId: string) {
+export async function createExpenseCategory(input: ExpenseCategoryInput, userId: string, accountId?: string) {
   const name = input.name!
   return withConflictMessages(
     () =>
-      prisma.expenseCategory.create({
-        data: {
-          name,
-          nameKey: expenseCategoryNameKey(name),
-          description: input.description ?? null,
-          isActive: input.isActive ?? true,
-          userId,
-        },
-        select: expenseCategorySelect,
-      }),
+      prisma.$transaction(async (tx) => {
+        const created = await tx.expenseCategory.create({
+          data: {
+            name,
+            nameKey: expenseCategoryNameKey(name),
+            description: input.description ?? null,
+            isActive: input.isActive ?? true,
+            userId,
+            accountId: accountId ?? null,
+          },
+          select: { id: true },
+        })
+        // Each category gets its own expense account unless one was chosen.
+        if (!accountId) await createExpenseAccountFor(tx, created.id, name)
+        return tx.expenseCategory.findUniqueOrThrow({ where: { id: created.id }, select: expenseCategorySelect })
+      }, TX_OPTIONS),
     { unique: duplicateMessage(name) }
   )
 }
 
-export async function updateExpenseCategory(id: string, input: ExpenseCategoryInput) {
+export async function updateExpenseCategory(id: string, input: ExpenseCategoryInput, accountId?: string) {
   return withConflictMessages(
     () =>
       prisma.expenseCategory.update({
@@ -92,6 +101,7 @@ export async function updateExpenseCategory(id: string, input: ExpenseCategoryIn
           ...(input.name !== undefined && { name: input.name, nameKey: expenseCategoryNameKey(input.name) }),
           ...(input.description !== undefined && { description: input.description }),
           ...(input.isActive !== undefined && { isActive: input.isActive }),
+          ...(accountId && { accountId }),
         },
         select: expenseCategorySelect,
       }),

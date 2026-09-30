@@ -14,6 +14,7 @@ import {
   setItemQuantity,
   totalReceived,
 } from "@/lib/purchase-orders"
+import { postAccounting } from "@/lib/accounting"
 
 interface ReceiveLineInput {
   purchaseOrderItemId?: unknown
@@ -200,6 +201,7 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
     }
 
     await recomputePurchaseOrderStatus(tx, po.id)
+    await postAccounting(tx, {}, user.id)
   }, TX_OPTIONS)
 
   const updated = await prisma.purchaseOrder.findFirst({ where: baseWhere, include: purchaseOrderDetailInclude })

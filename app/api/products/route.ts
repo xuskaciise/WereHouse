@@ -8,6 +8,9 @@ import { can } from "@/lib/permission-rules"
 import { validateProductDates } from "@/lib/product-date-validation"
 import { incrementStock, parseQuantity } from "@/lib/stock"
 import { listResponse } from "@/lib/pagination"
+import { postAccounting } from "@/lib/accounting"
+import { recordStockValueChange } from "@/lib/stock-valuation"
+import { parseAccountLinks } from "@/lib/accounts"
 
 export const GET = withAuth(async (request, { user }) => {
   const where = scopeWhere(user, "products")
@@ -36,7 +39,10 @@ export const POST = withAuth(async (request, { user }) => {
     expiryDate,
     quantity,
     warehouseId,
+    ...rest
   } = await readJson(request)
+  // Account overrides (accounting:edit only; empty = the category's accounts).
+  const links = await parseAccountLinks(user, rest)
 
   if (!name || !sku || !categoryId) {
     throw new HttpError(400, "Name, SKU, and Category are required")
@@ -72,6 +78,7 @@ export const POST = withAuth(async (request, { user }) => {
             issueDate: normalizedProductionDate ? new Date(normalizedProductionDate) : null,
             expireDate: normalizedExpiryDate ? new Date(normalizedExpiryDate) : null,
             userId: user.id,
+            ...links,
           },
           include: { category: true },
         })
@@ -93,6 +100,9 @@ export const POST = withAuth(async (request, { user }) => {
               userId: user.id,
             },
           })
+          // Opening stock at the product cost price (journal: Inventory / Opening Balance Equity).
+          await recordStockValueChange(tx, { productId: created.id, warehouseId, delta: initialQuantity, userId: user.id, type: "OPENING_STOCK" })
+          await postAccounting(tx, {}, user.id)
         }
 
         return created

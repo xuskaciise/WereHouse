@@ -27,6 +27,7 @@ import { Category } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { formatDate } from "@/lib/utils"
 import { useCan } from "@/components/providers/current-user-provider"
+import { AccountLinkFields, emptyAccountLinks, type AccountLinkValue } from "@/components/account-select"
 
 export default function CategoriesPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -238,6 +239,7 @@ function CategoryForm({
     name: category?.name || "",
     description: category?.description || "",
   })
+  const [links, setLinks] = useState<AccountLinkValue>(emptyAccountLinks(category as any))
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
@@ -246,7 +248,9 @@ function CategoryForm({
         name: category.name,
         description: category.description || "",
       })
+      setLinks(emptyAccountLinks(category as any))
     } else {
+      setLinks(emptyAccountLinks())
       setFormData({
         name: "",
         description: "",
@@ -280,6 +284,7 @@ function CategoryForm({
         body: JSON.stringify({
           name: formData.name.trim(),
           description: formData.description.trim() || null,
+          ...links,
         }),
       })
 
@@ -331,6 +336,8 @@ function CategoryForm({
           }
         />
       </div>
+
+      <AccountLinkFields value={links} onChange={setLinks} level="category" />
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onSuccess} disabled={isSaving}>

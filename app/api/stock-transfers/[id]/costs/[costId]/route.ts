@@ -12,6 +12,7 @@ import {
   transferCostSnapshot,
   transferDetail,
 } from "@/lib/stock-transfers"
+import { postAccounting } from "@/lib/accounting"
 
 type Params = { id: string; costId: string }
 
@@ -44,6 +45,7 @@ export const PATCH = withAuth<Params>(async (request, { user, params }) => {
       notes: reason,
       data: { before, after: await transferCostSnapshot(tx, params.costId) },
     })
+    await postAccounting(tx, {}, user.id)
   }, TX_OPTIONS)
   return json(await transferDetail(params.id))
 }, { permission: ["stock_transfers", "edit"] })
@@ -63,6 +65,8 @@ export const DELETE = withAuth<Params>(async (request, { user, params }) => {
     await tx.stockTransferCost.delete({ where: { id: params.costId } })
     await syncTransferCosts(tx, t.id, user.id)
     await addEvent(tx, { stockTransferId: t.id, type: "COST_DELETED", userId: user.id, notes: reason, data: { before } })
+    // Reverses the deleted cost's journal.
+    await postAccounting(tx, { TRANSFER_COST: [params.costId] }, user.id)
   }, TX_OPTIONS)
   return json(await transferDetail(params.id))
 }, { permission: ["stock_transfers", "edit"] })

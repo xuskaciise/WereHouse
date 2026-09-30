@@ -30,6 +30,7 @@ import { Product, Category } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { validateProductDates } from "@/lib/product-date-validation"
 import { useCan } from "@/components/providers/current-user-provider"
+import { AccountLinkFields, emptyAccountLinks, type AccountLinkValue } from "@/components/account-select"
 
 export default function ProductsPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -386,6 +387,9 @@ function ProductForm({
     productionDate: toDateInputValue(product?.issueDate),
     expiryDate: toDateInputValue(product?.expireDate),
   })
+  // Account overrides (only shown with accounting:edit).
+  const [links, setLinks] = useState<AccountLinkValue>(emptyAccountLinks(product as any))
+  useEffect(() => setLinks(emptyAccountLinks(product as any)), [product])
   const [productStock, setProductStock] = useState<any[]>([])
   const [stockQuantities, setStockQuantities] = useState<Record<string, string>>({})
   const [isSaving, setIsSaving] = useState(false)
@@ -502,6 +506,7 @@ function ProductForm({
             stockId,
             quantity: parseInt(quantity) || 0,
           })) : null,
+          ...links,
         }),
       })
 
@@ -708,6 +713,8 @@ function ProductForm({
           </div>
         </div>
       )}
+
+      <AccountLinkFields value={links} onChange={setLinks} level="product" />
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onSuccess} disabled={isSaving}>
