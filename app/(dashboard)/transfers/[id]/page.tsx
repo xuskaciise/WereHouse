@@ -19,6 +19,7 @@ import { formatCurrency, formatDate, formatUnitCost } from "@/lib/utils"
 import { CompanyHeader } from "@/components/company-header"
 import { TRANSFER_EVENTS, TRANSFER_STATUS } from "@/lib/transfer-labels"
 import { PaymentMethodFields, emptyPaymentMethod, paymentMethodBody, paymentMethodProblems, usePaymentConfig, type PaymentMethodValue } from "@/components/payment-method-fields"
+import { useConfirm } from "@/components/confirm-provider"
 
 const when = (d: string | null | undefined) => (d ? `${formatDate(d)} ${new Date(d).toLocaleTimeString()}` : "")
 
@@ -29,6 +30,7 @@ export default function TransferDetailPage() {
   const currentUser = useCurrentUser()
   const canEdit = useCan("stock_transfers", "edit")
   const canDelete = useCan("stock_transfers", "delete")
+  const confirm = useConfirm()
   const canPay = useCan("supplier_payments", "create")
   const seesCost = useCan("product_cost", "view")
   const isAdmin = currentUser.role === "ADMIN"
@@ -299,10 +301,16 @@ export default function TransferDetailPage() {
                             variant="ghost"
                             size="icon"
                             title="Delete"
-                            onClick={() => {
-                              const reason = t.status === "RECEIVED" ? window.prompt("Reason for deleting this cost") : undefined
-                              if (t.status === "RECEIVED" && !reason) return
-                              call(`/costs/${c.id}`, "DELETE", { reason }, "Cost deleted")
+                            onClick={async () => {
+                              const answer = await confirm({
+                                title: `Delete ${c.type?.name ?? "cost"} ${formatCurrency(c.amount)}?`,
+                                description: "The transfer cost is removed and the allocation recalculated.",
+                                confirmLabel: "Delete cost",
+                                destructive: true,
+                                ...(t.status === "RECEIVED" && { reasonLabel: "Reason (completed transfer)" }),
+                              })
+                              if (!answer) return
+                              call(`/costs/${c.id}`, "DELETE", { reason: typeof answer === "string" ? answer : undefined }, "Cost deleted")
                             }}
                           >
                             <Trash2 className="h-4 w-4" />

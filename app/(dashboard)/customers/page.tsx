@@ -34,6 +34,8 @@ import { useToast } from "@/components/ui/use-toast"
 import { Customer } from "@/lib/types"
 import { useCan } from "@/components/providers/current-user-provider"
 import { UrlActions } from "@/components/url-actions"
+import { useConfirm } from "@/components/confirm-provider"
+import { ListPagination, ListStateRow, SearchBox, usePagedList } from "@/components/data-list"
 
 export default function CustomersPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -41,45 +43,20 @@ export default function CustomersPage() {
   const canEdit = useCan("customers", "edit")
   const canDelete = useCan("customers", "delete")
   const { toast } = useToast()
-  const [customers, setCustomers] = useState<any[]>([])
+  const list = usePagedList("/api/customers")
+  const customers = list.rows as any[]
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [search, setSearch] = useState("")
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    fetchCustomers()
-  }, [])
+  const fetchCustomers = list.reload
 
-  const fetchCustomers = async () => {
-    try {
-      setIsLoading(true)
-      const response = await fetch("/api/customers")
-      if (response.ok) {
-        const data = await response.json()
-        setCustomers(data)
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to fetch customers",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Error fetching customers:", error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch customers",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
+
+
+  const confirmDialog = useConfirm()
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this customer?")) {
+    if (!(await confirmDialog({ title: "Delete this customer?", description: "This cannot be undone.", confirmLabel: "Delete", destructive: true }))) {
       return
     }
 
@@ -151,16 +128,12 @@ export default function CustomersPage() {
                 List of all customers in the system
               </CardDescription>
             </div>
-            <Input className="max-w-xs" placeholder="Search name, phone or email" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <SearchBox value={list.q} onChange={list.setQ} placeholder="Name, phone or email" />
           </div>
-          <UrlActions onNew={() => canCreate && handleAdd()} onQuery={setSearch} />
+          <UrlActions onNew={() => canCreate && handleAdd()} onQuery={list.setQ} />
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="text-muted-foreground">Loading customers...</div>
-            </div>
-          ) : (
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -174,14 +147,9 @@ export default function CustomersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {customers.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      No customers found. Click &quot;Add Customer&quot; to create your first customer.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  customers.filter((x) => !search.trim() || [x.name, x.phone, x.email].some((v) => v?.toLowerCase().includes(search.trim().toLowerCase()))).map((customer) => {
+                <ListStateRow colSpan={7} loading={list.loading && customers.length === 0} error={list.error} empty={customers.length === 0} searching={!!list.q} emptyText="No customers yet." action={canCreate ? { label: "Add customer", onClick: handleAdd } : null} />
+                {customers.length > 0 && (
+                  customers.map((customer) => {
                     const balance = getCustomerBalance(customer)
                     return (
                       <TableRow key={customer.id}>
@@ -196,7 +164,7 @@ export default function CustomersPage() {
                             </span>
                           ) : (
                             <span className="text-green-600 font-medium">
-                              {formatCurrency(0)}
+                              {balance < 0 ? `${formatCurrency(-balance)} credit` : formatCurrency(0)}
                             </span>
                           )}
                         </TableCell>
@@ -249,7 +217,8 @@ export default function CustomersPage() {
                 )}
               </TableBody>
             </Table>
-          )}
+            <ListPagination list={list} />
+          </div>
         </CardContent>
       </Card>
 

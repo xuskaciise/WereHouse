@@ -1,106 +1,79 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { CalendarClock, Eye, Plus } from "lucide-react"
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { CalendarClock, Eye, Plus, Store } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import Link from "next/link"
 import { totalDiscountOf } from "@/lib/discount-rules"
 import { useCan } from "@/components/providers/current-user-provider"
 import { SALES_STATUS, isOpenSalesStatus } from "@/lib/sales-labels"
+import { ListPagination, ListStateRow, SearchBox, usePagedList } from "@/components/data-list"
+
+const ALL = "ALL"
+const count = (url: string) => fetch(url).then((r) => (r.ok ? Number(r.headers.get("X-Total-Count") ?? 0) : 0)).catch(() => 0)
 
 export default function SalesPage() {
   // Hide what the role may not do; the API enforces the same permissions.
   const canCreate = useCan("sales", "create")
+  const canSellNow = useCan("sales_deliver", "create")
   const canSeeReservations = useCan("sales_reservations", "view")
-  const [salesOrders, setSalesOrders] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState("ALL")
+  const [status, setStatus] = useState(ALL)
+  const list = usePagedList("/api/sales-orders", { status: status === ALL ? undefined : status })
+  const [counts, setCounts] = useState<{ drafts: number; open: number } | null>(null)
 
+  // Order counts by state (server-side, whatever page is shown).
   useEffect(() => {
-    fetchSalesOrders(statusFilter)
-  }, [statusFilter])
+    const base = "/api/sales-orders?view=summary&page=1&pageSize=1&status="
+    Promise.all([count(base + "DRAFT"), count(base + "CONFIRMED"), count(base + "PARTIALLY_DELIVERED")]).then(([drafts, confirmed, partial]) =>
+      setCounts({ drafts, open: confirmed + partial })
+    )
+  }, [list.total])
 
-  const fetchSalesOrders = async (status: string) => {
-    setIsLoading(true)
-    try {
-      const response = await fetch(`/api/sales-orders${status === "ALL" ? "" : `?status=${status}`}`)
-      if (response.ok) {
-        const data = await response.json()
-        setSalesOrders(data)
-      }
-    } catch (error) {
-      console.error("Error fetching sales orders:", error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Delivered (invoiced) today: deliveries are what count as sales.
-  const calculateTotalSalesToday = () => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-
-    return salesOrders
-      .filter((order) => {
-        const deliveredAt = order.deliveredAt ? new Date(order.deliveredAt) : null
-        return order.status === "DELIVERED" && deliveredAt && deliveredAt >= today && deliveredAt < tomorrow
-      })
-      .reduce((sum, order) => sum + Number(order.total || 0), 0)
-  }
-
-  // Pending shipments: confirmed or partly delivered (drafts are not orders yet).
-  const calculatePendingShipments = () => salesOrders.filter((order) => isOpenSalesStatus(order.status)).length
   const isExpired = (order: any) => isOpenSalesStatus(order.status) && order.reservedUntil && new Date(order.reservedUntil) < new Date()
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Sales Orders</h1>
-          <p className="text-muted-foreground">
-            Manage customer orders and track sales
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">Sales orders</h1>
+          <p className="text-muted-foreground">Drafts reserve nothing; confirmed orders hold stock until delivered</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {canSeeReservations && (
             <Button asChild variant="outline">
               <Link href="/sales/reservations"><CalendarClock className="mr-2 h-4 w-4" /> Reservations</Link>
             </Button>
           )}
+          {canSellNow && (
+            <Button asChild variant="outline">
+              <Link href="/sales/new?mode=sell"><Store className="mr-2 h-4 w-4" /> Sell now</Link>
+            </Button>
+          )}
           {canCreate && (
-            <Link href="/sales/new">
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                New Sales Order
-              </Button>
-            </Link>
+            <Button asChild>
+              <Link href="/sales/new"><Plus className="mr-2 h-4 w-4" /> New sales order</Link>
+            </Button>
           )}
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle>Fully delivered today</CardTitle>
+          <CardHeader className="pb-2">
+            <CardDescription>Waiting for delivery (confirmed / partly delivered)</CardDescription>
+            <CardTitle className="text-2xl">{counts?.open ?? "…"}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(calculateTotalSalesToday())}</div>
-          </CardContent>
         </Card>
         <Card>
-          <CardHeader>
-            <CardTitle>Pending Shipments</CardTitle>
+          <CardHeader className="pb-2">
+            <CardDescription>Drafts (no stock reserved)</CardDescription>
+            <CardTitle className="text-2xl">{counts?.drafts ?? "…"}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{calculatePendingShipments()}</div>
-          </CardContent>
         </Card>
       </div>
 
@@ -108,52 +81,51 @@ export default function SalesPage() {
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <CardTitle>Recent Sales Orders</CardTitle>
-              <CardDescription>Drafts reserve nothing; confirmed orders hold stock until delivered</CardDescription>
+              <CardTitle>Orders</CardTitle>
+              <CardDescription>{list.loading ? "…" : `${list.total} order(s)`}</CardDescription>
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All statuses</SelectItem>
-                {Object.entries(SALES_STATUS).map(([value, s]) => (
-                  <SelectItem key={value} value={value}>{s.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+              <SearchBox value={list.q} onChange={list.setQ} placeholder="Order number or customer" />
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-full sm:w-52"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>All statuses</SelectItem>
+                  {Object.entries(SALES_STATUS).map(([value, s]) => (
+                    <SelectItem key={value} value={value}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Order ID</TableHead>
+                <TableHead>Order</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Discount</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Reserved until</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="text-right">Open</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    Loading...
-                  </TableCell>
-                </TableRow>
-              ) : salesOrders.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    No sales orders found. Click &quot;New Sales Order&quot; to create your first order.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                salesOrders.map((order) => (
+              <ListStateRow
+                colSpan={8}
+                loading={list.loading && list.rows.length === 0}
+                error={list.error}
+                empty={list.rows.length === 0}
+                searching={!!list.q || status !== ALL}
+                emptyText="No sales orders yet."
+                action={canSellNow ? { label: "Sell now", href: "/sales/new?mode=sell" } : canCreate ? { label: "New sales order", href: "/sales/new" } : null}
+              />
+              {list.rows.map((order: any) => (
                 <TableRow key={order.id}>
                   <TableCell className="font-medium">
-                    {order.orderNumber}
+                    <Link href={`/sales/${order.id}`} className="hover:underline">{order.orderNumber}</Link>
                   </TableCell>
                   <TableCell>{order.customer?.name || "N/A"}</TableCell>
                   <TableCell>{formatDate(order.orderDate || order.createdAt)}</TableCell>
@@ -162,9 +134,7 @@ export default function SalesPage() {
                   </TableCell>
                   <TableCell className="font-medium">{formatCurrency(order.total)}</TableCell>
                   <TableCell>
-                    <Badge variant={SALES_STATUS[order.status]?.variant ?? "secondary"}>
-                      {SALES_STATUS[order.status]?.label ?? order.status}
-                    </Badge>
+                    <Badge variant={SALES_STATUS[order.status]?.variant ?? "secondary"}>{SALES_STATUS[order.status]?.label ?? order.status}</Badge>
                   </TableCell>
                   <TableCell>
                     {isOpenSalesStatus(order.status) && order.reservedUntil ? (
@@ -182,10 +152,10 @@ export default function SalesPage() {
                     </Button>
                   </TableCell>
                 </TableRow>
-                ))
-              )}
+              ))}
             </TableBody>
           </Table>
+          <ListPagination list={list} />
         </CardContent>
       </Card>
     </div>

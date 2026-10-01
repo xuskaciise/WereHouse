@@ -212,12 +212,15 @@ export default function NewTransferPage() {
         </Button>
         {canDispatch && (
           <>
-            <Button onClick={() => submit("DISPATCH")} disabled={saving || !ready || problems.length > 0}>
-              Dispatch now
+            <Button variant={expectedDate ? "default" : "secondary"} onClick={() => submit("DISPATCH")} disabled={saving || !ready || problems.length > 0}>
+              Dispatch now (receive later)
             </Button>
-            <Button variant="secondary" onClick={() => submit("INSTANT")} disabled={saving || !ready || problems.length > 0}>
+            <Button variant={expectedDate ? "secondary" : "default"} onClick={() => submit("INSTANT")} disabled={saving || !ready || problems.length > 0}>
               Instant transfer (dispatch + receive)
             </Button>
+            <p className="w-full text-xs text-muted-foreground">
+              Goods that arrive today: Instant transfer. Goods on the road (expected date set): Dispatch now and receive at the destination.
+            </p>
           </>
         )}
       </div>

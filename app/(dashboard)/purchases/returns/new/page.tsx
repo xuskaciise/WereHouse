@@ -142,8 +142,22 @@ export default function NewPurchaseReturnPage() {
       {po && (
         <Card>
           <CardHeader>
-            <CardTitle>Lines</CardTitle>
-            <CardDescription>Stock leaves at the warehouse average cost; the supplier is credited at the purchase price.</CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <CardTitle>Lines</CardTitle>
+                <CardDescription>Stock leaves at the warehouse average cost; the supplier is credited at the purchase price.</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setQty(Object.fromEntries(lines.filter((l: any) => Math.min(l.returnable, l.available) > 0).map((l: any) => [l.itemId, String(Math.min(l.returnable, l.available))])))}
+                >
+                  Return all
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setQty({})}>Clear</Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <Table>

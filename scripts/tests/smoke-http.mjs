@@ -63,6 +63,24 @@ check("company profile has a walk-in customer for sellers", typeof company.walkI
 const logo = await admin("/api/company/logo")
 check("logo route answers (image or default)", logo.status === 200 || logo.status === 307, logo.status)
 
+// P2: server-side search + pagination on the big lists, purchase order page.
+for (const [api, q] of [["/api/sales-orders", "SO-"], ["/api/purchase-orders", "PO-"], ["/api/products", "a"], ["/api/customers", "a"], ["/api/suppliers", "a"], ["/api/customer-payments", "a"], ["/api/supplier-payments", "a"], ["/api/expenses", "a"]]) {
+  const all = await admin(`${api}?page=1&pageSize=1`)
+  const total = Number(all.headers.get("x-total-count"))
+  const found = await admin(`${api}?page=1&pageSize=5&q=${encodeURIComponent(q)}`)
+  const rows = await found.json()
+  const matching = Number(found.headers.get("x-total-count"))
+  check(`${api}: paged (total ${total}) and searchable (${matching} match "${q}")`, all.status === 200 && found.status === 200 && rows.length <= 5 && matching <= total, `${all.status}/${found.status}`)
+}
+const none = await admin("/api/products?page=1&pageSize=5&q=zz-no-such-product-zz")
+check("search with no match returns an empty page", none.status === 200 && (await none.json()).length === 0)
+const po = (await (await admin("/api/purchase-orders?page=1&pageSize=1")).json())[0]
+if (po) {
+  check("GET /api/purchase-orders/[id]", (await admin(`/api/purchase-orders/${po.id}`)).status === 200)
+  check("purchase order page", (await admin(`/purchases/${po.id}`)).status === 200)
+}
+check("unknown purchase order -> 404", (await admin("/api/purchase-orders/nope")).status === 404)
+
 const acc = await login("smoke_accountant")
 for (const [p, ok] of [["/settings", 307], ["/settings/landed-cost-types", 200], ["/settings/expense-categories", 200], ["/settings/financial", 307], ["/users", 307], ["/accounts", 200], ["/reports/profit-loss", 200]]) {
   const res = await acc(p)

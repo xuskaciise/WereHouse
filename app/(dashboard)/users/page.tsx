@@ -46,6 +46,7 @@ import { User, Role } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
 import { ROLE_LABELS, can } from "@/lib/permission-rules"
+import { useConfirm } from "@/components/confirm-provider"
 
 export default function UsersPage() {
   const { toast } = useToast()
@@ -216,8 +217,10 @@ export default function UsersPage() {
     )
   }
 
+  const confirmDialog = useConfirm()
+
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this user?")) {
+    if (!(await confirmDialog({ title: "Delete this user?", description: "This cannot be undone.", confirmLabel: "Delete", destructive: true }))) {
       return
     }
 

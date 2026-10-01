@@ -19,6 +19,7 @@ import { taxLabel } from "@/lib/tax-rules"
 import { SALES_EVENTS, SALES_STATUS, isOpenSalesStatus } from "@/lib/sales-labels"
 import { CompanyHeader, useCompany } from "@/components/company-header"
 import { RecordPaymentDialog } from "@/components/record-payment-dialog"
+import { useConfirm } from "@/components/confirm-provider"
 
 const when = (d: string | null | undefined) => (d ? `${formatDate(d)} ${new Date(d).toLocaleTimeString()}` : "")
 
@@ -29,6 +30,7 @@ export default function SalesOrderPage() {
   const seesCost = useCan("product_cost", "view")
   const canReturn = useCan("sales_returns", "create")
   const canReceivePayment = useCan("customer_payments", "create")
+  const confirm = useConfirm()
   const company = useCompany()
   const [payOpen, setPayOpen] = useState(false)
 
@@ -150,7 +152,7 @@ export default function SalesOrderPage() {
           {may("delete") && (
             <Button
               variant="ghost"
-              onClick={() => window.confirm(`Delete draft ${o.orderNumber}?`) && call("", "DELETE", undefined, "Draft deleted")}
+              onClick={async () => (await confirm({ title: `Delete draft ${o.orderNumber}?`, description: "The draft never touched stock; nothing else changes.", confirmLabel: "Delete draft", destructive: true })) && call("", "DELETE", undefined, "Draft deleted")}
               disabled={busy}
             >
               <Trash2 className="mr-2 h-4 w-4" /> Delete draft

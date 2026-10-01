@@ -5,7 +5,7 @@ import { parsePaymentFields } from "@/lib/payment-fields"
 import { HttpError } from "@/lib/auth-guard"
 import { scopeWhere } from "@/lib/permissions"
 import { parseMoney } from "@/lib/money"
-import { dateRangeWhere, listResponse } from "@/lib/pagination"
+import { containsAny, dateRangeWhere, listResponse, searchTerm } from "@/lib/pagination"
 
 const expenseInclude = {
   category: true,
@@ -14,6 +14,9 @@ const expenseInclude = {
 
 export const GET = withAuth(async (request, { user }) => {
   const where = { ...scopeWhere(user, "expenses"), ...dateRangeWhere(request, "expenseDate"),
+    // ?q= description / reference / category; ?categoryId=
+    ...containsAny(searchTerm(request), ["description", "reference", "category.name"]),
+    ...(new URL(request.url).searchParams.get("categoryId") && { categoryId: new URL(request.url).searchParams.get("categoryId")! }),
     // ?paymentMethod=EVC_PLUS
     ...(new URL(request.url).searchParams.get("paymentMethod") && {
       paymentMethod: new URL(request.url).searchParams.get("paymentMethod")!,

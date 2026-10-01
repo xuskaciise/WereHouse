@@ -32,6 +32,8 @@ import { validateProductDates } from "@/lib/product-date-validation"
 import { useCan } from "@/components/providers/current-user-provider"
 import { AccountLinkFields, emptyAccountLinks, type AccountLinkValue } from "@/components/account-select"
 import { UrlActions } from "@/components/url-actions"
+import { ListPagination, ListStateRow, usePagedList } from "@/components/data-list"
+import { useConfirm } from "@/components/confirm-provider"
 
 export default function ProductsPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -40,19 +42,21 @@ export default function ProductsPage() {
   const canDelete = useCan("products", "delete")
   const seesCost = useCan("product_cost", "view")
   const { toast } = useToast()
-  const [products, setProducts] = useState<any[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [warehouses, setWarehouses] = useState<any[]>([])
   const [stock, setStock] = useState<any[]>([])
-  const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
+  // Server-side search (name / SKU), category filter and pagination.
+  const list = usePagedList("/api/products", { categoryId: selectedCategory === "all" ? undefined : selectedCategory })
+  const products = list.rows as any[]
+  const searchTerm = list.q
+  const setSearchTerm = list.setQ
+  const fetchProducts = list.reload
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     fetchCategories()
-    fetchProducts()
     fetchWarehouses()
     fetchStock()
   }, [])
@@ -93,46 +97,12 @@ export default function ProductsPage() {
     }
   }
 
-  const fetchProducts = async () => {
-    try {
-      setIsLoading(true)
-      const response = await fetch("/api/products")
-      if (response.ok) {
-        const data = await response.json()
-        console.log("Fetched products:", data) // Debug log
-        setProducts(data || [])
-      } else {
-        const error = await response.json()
-        console.error("Failed to fetch products:", error)
-        toast({
-          title: "Error",
-          description: error.error || "Failed to fetch products",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Error fetching products:", error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch products",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const filteredProducts = products
 
-  const filteredProducts = products.filter((product) => {
-    const matchesSearch =
-      product.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.sku?.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesCategory =
-      selectedCategory === "all" || product.categoryId === selectedCategory
-    return matchesSearch && matchesCategory
-  })
+  const confirmDialog = useConfirm()
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this product?")) {
+    if (!(await confirmDialog({ title: "Delete this product?", description: "This cannot be undone.", confirmLabel: "Delete", destructive: true }))) {
       return
     }
 
@@ -261,11 +231,7 @@ export default function ProductsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="text-muted-foreground">Loading products...</div>
-            </div>
-          ) : (
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -281,13 +247,16 @@ export default function ProductsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredProducts.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={seesCost ? 9 : 8} className="text-center text-muted-foreground py-8">
-                      No products found. Click &quot;Add New Product&quot; to create your first product.
-                    </TableCell>
-                  </TableRow>
-                ) : (
+                <ListStateRow
+                  colSpan={seesCost ? 9 : 8}
+                  loading={list.loading && filteredProducts.length === 0}
+                  error={list.error}
+                  empty={filteredProducts.length === 0}
+                  searching={!!searchTerm || selectedCategory !== "all"}
+                  emptyText="No products yet."
+                  action={canCreate ? { label: "Add product", onClick: () => { setEditingProduct(null); setIsDialogOpen(true) } } : null}
+                />
+                {filteredProducts.length > 0 && (
                 filteredProducts.map((product) => (
                 <TableRow key={product.id}>
                   <TableCell>
@@ -351,7 +320,8 @@ export default function ProductsPage() {
                 )}
               </TableBody>
             </Table>
-          )}
+            <ListPagination list={list} />
+          </div>
         </CardContent>
       </Card>
     </div>

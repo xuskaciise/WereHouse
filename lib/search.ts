@@ -54,7 +54,7 @@ export async function globalSearch(user: PermissionUser, raw: string): Promise<S
     tasks.push(
       prisma.purchaseOrder
         .findMany({ where: { ...scopeWhere(user, "purchases"), orderNumber: contains }, take: LIMIT, orderBy: { createdAt: "desc" }, select: { id: true, orderNumber: true, supplier: { select: { name: true } } } })
-        .then((rows) => rows.map((r) => ({ type: "Purchase order", label: r.orderNumber, sub: r.supplier.name, href: `/purchases?open=${r.id}` })))
+        .then((rows) => rows.map((r) => ({ type: "Purchase order", label: r.orderNumber, sub: r.supplier.name, href: `/purchases/${r.id}` })))
     )
   }
   if (has("stock_transfers")) {

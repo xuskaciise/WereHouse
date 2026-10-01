@@ -144,10 +144,24 @@ export default function NewSalesReturnPage() {
       {order && (
         <Card>
           <CardHeader>
-            <CardTitle>Returned goods</CardTitle>
-            <CardDescription>
-              Resellable units go back to stock at their original cost. Damaged units do not; their cost is booked as a loss.
-            </CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <CardTitle>Returned goods</CardTitle>
+                <CardDescription>
+                  Resellable units go back to stock at their original cost. Damaged units do not; their cost is booked as a loss.
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRows(Object.fromEntries(lines.filter((l: any) => l.returnable > 0).map((l: any) => [l.itemId, { good: String(l.returnable), damaged: "" }])))}
+                >
+                  Return all (resellable)
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setRows({})}>Clear</Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <Table>

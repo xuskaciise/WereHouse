@@ -55,6 +55,7 @@ import {
 } from "@/lib/expense-rules"
 import { ExpenseAccountField } from "@/components/account-select"
 import { UrlActions } from "@/components/url-actions"
+import { ListPagination, ListStateRow, SearchBox, usePagedList } from "@/components/data-list"
 
 interface ExpenseCategory {
   id: string
@@ -92,13 +93,15 @@ export function ExpensesView({ categoriesOnly = false }: { categoriesOnly?: bool
   const canEditCategory = useCan("expense_categories", "edit")
   const canDeleteCategory = useCan("expense_categories", "delete")
   const showActions = canEditCategory || canDeleteCategory
-  const [expenses, setExpenses] = useState<any[]>([])
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [activeTab, setActiveTab] = useState(canViewExpenses && !categoriesOnly ? "expenses" : "categories")
   const [methodFilter, setMethodFilter] = useState("all")
+  // Server-side search, payment method filter and pagination.
+  const list = usePagedList(canViewExpenses && !categoriesOnly ? "/api/expenses" : null, { paymentMethod: methodFilter === "all" ? undefined : methodFilter })
+  const expenses = list.rows as any[]
+  const fetchExpenses = list.reload
   const [categoryDialog, setCategoryDialog] = useState<{ open: boolean; category: ExpenseCategory | null }>({
     open: false,
     category: null,
@@ -106,36 +109,10 @@ export function ExpensesView({ categoriesOnly = false }: { categoriesOnly?: bool
   const [deleteTarget, setDeleteTarget] = useState<ExpenseCategory | null>(null)
 
   useEffect(() => {
-    if (canViewExpenses) fetchExpenses()
-    else setIsLoading(false)
     fetchExpenseCategories()
   }, [])
 
-  const fetchExpenses = async () => {
-    try {
-      setIsLoading(true)
-      const response = await fetch("/api/expenses")
-      if (response.ok) {
-        const data = await response.json()
-        setExpenses(data || [])
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to fetch expenses",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Error fetching expenses:", error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch expenses",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
+
 
   const fetchExpenseCategories = async () => {
     try {
@@ -254,6 +231,8 @@ export function ExpensesView({ categoriesOnly = false }: { categoriesOnly?: bool
                     List of all recorded expenses
                   </CardDescription>
                 </div>
+                <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+                <SearchBox value={list.q} onChange={list.setQ} placeholder="Description, reference or category" />
                 <Select value={methodFilter} onValueChange={setMethodFilter}>
                   <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -261,14 +240,11 @@ export function ExpensesView({ categoriesOnly = false }: { categoriesOnly?: bool
                     {PAYMENT_METHODS.map((m) => <SelectItem key={m.code} value={m.code}>{m.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="text-muted-foreground">Loading expenses...</div>
-                </div>
-              ) : (
+              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -282,14 +258,17 @@ export function ExpensesView({ categoriesOnly = false }: { categoriesOnly?: bool
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {expenses.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                          No expenses found. Click &quot;Add Expense&quot; to record your first expense.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      expenses.filter((e) => methodFilter === "all" || e.paymentMethod === methodFilter).map((expense) => (
+                    <ListStateRow
+                      colSpan={7}
+                      loading={list.loading && expenses.length === 0}
+                      error={list.error}
+                      empty={expenses.length === 0}
+                      searching={!!list.q || methodFilter !== "all"}
+                      emptyText="No expenses recorded yet."
+                      action={canCreateExpense ? { label: "Add expense", onClick: () => setIsDialogOpen(true) } : null}
+                    />
+                    {expenses.length > 0 && (
+                      expenses.map((expense) => (
                         <TableRow key={expense.id}>
                           <TableCell className="font-medium">
                             {expense.category?.name || "N/A"}
@@ -309,7 +288,8 @@ export function ExpensesView({ categoriesOnly = false }: { categoriesOnly?: bool
                     )}
                   </TableBody>
                 </Table>
-              )}
+                <ListPagination list={list} />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

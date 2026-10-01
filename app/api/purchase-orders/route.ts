@@ -5,7 +5,7 @@ import { HttpError } from "@/lib/auth-guard"
 import { scopeWhere } from "@/lib/permissions"
 import { assertCanReference } from "@/lib/ownership"
 import { calculateOrderTotals, createWithOrderNumber, parseOrderItems, parseOrderStatus } from "@/lib/orders"
-import { dateRangeWhere, listResponse } from "@/lib/pagination"
+import { containsAny, dateRangeWhere, listResponse, searchTerm } from "@/lib/pagination"
 import { purchaseOrderDetailInclude as purchaseOrderInclude } from "@/lib/purchase-orders"
 import { currentTaxRate } from "@/lib/tax"
 
@@ -20,6 +20,9 @@ export const GET = withAuth(async (request, { user }) => {
   const params = new URL(request.url).searchParams
   const status = params.get("status")
   const where: Prisma.PurchaseOrderWhereInput = {
+    // ?q= order number or supplier; ?supplierId=
+    ...containsAny(searchTerm(request), ["orderNumber", "supplier.name"]),
+    ...(params.get("supplierId") && { supplierId: params.get("supplierId")! }),
     ...scopeWhere(user, "purchases"),
     ...dateRangeWhere(request, "orderDate"),
     ...(status && { status: parseOrderStatus(status) }),

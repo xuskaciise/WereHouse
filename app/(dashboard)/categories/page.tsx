@@ -28,6 +28,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { formatDate } from "@/lib/utils"
 import { useCan } from "@/components/providers/current-user-provider"
 import { AccountLinkFields, emptyAccountLinks, type AccountLinkValue } from "@/components/account-select"
+import { useConfirm } from "@/components/confirm-provider"
 
 export default function CategoriesPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -70,8 +71,10 @@ export default function CategoriesPage() {
     }
   }
 
+  const confirmDialog = useConfirm()
+
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this category?")) {
+    if (!(await confirmDialog({ title: "Delete this category?", description: "This cannot be undone.", confirmLabel: "Delete", destructive: true }))) {
       return
     }
 

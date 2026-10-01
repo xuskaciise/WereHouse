@@ -91,12 +91,17 @@ export function PurchaseOrderDetailsSheet({
   open,
   onOpenChange,
   onReceiveComplete,
+  asPage = false,
 }: {
   order: any
   open: boolean
   onOpenChange: (open: boolean) => void
   onReceiveComplete: (orderId: string) => void | Promise<void>
+  /** Full page (/purchases/[id]) instead of a side sheet. */
+  asPage?: boolean
 }) {
+  const Title = asPage ? PageTitle : SheetTitle
+  const Description = asPage ? PageDescription : SheetDescription
   const { toast } = useToast()
   // Same permissions the API checks (lib/permission-rules.ts).
   const canReceive = useCan("purchase_receive", "create")
@@ -279,19 +284,18 @@ export function PurchaseOrderDetailsSheet({
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-full sm:max-w-3xl overflow-y-auto">
+      <Frame asPage={asPage} open={open} onOpenChange={onOpenChange}>
           <div id="purchase-order-print-root" className="space-y-6 pt-2">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between pr-6">
               <div className="flex flex-col gap-3 min-[480px]:flex-row min-[480px]:items-center min-[480px]:gap-4 min-w-0">
                 <CompanyHeader align="left" />
                 <div className="min-w-0 text-left">
-                  <SheetTitle className="text-left text-xl font-semibold leading-tight">
+                  <Title className="text-left text-xl font-semibold leading-tight">
                     Purchase Order: {order.orderNumber}
-                  </SheetTitle>
-                  <SheetDescription className="text-left mt-1">
-                    View purchase order details and items
-                  </SheetDescription>
+                  </Title>
+                  <Description className="text-left mt-1 text-sm text-muted-foreground">
+                    {order.supplier?.name} · {order.warehouse?.name}
+                  </Description>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 print:hidden shrink-0">
@@ -475,8 +479,7 @@ export function PurchaseOrderDetailsSheet({
               )}
             </div>
           </div>
-        </SheetContent>
-      </Sheet>
+      </Frame>
       <RecordPaymentDialog
         open={payOpen}
         onOpenChange={setPayOpen}
@@ -501,6 +504,17 @@ export function PurchaseOrderDetailsSheet({
                 : " Your role cannot receive more than ordered or close a remainder."}
             </DialogDescription>
           </DialogHeader>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={openReceiveDialog}>Receive all remaining</Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setReceiveRows((prev) => Object.fromEntries(Object.entries(prev).map(([id, r]) => [id, { ...r, qty: "0" }])))}
+            >
+              Clear
+            </Button>
+          </div>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
             <Table>
               <TableHeader>
@@ -680,5 +694,22 @@ export function PurchaseOrderDetailsSheet({
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+function PageTitle({ className, children }: { className?: string; children: React.ReactNode }) {
+  return <h1 className={className}>{children}</h1>
+}
+function PageDescription({ className, children }: { className?: string; children: React.ReactNode }) {
+  return <p className={className}>{children}</p>
+}
+
+/** Side sheet, or a card on the full purchase order page. */
+function Frame({ asPage, open, onOpenChange, children }: { asPage: boolean; open: boolean; onOpenChange: (open: boolean) => void; children: React.ReactNode }) {
+  if (asPage) return <div className="rounded-lg border bg-card p-4 sm:p-6 print:border-0 print:p-0">{children}</div>
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-3xl overflow-y-auto">{children}</SheetContent>
+    </Sheet>
   )
 }

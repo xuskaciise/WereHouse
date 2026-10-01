@@ -1,12 +1,14 @@
 import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import { Breadcrumbs } from "@/components/layout/breadcrumbs"
+import { ConfirmProvider } from "@/components/confirm-provider"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Navbar } from "@/components/layout/navbar"
 import { CurrentUserProvider } from "@/components/providers/current-user-provider"
 import { getCurrentUser } from "@/lib/auth-guard"
 import { reasonReferenceLimit } from "@/lib/sales-discounts"
 import { prisma } from "@/lib/prisma"
+import { useConfirm } from "@/components/confirm-provider"
 
 export default async function DashboardLayout({
   children,
@@ -20,6 +22,7 @@ export default async function DashboardLayout({
 
   return (
     <CurrentUserProvider user={{ ...user, discountReasonReferenceLimit }} currency={currency}>
+      <ConfirmProvider>
       <div className="flex h-screen overflow-hidden">
         <Suspense>
           <Sidebar />
@@ -36,6 +39,7 @@ export default async function DashboardLayout({
           </main>
         </div>
       </div>
+      </ConfirmProvider>
     </CurrentUserProvider>
   )
 }

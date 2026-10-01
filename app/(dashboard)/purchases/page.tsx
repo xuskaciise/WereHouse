@@ -1,226 +1,146 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Plus, Eye, Download, Printer } from "lucide-react"
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { Download, Eye, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import { useToast } from "@/components/ui/use-toast"
-import Link from "next/link"
 import { purchaseStatusLabel } from "@/lib/purchase-rules"
-import { PurchaseOrderDetailsSheet, purchaseOrderStatusBadgeVariant } from "./purchase-order-details-sheet"
+import { purchaseOrderStatusBadgeVariant } from "./purchase-order-details-sheet"
 import { useCan } from "@/components/providers/current-user-provider"
 import { downloadCsv, moneyCell } from "@/lib/export-file"
+import { ListPagination, ListStateRow, SearchBox, usePagedList } from "@/components/data-list"
+
+const ALL = "ALL"
+const STATUSES = ["PENDING", "PARTIALLY_RECEIVED", "CONFIRMED", "CANCELLED"]
 
 export default function PurchasesPage() {
+  const router = useRouter()
   // Hide what the role may not do; the API enforces the same permissions.
   const canCreate = useCan("purchases", "create")
-  const { toast } = useToast()
-  const [purchaseOrders, setPurchaseOrders] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [selectedOrder, setSelectedOrder] = useState<any | null>(null)
-  const [pendingPrint, setPendingPrint] = useState(false)
+  const [status, setStatus] = useState(ALL)
+  const list = usePagedList("/api/purchase-orders", { status: status === ALL ? undefined : status })
 
+  // Old links (?open=<id>) go to the purchase order page.
   useEffect(() => {
-    fetchPurchaseOrders()
-  }, [])
+    const open = new URLSearchParams(window.location.search).get("open")
+    if (open) router.replace(`/purchases/${open}`)
+  }, [router])
 
-  useEffect(() => {
-    if (!selectedOrder || !pendingPrint) return
-    const timer = window.setTimeout(() => {
-      window.print()
-      setPendingPrint(false)
-    }, 400)
-    return () => window.clearTimeout(timer)
-  }, [selectedOrder, pendingPrint])
-
-  const fetchPurchaseOrders = async () => {
-    try {
-      setIsLoading(true)
-      const response = await fetch("/api/purchase-orders")
-      if (response.ok) {
-        const data = await response.json()
-        setPurchaseOrders(data || [])
-        const open = new URLSearchParams(window.location.search).get("open")
-        if (open) {
-          const order = (data as any[]).find((o) => o.id === open)
-          if (order) setSelectedOrder(order)
-        }
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to fetch purchase orders",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Error fetching purchase orders:", error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch purchase orders",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
+  const exportCsv = async () => {
+    // All matching orders (not only this page).
+    const params = new URLSearchParams({ view: "summary" })
+    if (list.q.trim()) params.set("q", list.q.trim())
+    if (status !== ALL) params.set("status", status)
+    const res = await fetch(`/api/purchase-orders?${params}`)
+    if (!res.ok) return
+    const rows = await res.json()
+    downloadCsv(`purchase_orders_${new Date().toISOString().slice(0, 10)}.csv`, [
+      ["Order", "Date", "Supplier", "Warehouse", "Status", "Subtotal", "Discount", "Tax", "Total"],
+      ...rows.map((o: any) => [
+        o.orderNumber,
+        String(o.orderDate).slice(0, 10),
+        o.supplier?.name,
+        o.warehouse?.name,
+        purchaseStatusLabel(o.status),
+        moneyCell(o.subtotal),
+        moneyCell(o.discount),
+        moneyCell(o.tax),
+        moneyCell(o.total),
+      ]),
+    ])
   }
 
-  const reloadOrdersAndSelection = async (orderId: string) => {
-    try {
-      const response = await fetch("/api/purchase-orders")
-      if (!response.ok) return
-      const data = await response.json()
-      setPurchaseOrders(data || [])
-      const next = (data as any[]).find((o: any) => o.id === orderId)
-      if (next) setSelectedOrder(next)
-    } catch (error) {
-      console.error("Error refreshing purchase orders:", error)
-    }
-  }
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Purchase Orders</h1>
-          <p className="text-muted-foreground">
-            Manage educational supply orders and track procurement workflow
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">Purchase orders</h1>
+          <p className="text-muted-foreground">Order from suppliers, receive the goods, add landed costs and pay</p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            disabled={purchaseOrders.length === 0}
-            onClick={() =>
-              downloadCsv(`purchase_orders_${new Date().toISOString().slice(0, 10)}.csv`, [
-                ["Order", "Date", "Supplier", "Warehouse", "Status", "Subtotal", "Discount", "Tax", "Total"],
-                ...purchaseOrders.map((o: any) => [
-                  o.orderNumber,
-                  String(o.orderDate).slice(0, 10),
-                  o.supplier?.name,
-                  o.warehouse?.name,
-                  o.status,
-                  moneyCell(o.subtotal),
-                  moneyCell(o.discount),
-                  moneyCell(o.tax),
-                  moneyCell(o.total),
-                ]),
-              ])
-            }
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
+          <Button variant="outline" disabled={list.total === 0} onClick={exportCsv}>
+            <Download className="mr-2 h-4 w-4" /> Export CSV
           </Button>
           {canCreate && (
-            <Link href="/purchases/new">
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                New Purchase Order
-              </Button>
-            </Link>
+            <Button asChild>
+              <Link href="/purchases/new"><Plus className="mr-2 h-4 w-4" /> New purchase order</Link>
+            </Button>
           )}
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <CardTitle>Recent Purchase Orders</CardTitle>
-              <CardDescription>
-                List of all purchase orders
-              </CardDescription>
+              <CardTitle>Orders</CardTitle>
+              <CardDescription>{list.loading ? "…" : `${list.total} order(s)`}</CardDescription>
             </div>
-            <span className="text-sm text-muted-foreground">
-              Total: {purchaseOrders.length}
-            </span>
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+              <SearchBox value={list.q} onChange={list.setQ} placeholder="PO number or supplier" />
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-full sm:w-48"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL}>All statuses</SelectItem>
+                  {STATUSES.map((s) => <SelectItem key={s} value={s}>{purchaseStatusLabel(s)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="text-muted-foreground">Loading purchase orders...</div>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>PO Number</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead>Order Date</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created By</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>PO number</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Order date</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created by</TableHead>
+                <TableHead className="text-right">Open</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <ListStateRow
+                colSpan={7}
+                loading={list.loading && list.rows.length === 0}
+                error={list.error}
+                empty={list.rows.length === 0}
+                searching={!!list.q || status !== ALL}
+                emptyText="No purchase orders yet."
+                action={canCreate ? { label: "New purchase order", href: "/purchases/new" } : null}
+              />
+              {list.rows.map((order: any) => (
+                <TableRow key={order.id}>
+                  <TableCell className="font-medium">
+                    <Link href={`/purchases/${order.id}`} className="hover:underline">{order.orderNumber}</Link>
+                  </TableCell>
+                  <TableCell>{order.supplier?.name || "N/A"}</TableCell>
+                  <TableCell>{formatDate(order.orderDate)}</TableCell>
+                  <TableCell>{formatCurrency(order.total || 0)}</TableCell>
+                  <TableCell>
+                    <Badge variant={purchaseOrderStatusBadgeVariant(order.status)}>{purchaseStatusLabel(order.status)}</Badge>
+                  </TableCell>
+                  <TableCell>{order.user?.username || order.user?.name || "N/A"}</TableCell>
+                  <TableCell className="text-right">
+                    <Button asChild variant="ghost" size="icon" title="Open">
+                      <Link href={`/purchases/${order.id}`}><Eye className="h-4 w-4" /></Link>
+                    </Button>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {purchaseOrders.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      No purchase orders found. Click &quot;New Purchase Order&quot; to create your first order.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  purchaseOrders.map((order) => (
-                    <TableRow key={order.id}>
-                      <TableCell className="font-medium">
-                        {order.orderNumber}
-                      </TableCell>
-                      <TableCell>{order.supplier?.name || "N/A"}</TableCell>
-                      <TableCell>{formatDate(order.orderDate)}</TableCell>
-                      <TableCell>{formatCurrency(order.total || 0)}</TableCell>
-                      <TableCell>
-                        <Badge variant={purchaseOrderStatusBadgeVariant(order.status)}>
-                          {purchaseStatusLabel(order.status)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{order.user?.username || order.user?.name || "N/A"}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-0">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setPendingPrint(false)
-                              setSelectedOrder(order)
-                            }}
-                            title="View"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setSelectedOrder(order)
-                              setPendingPrint(true)
-                            }}
-                            title="Print"
-                          >
-                            <Printer className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          )}
+              ))}
+            </TableBody>
+          </Table>
+          <ListPagination list={list} />
         </CardContent>
       </Card>
-
-      {selectedOrder && (
-        <PurchaseOrderDetailsSheet
-          order={selectedOrder}
-          open={!!selectedOrder}
-          onOpenChange={(open) => !open && setSelectedOrder(null)}
-          onReceiveComplete={(orderId) => reloadOrdersAndSelection(orderId)}
-        />
-      )}
     </div>
   )
 }
-

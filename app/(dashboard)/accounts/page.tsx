@@ -15,6 +15,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { useCan, useCurrentUser } from "@/components/providers/current-user-provider"
 import { formatCurrency } from "@/lib/utils"
 import { ACCOUNT_TYPES, GROUPS_OF, GROUP_LABEL, TYPE_LABEL } from "@/lib/account-labels"
+import { useConfirm } from "@/components/confirm-provider"
 
 const empty = { id: "", code: "", name: "", type: "EXPENSE", group: "OPERATING_EXPENSE", description: "", isActive: true, systemKey: null as string | null }
 
@@ -23,6 +24,7 @@ export default function AccountsPage() {
   const { toast } = useToast()
   const canEdit = useCan("accounting", "edit")
   const isAdmin = useCurrentUser().role === "ADMIN"
+  const confirm = useConfirm()
   const [accounts, setAccounts] = useState<any[]>([])
   const [health, setHealth] = useState<any | null>(null)
   const [form, setForm] = useState<typeof empty | null>(null)
@@ -60,7 +62,7 @@ export default function AccountsPage() {
   }
 
   const remove = async (a: any) => {
-    if (!window.confirm(`Delete account ${a.code} ${a.name}?`)) return
+    if (!(await confirm({ title: `Delete account ${a.code} ${a.name}?`, description: "Only unused accounts can be deleted.", confirmLabel: "Delete", destructive: true }))) return
     const res = await fetch(`/api/accounts/${a.id}`, { method: "DELETE" })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) return toast({ title: "Error", description: data.error || "Failed", variant: "destructive" })

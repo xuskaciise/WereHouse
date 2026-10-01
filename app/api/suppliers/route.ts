@@ -3,10 +3,11 @@ import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { scopeWhere } from "@/lib/permissions"
 import { withSupplierBalance } from "@/lib/balances"
-import { listResponse } from "@/lib/pagination"
+import { containsAny, listResponse, searchTerm } from "@/lib/pagination"
 
 export const GET = withAuth(async (request, { user }) => {
-  const where = scopeWhere(user, "suppliers")
+  // ?q= name / phone / email / contact person
+  const where = { ...scopeWhere(user, "suppliers"), ...containsAny(searchTerm(request), ["name", "phone", "email", "contactPerson"]) }
   return listResponse(request, {
     findMany: (page) => prisma.supplier.findMany({ where, orderBy: { createdAt: "desc" }, ...page }),
     count: () => prisma.supplier.count({ where }),

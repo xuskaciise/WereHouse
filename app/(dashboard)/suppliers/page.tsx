@@ -35,6 +35,8 @@ import { useToast } from "@/components/ui/use-toast"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useCan } from "@/components/providers/current-user-provider"
 import { UrlActions } from "@/components/url-actions"
+import { useConfirm } from "@/components/confirm-provider"
+import { ListPagination, ListStateRow, SearchBox, usePagedList } from "@/components/data-list"
 
 export default function SuppliersPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -42,49 +44,20 @@ export default function SuppliersPage() {
   const canEdit = useCan("suppliers", "edit")
   const canDelete = useCan("suppliers", "delete")
   const { toast } = useToast()
-  const [suppliers, setSuppliers] = useState<any[]>([])
+  const list = usePagedList("/api/suppliers")
+  const suppliers = list.rows as any[]
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [search, setSearch] = useState("")
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    fetchSuppliers()
-  }, [])
+  const fetchSuppliers = list.reload
 
-  const fetchSuppliers = async () => {
-    try {
-      setIsLoading(true)
-      const response = await fetch("/api/suppliers")
-      const data = await response.json()
-      
-      if (response.ok) {
-        setSuppliers(data)
-      } else {
-        console.error("Error fetching suppliers:", data)
-        toast({
-          title: "Error",
-          description: data.error || "Failed to fetch suppliers",
-          variant: "destructive",
-        })
-        setSuppliers([])
-      }
-    } catch (error: any) {
-      console.error("Error fetching suppliers:", error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to fetch suppliers. Please check your connection.",
-        variant: "destructive",
-      })
-      setSuppliers([])
-    } finally {
-      setIsLoading(false)
-    }
-  }
+
+
+  const confirmDialog = useConfirm()
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this supplier?")) {
+    if (!(await confirmDialog({ title: "Delete this supplier?", description: "This cannot be undone.", confirmLabel: "Delete", destructive: true }))) {
       return
     }
 
@@ -153,16 +126,12 @@ export default function SuppliersPage() {
                 List of all suppliers in the system
               </CardDescription>
             </div>
-            <Input className="max-w-xs" placeholder="Search name, phone or email" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <SearchBox value={list.q} onChange={list.setQ} placeholder="Name, phone or email" />
           </div>
-          <UrlActions onNew={() => canCreate && handleAdd()} onQuery={setSearch} />
+          <UrlActions onNew={() => canCreate && handleAdd()} onQuery={list.setQ} />
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="text-muted-foreground">Loading suppliers...</div>
-            </div>
-          ) : (
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -177,14 +146,9 @@ export default function SuppliersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {suppliers.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                      No suppliers found. Click &quot;Add Supplier&quot; to create your first supplier.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  suppliers.filter((x) => !search.trim() || [x.name, x.phone, x.email].some((v) => v?.toLowerCase().includes(search.trim().toLowerCase()))).map((supplier) => (
+                <ListStateRow colSpan={8} loading={list.loading && suppliers.length === 0} error={list.error} empty={suppliers.length === 0} searching={!!list.q} emptyText="No suppliers yet." action={canCreate ? { label: "Add supplier", onClick: handleAdd } : null} />
+                {suppliers.length > 0 && (
+                  suppliers.map((supplier) => (
                     <TableRow key={supplier.id}>
                       <TableCell className="font-medium">
                         {supplier.name}
@@ -241,7 +205,8 @@ export default function SuppliersPage() {
                 )}
               </TableBody>
             </Table>
-          )}
+            <ListPagination list={list} />
+          </div>
         </CardContent>
       </Card>
 

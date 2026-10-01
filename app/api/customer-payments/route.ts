@@ -8,10 +8,12 @@ import { assertCanReference } from "@/lib/ownership"
 import { parseMoney } from "@/lib/money"
 import { withNestedCustomerBalance } from "@/lib/balances"
 import { customerPaymentInclude as paymentInclude } from "@/lib/includes"
-import { dateRangeWhere, listResponse } from "@/lib/pagination"
+import { containsAny, dateRangeWhere, listResponse, searchTerm } from "@/lib/pagination"
 
 export const GET = withAuth(async (request, { user }) => {
   const where = { ...scopeWhere(user, "customer_payments"), ...dateRangeWhere(request, "paymentDate"),
+    // ?q= customer / reference / transaction ID / order number
+    ...containsAny(searchTerm(request), ["customer.name", "reference", "transactionId", "salesOrder.orderNumber"]),
     // ?paymentMethod=EVC_PLUS
     ...(new URL(request.url).searchParams.get("paymentMethod") && {
       paymentMethod: new URL(request.url).searchParams.get("paymentMethod")!,

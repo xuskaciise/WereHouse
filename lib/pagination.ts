@@ -45,6 +45,23 @@ function parseDay(value: string | null, name: string, endOfDay: boolean): Date |
   return date
 }
 
+/** ?q= search text (trimmed, max 80 characters), or null. */
+export function searchTerm(request: Request): string | null {
+  const q = new URL(request.url).searchParams.get("q")?.trim().slice(0, 80)
+  return q ? q : null
+}
+
+/** Case-insensitive "contains" on any of the given fields (Prisma OR). */
+export function containsAny(q: string | null, fields: string[]): Record<string, unknown> {
+  if (!q) return {}
+  const contains = { contains: q, mode: "insensitive" as const }
+  return {
+    OR: fields.map((path) =>
+      path.split(".").reverse().reduce<Record<string, unknown>>((inner, key, i) => (i === 0 ? { [key]: contains } : { [key]: inner }), {})
+    ),
+  }
+}
+
 /** Prisma `where` fragment for ?from= / ?to= on the given date field. */
 export function dateRangeWhere(request: Request, field: string): Record<string, { gte?: Date; lte?: Date }> {
   const params = new URL(request.url).searchParams

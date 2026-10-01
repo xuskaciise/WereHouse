@@ -37,6 +37,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { useCan } from "@/components/providers/current-user-provider"
 import { formatCurrency, formatUnitCost } from "@/lib/utils"
 import Link from "next/link"
+import { useConfirm } from "@/components/confirm-provider"
 
 export default function InventoryPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -136,8 +137,10 @@ export default function InventoryPage() {
     }
   }
 
+  const confirmDialog = useConfirm()
+
   const handleDelete = async (stockId: string) => {
-    if (!confirm("Are you sure you want to delete this stock record?")) {
+    if (!(await confirmDialog({ title: "Delete this stock record?", description: "This cannot be undone.", confirmLabel: "Delete", destructive: true }))) {
       return
     }
 

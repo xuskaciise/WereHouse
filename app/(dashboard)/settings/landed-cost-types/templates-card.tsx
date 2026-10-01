@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/components/ui/use-toast"
 import { useCan } from "@/components/providers/current-user-provider"
 import { formatCurrency } from "@/lib/utils"
+import { useConfirm } from "@/components/confirm-provider"
 
 interface Line {
   typeId: string
@@ -36,6 +37,7 @@ export function LandedCostTemplatesCard() {
   const canCreate = useCan("landed_cost_types", "create")
   const canEdit = useCan("landed_cost_types", "edit")
   const canDelete = useCan("landed_cost_types", "delete")
+  const confirm = useConfirm()
   const [templates, setTemplates] = useState<any[]>([])
   const [types, setTypes] = useState<any[]>([])
   const [suppliers, setSuppliers] = useState<any[]>([])
@@ -156,7 +158,7 @@ export function LandedCostTemplatesCard() {
                       </Button>
                     )}
                     {canDelete && (
-                      <Button variant="ghost" size="icon" title="Delete" disabled={busy} onClick={() => window.confirm(`Delete template "${t.name}"? Costs already applied stay.`) && call(`/api/landed-cost-templates/${t.id}`, "DELETE", undefined, "Template deleted")}>
+                      <Button variant="ghost" size="icon" title="Delete" disabled={busy} onClick={async () => (await confirm({ title: `Delete template “${t.name}”?`, description: "Costs already applied to purchase orders stay.", confirmLabel: "Delete", destructive: true })) && call(`/api/landed-cost-templates/${t.id}`, "DELETE", undefined, "Template deleted")}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     )}

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { scopeWhere } from "@/lib/permissions"
 import { createSalesOrder, parseSalesStatus, salesOrderDetail, salesOrderInclude } from "@/lib/sales-orders"
-import { dateRangeWhere, listResponse } from "@/lib/pagination"
+import { containsAny, dateRangeWhere, listResponse, searchTerm } from "@/lib/pagination"
 import type { Prisma } from "@prisma/client"
 
 // Lighter shape for reports/lists that do not need line items.
@@ -19,6 +19,9 @@ export const GET = withAuth(async (request, { user }) => {
     ...scopeWhere(user, "sales"),
     ...dateRangeWhere(request, "orderDate"),
     ...(status && { status }),
+    // ?q= order / delivery number or customer; ?customerId=
+    ...containsAny(searchTerm(request), ["orderNumber", "customer.name"]),
+    ...(params.get("customerId") && { customerId: params.get("customerId")! }),
   }
   const include = params.get("view") === "summary" ? salesOrderSummaryInclude : salesOrderInclude
   return listResponse(request, {

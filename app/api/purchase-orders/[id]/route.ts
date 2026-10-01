@@ -12,6 +12,16 @@ import {
 import { syncLandedCosts } from "@/lib/landed-costs"
 import { postAccounting } from "@/lib/accounting"
 
+// One purchase order with lines, receives and payments (detail page).
+export const GET = withAuth<{ id: string }>(async (_request, { user, params }) => {
+  const order = await prisma.purchaseOrder.findFirst({
+    where: { id: params.id, ...scopeWhere(user, "purchases") },
+    include: purchaseOrderDetailInclude,
+  })
+  if (!order) throw new HttpError(404, "Purchase order not found")
+  return json(order)
+}, { permission: ["purchases", "view"] })
+
 /**
  * Edits line quantities while the order is still PENDING and nothing has
  * been received. After the first receive, quantities change only through the

@@ -7,13 +7,19 @@ import { parseMoney, parseOptionalMeasure } from "@/lib/money"
 import { can } from "@/lib/permission-rules"
 import { validateProductDates } from "@/lib/product-date-validation"
 import { incrementStock, parseQuantity } from "@/lib/stock"
-import { listResponse } from "@/lib/pagination"
+import { containsAny, listResponse, searchTerm } from "@/lib/pagination"
 import { postAccounting } from "@/lib/accounting"
 import { recordStockValueChange } from "@/lib/stock-valuation"
 import { parseAccountLinks } from "@/lib/accounts"
 
 export const GET = withAuth(async (request, { user }) => {
-  const where = scopeWhere(user, "products")
+  const params = new URL(request.url).searchParams
+  // ?q= name / SKU / description; ?categoryId=
+  const where = {
+    ...scopeWhere(user, "products"),
+    ...containsAny(searchTerm(request), ["name", "sku", "description"]),
+    ...(params.get("categoryId") && { categoryId: params.get("categoryId")! }),
+  }
   return listResponse(request, {
     findMany: (page) =>
       prisma.product.findMany({ where, include: { category: true }, orderBy: { createdAt: "desc" }, ...page }),

@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
+import { ListPagination, ListStateRow, SearchBox, usePagedList } from "@/components/data-list"
 import { Plus, MoreHorizontal, Printer, Edit, Trash2, Eye, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -54,18 +55,22 @@ function PaymentsContent() {
   const canSupplier = can(permissions, "supplier_payments", "view")
   const [activeTab, setActiveTab] = useState(canCustomer ? "customers" : "suppliers")
   const [methodFilter, setMethodFilter] = useState("all")
-  const byMethod = (list: any[]) => (methodFilter === "all" ? list : list.filter((p) => p.paymentMethod === methodFilter))
   const tabModule = activeTab === "customers" ? "customer_payments" : "supplier_payments"
   const canCreatePayment = can(permissions, tabModule, "create")
   const canEditPayment = (type: string) => can(permissions, type === "customers" ? "customer_payments" : "supplier_payments", "edit")
   const canDeletePayment = (type: string) => can(permissions, type === "customers" ? "customer_payments" : "supplier_payments", "delete")
-  const [customerPayments, setCustomerPayments] = useState<any[]>([])
-  const [supplierPayments, setSupplierPayments] = useState<any[]>([])
+  // Server-side lists (search, method filter, pages) per tab.
+  const methodParam = { paymentMethod: methodFilter === "all" ? undefined : methodFilter }
+  const customerList = usePagedList(canCustomer ? "/api/customer-payments" : null, methodParam)
+  const supplierList = usePagedList(canSupplier ? "/api/supplier-payments" : null, methodParam)
+  const customerPayments = customerList.rows as any[]
+  const supplierPayments = supplierList.rows as any[]
+  const fetchCustomerPayments = customerList.reload
+  const fetchSupplierPayments = supplierList.reload
   const [customers, setCustomers] = useState<any[]>([])
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [salesOrders, setSalesOrders] = useState<any[]>([])
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<any | null>(null)
   useEffect(() => {
@@ -82,42 +87,14 @@ function PaymentsContent() {
   useEffect(() => {
     // Only load what this role may see (avoids 403s for the other tab).
     if (canCustomer) {
-      fetchCustomerPayments()
       fetchCustomers()
       fetchSalesOrders()
-    } else setIsLoading(false)
+    }
     if (canSupplier) {
-      fetchSupplierPayments()
       fetchSuppliers()
       fetchPurchaseOrders()
     }
   }, [])
-
-  const fetchCustomerPayments = async () => {
-    try {
-      const response = await fetch("/api/customer-payments")
-      if (response.ok) {
-        const data = await response.json()
-        setCustomerPayments(data)
-      }
-    } catch (error) {
-      console.error("Error fetching customer payments:", error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const fetchSupplierPayments = async () => {
-    try {
-      const response = await fetch("/api/supplier-payments")
-      if (response.ok) {
-        const data = await response.json()
-        setSupplierPayments(data)
-      }
-    } catch (error) {
-      console.error("Error fetching supplier payments:", error)
-    }
-  }
 
   const fetchCustomers = async () => {
     try {
@@ -320,7 +297,12 @@ function PaymentsContent() {
           {canSupplier && <TabsTrigger value="suppliers">Supplier Payments</TabsTrigger>}
         </TabsList>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchBox
+            value={activeTab === "customers" ? customerList.q : supplierList.q}
+            onChange={activeTab === "customers" ? customerList.setQ : supplierList.setQ}
+            placeholder={activeTab === "customers" ? "Customer, reference, transaction ID, order" : "Supplier, reference, transaction ID, order"}
+          />
           <span className="text-sm text-muted-foreground">Payment method</span>
           <Select value={methodFilter} onValueChange={setMethodFilter}>
             <SelectTrigger className="w-48">
@@ -359,20 +341,17 @@ function PaymentsContent() {
                     </TableRow>
                   </TableHeader>
                 <TableBody>
-                  {isLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                        Loading...
-                      </TableCell>
-                    </TableRow>
-                  ) : byMethod(customerPayments).length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                        No customer payments found.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    byMethod(customerPayments).map((payment) => (
+                  <ListStateRow
+                    colSpan={8}
+                    loading={customerList.loading && customerPayments.length === 0}
+                    error={customerList.error}
+                    empty={customerPayments.length === 0}
+                    searching={!!customerList.q || methodFilter !== "all"}
+                    emptyText="No customer payments yet."
+                    action={canCreatePayment ? { label: "Record payment", onClick: () => { setEditingPayment(null); setIsDialogOpen(true) } } : null}
+                  />
+                  {customerPayments.length > 0 && (
+                    customerPayments.map((payment) => (
                       <TableRow key={payment.id}>
                         <TableCell className="font-medium">
                           {payment.customer?.name || "N/A"}
@@ -412,6 +391,7 @@ function PaymentsContent() {
                 </TableBody>
               </Table>
               </div>
+              <ListPagination list={customerList} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -440,20 +420,17 @@ function PaymentsContent() {
                     </TableRow>
                   </TableHeader>
                 <TableBody>
-                  {isLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                        Loading...
-                      </TableCell>
-                    </TableRow>
-                  ) : byMethod(supplierPayments).length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                        No supplier payments found.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    byMethod(supplierPayments).map((payment) => (
+                  <ListStateRow
+                    colSpan={8}
+                    loading={supplierList.loading && supplierPayments.length === 0}
+                    error={supplierList.error}
+                    empty={supplierPayments.length === 0}
+                    searching={!!supplierList.q || methodFilter !== "all"}
+                    emptyText="No supplier payments yet."
+                    action={canCreatePayment ? { label: "Record payment", onClick: () => { setEditingPayment(null); setIsDialogOpen(true) } } : null}
+                  />
+                  {supplierPayments.length > 0 && (
+                    supplierPayments.map((payment) => (
                       <TableRow key={payment.id}>
                         <TableCell className="font-medium">
                           {payment.supplier?.name || "N/A"}
@@ -493,6 +470,7 @@ function PaymentsContent() {
                 </TableBody>
               </Table>
               </div>
+              <ListPagination list={supplierList} />
             </CardContent>
           </Card>
         </TabsContent>
