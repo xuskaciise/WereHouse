@@ -23,4 +23,6 @@ if (typeof window === "undefined") {
 // Options for interactive transactions. Prisma's 5s default is too short for
 // multi-line orders against a remote (e.g. Neon) database; row locks keep
 // these transactions correct regardless of their duration.
-export const TX_OPTIONS = { maxWait: 10_000, timeout: 30_000 } as const
+// TX_TIMEOUT_MS raises the timeout for the integration tests against the
+// remote dev database (not set in production).
+export const TX_OPTIONS = { maxWait: 10_000, timeout: Number(process.env.TX_TIMEOUT_MS) || 30_000 } as const

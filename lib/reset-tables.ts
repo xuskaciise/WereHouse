@@ -19,6 +19,7 @@ export const RESET_KEEP_TABLES = [
 
 /** Business data (master data and transactions): deleted by a reset. */
 export const RESET_DELETE_TABLES = [
+  "supplier_payment_allocations",
   "journal_lines",
   "journal_entries",
   "inventory_valuation_entries",

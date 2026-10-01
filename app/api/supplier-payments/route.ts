@@ -8,6 +8,7 @@ import { assertCanReference } from "@/lib/ownership"
 import { parseMoney } from "@/lib/money"
 import { withNestedSupplierBalance } from "@/lib/balances"
 import { supplierPaymentInclude as paymentInclude } from "@/lib/includes"
+import { type CostLineRef, recordCostPaymentInTx } from "@/lib/cost-payments"
 import { containsAny, dateRangeWhere, listResponse, searchTerm } from "@/lib/pagination"
 
 export const GET = withAuth(async (request, { user }) => {
@@ -43,32 +44,36 @@ export const POST = withAuth(async (request, { user }) => {
     })
     if (!order) throw new HttpError(400, "Purchase order not found for this supplier")
   }
-  if (landedCostId) {
-    // Settles a landed cost line owed to this supplier (on a PO the user can see).
-    const cost = await prisma.purchaseLandedCost.findFirst({
-      where: { id: landedCostId, paidToSupplierId: supplierId, purchaseOrder: scopeWhere(user, "purchases") },
-      select: { id: true },
-    })
-    if (!cost) throw new HttpError(400, "Landed cost not found for this supplier")
-  }
-  if (stockTransferCostId) {
-    const cost = await prisma.stockTransferCost.findFirst({
-      where: { id: stockTransferCostId, paidToSupplierId: supplierId, stockTransfer: scopeWhere(user, "stock_transfers") },
-      select: { id: true },
-    })
-    if (!cost) throw new HttpError(400, "Transfer cost not found for this supplier")
-  }
   if (landedCostId && stockTransferCostId) throw new HttpError(400, "Link the payment to one cost only")
+  // Settles one cost line owed to this supplier (on a PO / transfer the user
+  // can see), at most its open balance. Several lines: POST /api/supplier-payments/bulk.
+  const costLine: CostLineRef | null = landedCostId
+    ? { kind: "LANDED_COST", id: String(landedCostId) }
+    : stockTransferCostId
+      ? { kind: "TRANSFER_COST", id: String(stockTransferCostId) }
+      : null
 
   // The supplier balance is derived from orders and payments (lib/balances.ts),
   // so recording the payment is all that is needed.
   const payment = await prisma.$transaction(async (tx) => {
+    if (costLine) {
+      const id = await recordCostPaymentInTx(tx, user, user.id, {
+        supplierId,
+        lines: [costLine],
+        amount: parsedAmount,
+        method,
+        paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+        reference: reference || null,
+        notes: notes || null,
+        purchaseOrderId: purchaseOrderId || null,
+      })
+      await postAccounting(tx, {}, user.id)
+      return tx.supplierPayment.findUniqueOrThrow({ where: { id }, include: paymentInclude })
+    }
     const saved = await tx.supplierPayment.create({
       data: {
         supplierId,
         purchaseOrderId: purchaseOrderId || null,
-        landedCostId: landedCostId || null,
-        stockTransferCostId: stockTransferCostId || null,
         amount: parsedAmount,
         paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
         paymentMethod: method.paymentMethod,

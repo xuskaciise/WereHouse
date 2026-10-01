@@ -5,6 +5,7 @@ import { type Money, Decimal, ZERO, parseMoney, roundMoney, sumMoney } from "@/l
 import { allocateAmount } from "@/lib/landed-costs"
 import { applyLandedCostDelta, averageCost, dispatchFromStock, receiveIntoStock } from "@/lib/stock-valuation"
 import { parseQuantity } from "@/lib/stock"
+import { paidOf, paidStatus, paymentAllocationsSelect } from "@/lib/cost-payments"
 import { type PermissionUser, scopeWhere } from "@/lib/permissions"
 
 // Warehouse-to-warehouse stock transfers.
@@ -47,7 +48,7 @@ export const transferInclude = {
     include: {
       type: { select: { id: true, name: true } },
       paidToSupplier: { select: { id: true, name: true, type: true } },
-      supplierPayments: { select: { id: true, amount: true } },
+      paymentAllocations: paymentAllocationsSelect,
     },
   },
 } satisfies Prisma.StockTransferInclude
@@ -577,8 +578,8 @@ export async function transferDetail(id: string) {
     dispatchedBy: person(t.dispatchedById),
     cancelledBy: person(t.cancelledById),
     costs: t.costs.map((c) => {
-      const paid = sumMoney(c.supplierPayments.map((p) => p.amount))
-      return { ...c, paidAmount: paid, paymentStatus: paid.isZero() ? "UNPAID" : paid.gte(c.amount) ? "PAID" : "PARTLY_PAID" }
+      const paid = paidOf(c.paymentAllocations)
+      return { ...c, paidAmount: paid, paymentStatus: paidStatus(c.amount, paid) }
     }),
     totalCosts: sumMoney(t.costs.map((c) => c.amount)),
     draftWarning: available ? items.some((i) => i.insufficient) : false,

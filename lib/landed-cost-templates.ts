@@ -3,7 +3,7 @@ import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { HttpError } from "@/lib/http-error"
 import { withConflictMessages } from "@/lib/api"
 import { parseLandedCostInput } from "@/lib/landed-costs"
-import { assertCostsEditable, assertPurchaseOrderInScope, createLandedCostInTx, lockPurchaseOrder } from "@/lib/landed-cost-service"
+import { assertCostsEditable, assertPurchaseOrderInScope, createLandedCostsInTx, lockPurchaseOrder } from "@/lib/landed-cost-service"
 import { assertCanReference } from "@/lib/ownership"
 import { postAccounting } from "@/lib/accounting"
 import type { SessionUser } from "@/lib/auth-guard"
@@ -149,7 +149,7 @@ export async function applyTemplate(user: SessionUser, purchaseOrderId: string, 
   return prisma.$transaction(async (tx) => {
     const locked = await lockPurchaseOrder(tx, purchaseOrderId)
     const reason = assertCostsEditable(user, locked, body?.reason)
-    for (const { input, typeName } of inputs) await createLandedCostInTx(tx, user.id, purchaseOrderId, input, { reason, typeName })
+    await createLandedCostsInTx(tx, user.id, purchaseOrderId, inputs, { reason })
     await postAccounting(tx, {}, user.id)
     return inputs.length
   }, TX_OPTIONS)

@@ -439,6 +439,9 @@ model SupplierPayment {
   user                User                @relation(fields: [userId], references: [id])
   createdAt           DateTime            @default(now())
 
+  // Cost lines this payment settles (one or many; see lib/cost-payments.ts).
+  allocations SupplierPaymentAllocation[]
+
   @@index([supplierId])
   @@index([purchaseOrderId])
   @@index([paymentDate])
@@ -787,7 +790,8 @@ model StockTransferCost {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  supplierPayments SupplierPayment[]
+  supplierPayments   SupplierPayment[]
+  paymentAllocations SupplierPaymentAllocation[]
 
   @@index([stockTransferId])
   @@index([paidToSupplierId])
@@ -961,13 +965,34 @@ model PurchaseLandedCost {
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
-  allocations      PurchaseLandedCostAllocation[]
-  supplierPayments SupplierPayment[]
-  valuationEntries InventoryValuationEntry[]
+  allocations        PurchaseLandedCostAllocation[]
+  supplierPayments   SupplierPayment[]
+  paymentAllocations SupplierPaymentAllocation[]
+  valuationEntries   InventoryValuationEntry[]
 
   @@index([purchaseOrderId])
   @@index([paidToSupplierId])
   @@map("purchase_landed_costs")
+}
+
+// The part of a supplier payment that settles one cost line (a landed cost of
+// a purchase order or a stock transfer cost). A line is paid when its
+// allocations reach its amount. Exactly one of the two links is set (CHECK).
+model SupplierPaymentAllocation {
+  id                  String              @id @default(cuid())
+  paymentId           String
+  payment             SupplierPayment     @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  landedCostId        String?
+  landedCost          PurchaseLandedCost? @relation(fields: [landedCostId], references: [id], onDelete: Cascade)
+  stockTransferCostId String?
+  stockTransferCost   StockTransferCost?  @relation(fields: [stockTransferCostId], references: [id], onDelete: Cascade)
+  amount              Decimal             @db.Decimal(12, 2)
+  createdAt           DateTime            @default(now())
+
+  @@index([paymentId])
+  @@index([landedCostId])
+  @@index([stockTransferCostId])
+  @@map("supplier_payment_allocations")
 }
 
 model PurchaseLandedCostAllocation {

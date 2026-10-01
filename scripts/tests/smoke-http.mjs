@@ -81,6 +81,19 @@ if (po) {
 }
 check("unknown purchase order -> 404", (await admin("/api/purchase-orders/nope")).status === 404)
 
+// Task 15: open cost lines, multi-row preview, FIFO preview (nothing written).
+if (po) {
+  const open = await admin(`/api/landed-costs?purchaseOrderId=${po.id}&open=1`)
+  check("open cost lines of a PO", open.status === 200 && Array.isArray(await open.json()), open.status)
+  const pv = await admin(`/api/purchase-orders/${po.id}/landed-costs/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows: [{ typeId: "x", paidToSupplierId: "", value: "1" }] }) })
+  const pvBody = await pv.json()
+  check("multi-row preview reports the bad row", pv.status === 200 && (pvBody.problems?.[0]?.row === 0 || !!pvBody.error), JSON.stringify(pvBody).slice(0, 120))
+}
+const fifo = await admin("/api/supplier-payments/allocation-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ supplierId: "x", lines: [] }) })
+check("FIFO preview validates the lines", fifo.status === 200 && !!(await fifo.json()).error, fifo.status)
+const bulkBad = await admin("/api/supplier-payments/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ supplierId: "x", lines: [] }) })
+check("bulk payment without lines -> 400", bulkBad.status === 400, bulkBad.status)
+
 const acc = await login("smoke_accountant")
 for (const [p, ok] of [["/settings", 307], ["/settings/landed-cost-types", 200], ["/settings/expense-categories", 200], ["/settings/financial", 307], ["/users", 307], ["/accounts", 200], ["/reports/profit-loss", 200]]) {
   const res = await acc(p)

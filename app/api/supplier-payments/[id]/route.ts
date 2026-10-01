@@ -7,6 +7,7 @@ import { assertInScope } from "@/lib/permissions"
 import { parseMoney } from "@/lib/money"
 import { withNestedSupplierBalance } from "@/lib/balances"
 import { supplierPaymentInclude as paymentInclude } from "@/lib/includes"
+import { updateCostPaymentAmountInTx } from "@/lib/cost-payments"
 
 const NOT_FOUND = "Payment not found"
 
@@ -31,6 +32,9 @@ export const PUT = withAuth<{ id: string }>(async (request, { user, params }) =>
   const parsedAmount = parseMoney(amount)
 
   const payment = await prisma.$transaction(async (tx) => {
+    // A payment that settles cost lines: its allocation follows (one line) or
+    // the amount is locked (several lines).
+    await updateCostPaymentAmountInTx(tx, params.id, parsedAmount)
     const saved = await tx.supplierPayment.update({
       where: { id: params.id },
       data: {

@@ -58,7 +58,7 @@ export const DELETE = withAuth<Params>(async (request, { user, params }) => {
   await prisma.$transaction(async (tx) => {
     const t = await lockTransfer(tx, params.id)
     const reason = assertTransferCostsEditable(user, t, body?.reason)
-    if ((await tx.supplierPayment.count({ where: { stockTransferCostId: params.costId } })) > 0) {
+    if ((await tx.supplierPaymentAllocation.count({ where: { stockTransferCostId: params.costId } })) > 0) {
       throw new HttpError(409, "This cost has payments recorded against it")
     }
     const before = await transferCostSnapshot(tx, params.costId)

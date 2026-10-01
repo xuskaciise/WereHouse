@@ -105,7 +105,7 @@ export const DELETE = withAuth<Params>(async (request, { user, params }) => {
   await prisma.$transaction(async (tx) => {
     const po = await lockPurchaseOrder(tx, purchaseOrderId)
     const reason = assertCostsEditable(user, po, body?.reason)
-    const payments = await tx.supplierPayment.count({ where: { landedCostId: costId } })
+    const payments = await tx.supplierPaymentAllocation.count({ where: { landedCostId: costId } })
     if (payments > 0) {
       throw new HttpError(409, "This cost has payments recorded against it; delete or re-link the payments first")
     }

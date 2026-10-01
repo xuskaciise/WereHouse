@@ -1,3 +1,4 @@
+import { recordCostPaymentInTx } from "@/lib/cost-payments"
 import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { parsePaymentFields } from "@/lib/payment-fields"
@@ -41,18 +42,13 @@ export const POST = withAuth<{ id: string }>(async (request, { user, params }) =
     const cost = await tx.stockTransferCost.create({ data: { ...input, stockTransferId: t.id, userId: user.id } })
     await syncTransferCosts(tx, t.id, user.id)
     if (paidNow) {
-      await tx.supplierPayment.create({
-        data: {
-          supplierId: input.paidToSupplierId,
-          stockTransferCostId: cost.id,
-          amount: input.amount,
-          paymentMethod: paidMethod!.paymentMethod,
-          payerPhone: paidMethod!.payerPhone,
-          transactionId: paidMethod!.transactionId,
-          reference: input.reference,
-          notes: `Transfer cost ${t.transferNumber}: ${type.name}`,
-          userId: user.id,
-        },
+      await recordCostPaymentInTx(tx, null, user.id, {
+        supplierId: input.paidToSupplierId,
+        lines: [{ kind: "TRANSFER_COST", id: cost.id }],
+        amount: null,
+        method: paidMethod!,
+        reference: input.reference,
+        notes: `Transfer cost ${t.transferNumber}: ${type.name}`,
       })
     }
     await addEvent(tx, {

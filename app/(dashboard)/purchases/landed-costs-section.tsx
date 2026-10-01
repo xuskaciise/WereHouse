@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { FileText, Lock, LockOpen, Pencil, Plus, Trash2 } from "lucide-react"
+import { FileText, Lock, LockOpen, Pencil, Plus, Trash2, Wallet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -22,6 +22,8 @@ import {
 import { useToast } from "@/components/ui/use-toast"
 import { useCan, useCurrentUser } from "@/components/providers/current-user-provider"
 import { formatCurrency, formatDate, formatUnitCost } from "@/lib/utils"
+import { AddCostsDialog } from "./add-costs-dialog"
+import { PayCostsDialog } from "@/components/cost-payments"
 import { PaymentMethodFields, emptyPaymentMethod, paymentMethodBody, paymentMethodProblems, usePaymentConfig, type PaymentMethodValue } from "@/components/payment-method-fields"
 
 export const METHOD_LABELS: Record<string, string> = {
@@ -111,10 +113,9 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
   const [reopenOpen, setReopenOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null)
   const [deleteReason, setDeleteReason] = useState("")
-  // Apply a saved template (Settings -> Landed cost types).
-  const [templates, setTemplates] = useState<any[] | null>(null)
-  const [applyOpen, setApplyOpen] = useState(false)
-  const [apply, setApply] = useState({ templateId: "", paidToSupplierId: "", reference: "", reason: "" })
+  // "Add costs" (several rows at once, optionally filled from a template) and "Pay costs".
+  const [bulk, setBulk] = useState<{ open: boolean; templates: boolean }>({ open: false, templates: false })
+  const [payOpen, setPayOpen] = useState(false)
 
   const finalized = !!view?.purchaseOrder?.costsFinalizedAt
   // After "Costs finalized" only an admin can change costs (with a reason).
@@ -128,37 +129,6 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
   useEffect(() => {
     load()
   }, [load])
-
-  const openApply = async () => {
-    const [t, s] = await Promise.all([
-      templates ?? fetch("/api/landed-cost-templates?active=true").then((r) => (r.ok ? r.json() : [])),
-      suppliers.length ? suppliers : fetch("/api/suppliers").then((r) => (r.ok ? r.json() : [])),
-    ])
-    setTemplates(t)
-    setSuppliers(s)
-    setApply({ templateId: t[0]?.id ?? "", paidToSupplierId: "", reference: "", reason: "" })
-    setApplyOpen(true)
-  }
-
-  const applyTemplate = async () => {
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/purchase-orders/${purchaseOrderId}/landed-costs/apply-template`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...apply, paidToSupplierId: apply.paidToSupplierId || undefined, reason: apply.reason || undefined }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || "Failed to apply the template")
-      setView(data)
-      setApplyOpen(false)
-      toast({ title: "Template applied", description: `${data.added} cost line(s) added` })
-    } catch (e) {
-      toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" })
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const openForm = async (cost: any | null) => {
     if (types.length === 0) {
@@ -303,13 +273,18 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
             </Link>
           </Button>
           {canCreate && editable && (
-            <Button size="sm" onClick={() => openForm(null)}>
-              <Plus className="mr-2 h-4 w-4" /> Add cost
+            <Button size="sm" onClick={() => setBulk({ open: true, templates: false })}>
+              <Plus className="mr-2 h-4 w-4" /> Add costs
             </Button>
           )}
           {canCreate && editable && (
-            <Button size="sm" variant="outline" onClick={openApply}>
+            <Button size="sm" variant="outline" onClick={() => setBulk({ open: true, templates: true })}>
               <Plus className="mr-2 h-4 w-4" /> Apply template
+            </Button>
+          )}
+          {canPay && view.costs.some((c: any) => c.paymentStatus !== "PAID") && (
+            <Button size="sm" variant="outline" onClick={() => setPayOpen(true)}>
+              <Wallet className="mr-2 h-4 w-4" /> Pay costs
             </Button>
           )}
           {canFinalize && !finalized && view.costs.length > 0 && (
@@ -636,52 +611,16 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
         </DialogContent>
       </Dialog>
 
-      <Dialog open={applyOpen} onOpenChange={setApplyOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Apply a landed cost template</DialogTitle>
-            <DialogDescription>Adds every line of the template as a cost of this order. You can still edit or delete each line.</DialogDescription>
-          </DialogHeader>
-          {templates && templates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No active templates. Create one under Settings → Landed cost types.</p>
-          ) : (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <Label>Template *</Label>
-                <Select value={apply.templateId} onValueChange={(templateId) => setApply({ ...apply, templateId })}>
-                  <SelectTrigger><SelectValue placeholder="Choose a template" /></SelectTrigger>
-                  <SelectContent>{(templates ?? []).map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}</SelectContent>
-                </Select>
-                <ul className="text-xs text-muted-foreground">
-                  {(templates ?? []).find((t) => t.id === apply.templateId)?.items.map((i: any) => (
-                    <li key={i.id}>
-                      {i.type?.name}: {i.amountType === "PERCENT" ? `${Number(i.value)}%` : formatCurrency(i.value)} · {i.paidToSupplier?.name ?? "paid to: below / PO supplier"}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="space-y-1">
-                <Label>Paid to (lines without a fixed party)</Label>
-                <Select value={apply.paidToSupplierId || "__po"} onValueChange={(v) => setApply({ ...apply, paidToSupplierId: v === "__po" ? "" : v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__po">Purchase order supplier</SelectItem>
-                    {suppliers.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1"><Label>Reference / invoice no.</Label><Input value={apply.reference} onChange={(e) => setApply({ ...apply, reference: e.target.value })} /></div>
-              {finalized && (
-                <div className="space-y-1"><Label>Reason (finalized costs) *</Label><Input value={apply.reason} onChange={(e) => setApply({ ...apply, reason: e.target.value })} /></div>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setApplyOpen(false)}>Cancel</Button>
-            <Button disabled={saving || !apply.templateId || (finalized && !apply.reason.trim())} onClick={applyTemplate}>Apply</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AddCostsDialog
+        purchaseOrderId={purchaseOrderId}
+        poSupplierId={view.purchaseOrder.supplier?.id ?? ""}
+        open={bulk.open}
+        onOpenChange={(open) => setBulk((b) => ({ ...b, open }))}
+        startWithTemplates={bulk.templates}
+        finalized={finalized}
+        onSaved={setView}
+      />
+      <PayCostsDialog purchaseOrderId={purchaseOrderId} open={payOpen} onOpenChange={setPayOpen} onPaid={load} />
 
       <Dialog open={reopenOpen} onOpenChange={setReopenOpen}>
         <DialogContent>

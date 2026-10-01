@@ -120,7 +120,7 @@ export function publicRoute(handler: (request: Request) => Promise<Response>) {
  */
 export function errorResponse(error: unknown, fallbackMessage = "Something went wrong. Please try again."): Response {
   if (error instanceof HttpError) {
-    return NextResponse.json({ error: error.message }, { status: error.status })
+    return NextResponse.json({ ...error.details, error: error.message }, { status: error.status })
   }
 
   if (error instanceof Prisma.PrismaClientKnownRequestError) {

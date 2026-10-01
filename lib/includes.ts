@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client"
+import { paymentAllocationsInclude } from "@/lib/cost-payments"
 
 export const userSummarySelect = {
   id: true,
@@ -10,6 +11,8 @@ export const supplierPaymentInclude = {
   supplier: true,
   purchaseOrder: true,
   user: { select: userSummarySelect },
+  // Cost lines the payment settled (receipt).
+  allocations: paymentAllocationsInclude,
 } satisfies Prisma.SupplierPaymentInclude
 
 export const customerPaymentInclude = {

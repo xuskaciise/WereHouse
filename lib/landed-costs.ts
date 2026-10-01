@@ -7,6 +7,7 @@ import type {
 import { HttpError } from "@/lib/http-error"
 import { type Money, Decimal, ZERO, parseMoney, roundMoney, sumMoney } from "@/lib/money"
 import { applyLandedCostDelta, roundUnitCost } from "@/lib/stock-valuation"
+import { paymentAllocationsSelect } from "@/lib/cost-payments"
 
 // Landed costs: extra costs of a purchase (shipment, customs, transport,
 // commission...) allocated to the PO lines, so the received units are valued
@@ -137,7 +138,8 @@ export const landedCostInclude = {
   paidToSupplier: { select: { id: true, name: true, type: true } },
   allocations: true,
   user: { select: { id: true, name: true, username: true } },
-  supplierPayments: { select: { id: true, amount: true, paymentDate: true, paymentMethod: true } },
+  // What has been paid on the line (supplier payment allocations).
+  paymentAllocations: paymentAllocationsSelect,
 } satisfies Prisma.PurchaseLandedCostInclude
 
 async function loadForPlanning(tx: Tx, purchaseOrderId: string) {

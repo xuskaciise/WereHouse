@@ -3,16 +3,28 @@ import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { sumMoney } from "@/lib/money"
 import { parseLandedCostInput } from "@/lib/landed-costs"
-import { assertPurchaseOrderInScope, previewLandedCosts } from "@/lib/landed-cost-service"
+import { assertPurchaseOrderInScope, checkCostRows, previewCostRows, previewLandedCosts } from "@/lib/landed-cost-service"
 
 /**
- * Live allocation preview for the cost form, computed by the same code that
- * saves (nothing is written). Body: { costId?: string (when editing), cost }.
- * Invalid drafts return 200 with { error } so the form can show it inline.
+ * Live allocation preview, computed by the same code that saves (nothing is
+ * written). Invalid drafts return 200 with { error } (or per-row problems) so
+ * the form can show them inline.
+ *   { costId?: string (when editing), cost }  one cost (edit form)
+ *   { rows: [cost] }                          the "Add costs" form: all rows together
  */
 export const POST = withAuth<{ id: string }>(async (request, { user, params }) => {
   await assertPurchaseOrderInScope(user, params.id, "landed_costs")
   const body = await readJson(request)
+  if (Array.isArray(body?.rows)) {
+    try {
+      const { rows, problems } = await checkCostRows(user, params.id, body.rows)
+      const preview = await previewCostRows(prisma, params.id, rows)
+      return json({ ...preview, problems: [...problems, ...preview.problems], error: null })
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 400) return json({ error: e.message, problems: [] })
+      throw e
+    }
+  }
   const costId = typeof body?.costId === "string" ? body.costId : null
   try {
     const input = parseLandedCostInput(body?.cost)

@@ -32,6 +32,8 @@ import {
 } from "@/components/payment-method-fields"
 import { PAYMENT_METHODS, formatSomaliPhone, methodLabel } from "@/lib/payment-methods"
 import { can } from "@/lib/permission-rules"
+import { useCompany } from "@/components/company-header"
+import { CostLinesPicker, PaymentCostLines, lineKey, lineRef, useFifoPreview, type CostLine } from "@/components/cost-payments"
 
 const escapeHtml = (value: string) =>
   value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
@@ -144,13 +146,23 @@ function PaymentsContent() {
     }
   }
 
+  const company = useCompany()
   const handlePrintInvoice = (payment: any, type: string) => {
     const printWindow = window.open("", "_blank")
     if (!printWindow) return
 
-    const paymentType = type === "customer" ? "Customer Payment Receipt" : "Supplier Payment Receipt"
-    const entityName = type === "customer" ? payment.customer?.name : payment.supplier?.name
-    const entityLabel = type === "customer" ? "Customer" : "Supplier"
+    const isCustomer = type.startsWith("customer")
+    const paymentType = isCustomer ? "Customer Payment Receipt" : "Supplier Payment Receipt"
+    const entityName = isCustomer ? payment.customer?.name : payment.supplier?.name
+    const entityLabel = isCustomer ? "Customer" : "Supplier"
+    const contact = [company?.address, company?.phone, company?.email].filter(Boolean).map((x) => escapeHtml(String(x))).join(" · ")
+    const costRows = (payment.allocations ?? [])
+      .map((a: any) => {
+        const c = a.landedCost ?? a.stockTransferCost
+        const doc = a.landedCost?.purchaseOrder?.orderNumber ?? a.stockTransferCost?.stockTransfer?.transferNumber ?? ""
+        return `<tr><td>${escapeHtml(doc)}</td><td>${escapeHtml(c?.type?.name ?? "")}${c?.reference ? " (" + escapeHtml(c.reference) + ")" : ""}</td><td class="num">${formatCurrency(c?.amount)}</td><td class="num">${formatCurrency(a.amount)}</td></tr>`
+      })
+      .join("")
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -167,28 +179,32 @@ function PaymentsContent() {
             .details td { padding: 8px; border-bottom: 1px solid #eee; }
             .details td:first-child { font-weight: bold; width: 150px; }
             .footer { margin-top: 40px; text-align: center; color: #666; font-size: 12px; }
+            .lines { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            .lines th, .lines td { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; }
+            .lines .num { text-align: right; }
             @media print { body { padding: 20px; } }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>Siu Warehouse</h1>
-            <p>123 Business School Ave., Education District, ED 10245</p>
+            <h1>${escapeHtml(company?.name || "Siu Warehouse")}</h1>
+            ${contact ? `<p>${contact}</p>` : ""}
             <h2>${paymentType}</h2>
           </div>
           <div class="details">
             <table>
               <tr><td>Payment ID:</td><td>${payment.id}</td></tr>
-              <tr><td>${entityLabel}:</td><td>${entityName || "N/A"}</td></tr>
+              <tr><td>${entityLabel}:</td><td>${escapeHtml(entityName || "N/A")}</td></tr>
               <tr><td>Amount:</td><td>${formatCurrency(payment.amount)}</td></tr>
               <tr><td>Payment Date:</td><td>${formatDate(payment.paymentDate)}</td></tr>
               <tr><td>Payment Method:</td><td>${escapeHtml(methodLabel(payment.paymentMethod))}</td></tr>
               ${payment.payerPhone ? `<tr><td>Phone:</td><td>${escapeHtml(formatSomaliPhone(payment.payerPhone))}</td></tr>` : ""}
               ${payment.transactionId ? `<tr><td>Transaction ID:</td><td>${escapeHtml(payment.transactionId)}</td></tr>` : ""}
-              ${payment.reference ? `<tr><td>Reference:</td><td>${payment.reference}</td></tr>` : ""}
-              ${payment.notes ? `<tr><td>Notes:</td><td>${payment.notes}</td></tr>` : ""}
-              <tr><td>Created By:</td><td>${payment.user?.username || payment.user?.name || "N/A"}</td></tr>
+              ${payment.reference ? `<tr><td>Reference:</td><td>${escapeHtml(payment.reference)}</td></tr>` : ""}
+              ${payment.notes ? `<tr><td>Notes:</td><td>${escapeHtml(payment.notes)}</td></tr>` : ""}
+              <tr><td>Created By:</td><td>${escapeHtml(payment.user?.username || payment.user?.name || "N/A")}</td></tr>
             </table>
+            ${costRows ? `<h3>Cost lines paid</h3><table class="lines"><tr><th>Document</th><th>Cost</th><th class="num">Line amount</th><th class="num">Paid here</th></tr>${costRows}</table>` : ""}
           </div>
           <div class="footer">
             <p>Generated on ${new Date().toLocaleString()}</p>
@@ -653,6 +669,8 @@ function PaymentDetailsSheet({
             </div>
           )}
 
+          {type === "suppliers" && <PaymentCostLines allocations={payment.allocations} />}
+
           {type === "suppliers" && payment.purchaseOrder && (
             <div>
               <div className="text-sm font-medium text-muted-foreground mb-2">Related Purchase Order</div>
@@ -691,7 +709,6 @@ function PaymentForm({
     supplierId: payment?.supplierId || "",
     salesOrderId: payment?.salesOrderId || "",
     purchaseOrderId: payment?.purchaseOrderId || "",
-    landedCostId: payment?.landedCostId || "",
     amount: payment?.amount?.toString() || "",
     paymentDate: payment?.paymentDate 
       ? new Date(payment.paymentDate).toISOString().split("T")[0]
@@ -704,18 +721,35 @@ function PaymentForm({
   const paymentConfig = usePaymentConfig()
   const [method, setMethod] = useState<PaymentMethodValue>(paymentMethodValueOf(payment))
 
-  // Landed cost lines owed to the selected supplier (clearing agent, transport...).
-  const [landedCosts, setLandedCosts] = useState<any[]>([])
+  // Open cost lines owed to the selected supplier (clearing agent, transport...)
+  // across all purchase orders and transfers; one payment can settle many (FIFO).
+  const [costLines, setCostLines] = useState<CostLine[]>([])
+  const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set())
+  const [amountEdited, setAmountEdited] = useState(false)
   useEffect(() => {
-    if (type !== "suppliers" || !formData.supplierId) {
-      setLandedCosts([])
+    setSelectedLines(new Set())
+    if (type !== "suppliers" || !formData.supplierId || payment) {
+      setCostLines([])
       return
     }
-    fetch(`/api/landed-costs?supplierId=${formData.supplierId}`)
+    fetch(`/api/landed-costs?supplierId=${formData.supplierId}&open=1`)
       .then((res) => (res.ok ? res.json() : []))
-      .then(setLandedCosts)
-      .catch(() => setLandedCosts([]))
-  }, [type, formData.supplierId])
+      .then(setCostLines)
+      .catch(() => setCostLines([]))
+  }, [type, formData.supplierId, payment])
+  const pickedLines = costLines.filter((l) => selectedLines.has(lineKey(l)))
+  const pickedOpen = Math.round(pickedLines.reduce((s, l) => s + Number(l.openAmount), 0) * 100) / 100
+  const fifo = useFifoPreview(formData.supplierId, costLines, selectedLines, formData.amount)
+  const selectLines = (next: Set<string>) => {
+    setSelectedLines(next)
+    // The amount follows the selection until it is typed in.
+    if (!amountEdited) {
+      const open = costLines.filter((l) => next.has(lineKey(l))).reduce((s, l) => s + Number(l.openAmount), 0)
+      setFormData((d) => ({ ...d, amount: next.size ? (Math.round(open * 100) / 100).toFixed(2) : "" }))
+    }
+  }
+  // A payment over several cost lines keeps its amount (delete and record again to change it).
+  const amountLocked = !!payment && (payment.allocations?.length ?? 0) > 1
 
   useEffect(() => {
     if (payment) {
@@ -725,7 +759,6 @@ function PaymentForm({
         supplierId: payment.supplierId || "",
         salesOrderId: payment.salesOrderId || "",
         purchaseOrderId: payment.purchaseOrderId || "",
-        landedCostId: payment.landedCostId || "",
         amount: payment.amount?.toString() || "",
         paymentDate: payment.paymentDate 
           ? new Date(payment.paymentDate).toISOString().split("T")[0]
@@ -776,13 +809,26 @@ function PaymentForm({
 
     try {
       const isEdit = !!payment
-      const endpoint = isEdit
+      const payingLines = !isEdit && type === "suppliers" && pickedLines.length > 0
+      const endpoint = payingLines
+        ? "/api/supplier-payments/bulk"
+        : isEdit
         ? (type === "customers" 
             ? `/api/customer-payments/${payment.id}`
             : `/api/supplier-payments/${payment.id}`)
         : (type === "customers" ? "/api/customer-payments" : "/api/supplier-payments")
       
-      const body = type === "customers" 
+      const body = payingLines
+        ? {
+            supplierId: formData.supplierId,
+            lines: pickedLines.map(lineRef),
+            amount: formData.amount,
+            paymentDate: formData.paymentDate,
+            ...paymentMethodBody(method),
+            reference: formData.reference || null,
+            notes: formData.notes || null,
+          }
+        : type === "customers"
         ? {
             ...(isEdit ? {} : { customerId: formData.customerId }),
             ...(isEdit ? {} : { salesOrderId: formData.salesOrderId || null }),
@@ -795,12 +841,6 @@ function PaymentForm({
         : {
             ...(isEdit ? {} : { supplierId: formData.supplierId }),
             ...(isEdit ? {} : { purchaseOrderId: formData.purchaseOrderId || null }),
-            // The linked cost is a purchase landed cost or a stock transfer cost.
-            ...(isEdit
-              ? {}
-              : landedCosts.find((c) => c.id === formData.landedCostId)?.kind === "TRANSFER_COST"
-                ? { stockTransferCostId: formData.landedCostId }
-                : { landedCostId: formData.landedCostId || null }),
             amount: formData.amount,
             paymentDate: formData.paymentDate,
             ...paymentMethodBody(method),
@@ -817,7 +857,9 @@ function PaymentForm({
       })
 
       if (response.ok) {
-        const result = await response.json()
+        const data = await response.json()
+        // The bulk endpoint answers { payments: [payment], warnings }.
+        const result = payingLines ? { ...data.payments[0], warnings: data.warnings } : data
         const newBalance = type === "customers" 
           ? (result.customer?.balance || 0)
           : (result.supplier?.balance || 0)
@@ -831,13 +873,14 @@ function PaymentForm({
         // Saved, but e.g. the phone prefix does not match the operator.
         for (const warning of result.warnings ?? []) toast({ title: "Please check", description: warning })
         if (!isEdit) {
+          setSelectedLines(new Set())
+          setAmountEdited(false)
           setMethod(emptyPaymentMethod())
           setFormData({
             customerId: "",
             supplierId: "",
             salesOrderId: "",
             purchaseOrderId: "",
-            landedCostId: "",
             amount: "",
             paymentDate: new Date().toISOString().split("T")[0],
             reference: "",
@@ -935,7 +978,7 @@ function PaymentForm({
               }))}
               value={formData.supplierId}
               onValueChange={(value) => {
-                setFormData({ ...formData, supplierId: value, purchaseOrderId: "", landedCostId: "" })
+                setFormData({ ...formData, supplierId: value, purchaseOrderId: "" })
               }}
               placeholder="Select supplier"
               searchPlaceholder="Search suppliers..."
@@ -952,6 +995,7 @@ function PaymentForm({
             )}
           </div>
 
+          {pickedLines.length === 0 && (
           <div className="space-y-2">
             <Label htmlFor="purchaseOrder">Purchase Order (Optional)</Label>
             <Combobox
@@ -967,31 +1011,24 @@ function PaymentForm({
               disabled={!formData.supplierId}
             />
           </div>
+          )}
 
-          {landedCosts.length > 0 && (
+          {costLines.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="landedCost">Landed / transfer cost (optional)</Label>
-              <Combobox
-                options={landedCosts.map((cost) => ({
-                  value: cost.id,
-                  label: `${cost.documentNumber} - ${cost.type?.name} - ${formatCurrency(cost.amount)} (open ${formatCurrency(cost.openAmount)})`,
-                }))}
-                value={formData.landedCostId}
-                onValueChange={(value) => {
-                  const cost = landedCosts.find((c) => c.id === value)
-                  setFormData({
-                    ...formData,
-                    landedCostId: value,
-                    amount: formData.amount || (cost ? String(cost.openAmount) : ""),
-                  })
-                }}
-                placeholder="Link to a cost line (optional)"
-                searchPlaceholder="Search costs..."
-                emptyMessage="No cost lines."
-                disabled={!!payment}
-              />
+              <Label>Pay cost lines (optional)</Label>
+              <p className="text-xs text-muted-foreground">
+                Open landed / transfer costs owed to this party, oldest first. One payment can settle several lines; a smaller amount pays the oldest first.
+              </p>
+              <CostLinesPicker lines={costLines} selected={selectedLines} onChange={selectLines} allocated={fifo?.allocated} />
+              {pickedLines.length > 0 && (
+                <div className="text-sm">
+                  {pickedLines.length} line(s) selected, open {formatCurrency(pickedOpen)}
+                  {fifo?.error && <div className="text-destructive">{fifo.error}</div>}
+                </div>
+              )}
             </div>
           )}
+          {payment && <PaymentCostLines allocations={payment.allocations} />}
         </>
       )}
 
@@ -1004,9 +1041,16 @@ function PaymentForm({
             step="0.01"
             min="0"
             value={formData.amount}
-            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+            onChange={(e) => {
+              setAmountEdited(true)
+              setFormData({ ...formData, amount: e.target.value })
+            }}
+            disabled={amountLocked}
             required
           />
+          {amountLocked && (
+            <p className="text-xs text-muted-foreground">This payment settles several cost lines; delete it and record it again to change the amount.</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -1069,7 +1113,7 @@ function PaymentForm({
         <Button type="button" variant="outline" onClick={onSuccess} disabled={isSaving}>
           Cancel
         </Button>
-        <Button type="submit" disabled={isSaving}>
+        <Button type="submit" disabled={isSaving || (pickedLines.length > 0 && !!fifo?.error)}>
           {isSaving ? (payment ? "Updating..." : "Recording...") : (payment ? "Update Payment" : "Record Payment")}
         </Button>
       </DialogFooter>
