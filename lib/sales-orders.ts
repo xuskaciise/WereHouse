@@ -1,7 +1,7 @@
 import type { Prisma, SalesOrderStatus } from "@prisma/client"
 import { TX_OPTIONS, prisma } from "@/lib/prisma"
 import { HttpError } from "@/lib/http-error"
-import { type Money, ZERO, roundMoney, sumMoney } from "@/lib/money"
+import { type Money, ZERO, parseMoney, roundMoney, sumMoney } from "@/lib/money"
 import { allocateAmount } from "@/lib/landed-costs"
 import { createWithOrderNumber, lastSequenceNumber, nextDocumentNumber, parseOrderItems } from "@/lib/orders"
 import { assertCanReference } from "@/lib/ownership"
@@ -18,6 +18,8 @@ import {
 import { fulfilReservedStock, releaseReservedStock, reserveStock } from "@/lib/stock"
 import { averageCost, roundUnitCost } from "@/lib/stock-valuation"
 import { currentTaxRate } from "@/lib/tax"
+import { configuredWalkInId } from "@/lib/company"
+import { parsePaymentFields } from "@/lib/payment-fields"
 import type { SessionUser } from "@/lib/auth-guard"
 import { postAccounting } from "@/lib/accounting"
 
@@ -169,7 +171,9 @@ async function parseSalesInput(user: SessionUser, body: any, taxRate: Money) {
   const { customerId, warehouseId } = body ?? {}
   if (!customerId || !warehouseId) throw new HttpError(400, "Customer, Warehouse, and at least one item are required")
   const items = parseOrderItems(body.items)
-  await assertCanReference(user, { customerId, warehouseId, productIds: items.map((i) => i.productId) })
+  // The walk-in customer is shared by everyone who sells (no owner check).
+  const walkIn = customerId === (await configuredWalkInId())
+  await assertCanReference(user, { ...(!walkIn && { customerId }), warehouseId, productIds: items.map((i) => i.productId) })
 
   const rawItems = body.items as { discount?: unknown }[]
   const totals = calculateSalesTotals(
@@ -446,6 +450,25 @@ export async function createSalesOrder(user: SessionUser, body: any): Promise<st
   const input = await parseSalesInput(user, body, taxRate)
   const days = await reservationDays()
 
+  // "Paid now" (sell & deliver now only): a customer payment in the same transaction.
+  const walkIn = input.customerId === (await configuredWalkInId())
+  let payment: { amount: Money; method: Awaited<ReturnType<typeof parsePaymentFields>>; reference: string | null } | null = null
+  if (body?.payment) {
+    if (mode !== "sell_now") throw new HttpError(400, "A payment can only be recorded with \"Sell & deliver now\"")
+    requirePermission(user, ["customer_payments", "create"], "You are not allowed to record customer payments")
+    const amount = parseMoney(body.payment.amount, { field: "Amount paid" })
+    if (amount.gt(input.order.total)) throw new HttpError(400, `The amount paid cannot be more than the total of ${input.order.total.toFixed(2)}`)
+    const reference = typeof body.payment.reference === "string" && body.payment.reference.trim() ? body.payment.reference.trim().slice(0, 100) : null
+    payment = { amount, method: await parsePaymentFields(body.payment), reference }
+  }
+  // Walk-in (anonymous) sales are cash sales: delivered and fully paid at once.
+  if (walkIn) {
+    if (mode !== "sell_now") throw new HttpError(400, "The walk-in customer can only buy with \"Sell & deliver now\"; choose a named customer for orders on credit")
+    if (!payment || !payment.amount.eq(input.order.total)) {
+      throw new HttpError(400, `A walk-in sale must be paid in full (${input.order.total.toFixed(2)}); for credit choose a named customer`)
+    }
+  }
+
   return createWithOrderNumber(
     "SO",
     // Drafts can be deleted, so the next number follows the highest one (not the count).
@@ -459,6 +482,21 @@ export async function createSalesOrder(user: SessionUser, body: any): Promise<st
         if (mode !== "draft") await confirmInTx(tx, order.id, user.id, days)
         if (mode === "sell_now") {
           await deliverInTx(tx, order.id, user.id, "all", "Sell & deliver now")
+          if (payment) {
+            await tx.customerPayment.create({
+              data: {
+                customerId: input.customerId,
+                salesOrderId: order.id,
+                amount: payment.amount,
+                paymentMethod: payment.method.paymentMethod,
+                payerPhone: payment.method.payerPhone,
+                transactionId: payment.method.transactionId,
+                reference: payment.reference ?? orderNumber,
+                notes: "Paid at sale",
+                userId: user.id,
+              },
+            })
+          }
           await postAccounting(tx, {}, user.id)
         }
         return order.id
@@ -480,6 +518,9 @@ export async function editSalesOrder(user: SessionUser, id: string, body: any) {
   const current = await prisma.salesOrder.findUniqueOrThrow({ where: { id }, select: { taxRate: true } })
   // The tax rate stored on the order is kept (never the current Settings).
   const input = await parseSalesInput(user, body, current.taxRate)
+  if (input.customerId === (await configuredWalkInId())) {
+    throw new HttpError(400, "The walk-in customer can only buy with \"Sell & deliver now\"; choose a named customer")
+  }
   await prisma.$transaction(async (tx) => {
     const order = await lockOrder(tx, id)
     assertTransition(order.status, "edit")
@@ -510,6 +551,10 @@ export async function deleteDraftSalesOrder(user: SessionUser, id: string) {
 
 export async function confirmSalesOrder(user: SessionUser, id: string) {
   await loadForAction(user, id, "confirm")
+  const order = await prisma.salesOrder.findUniqueOrThrow({ where: { id }, select: { customerId: true } })
+  if (order.customerId === (await configuredWalkInId())) {
+    throw new HttpError(400, "A walk-in sale cannot be put on credit; change the customer to a named one first")
+  }
   const days = await reservationDays()
   await prisma.$transaction((tx) => confirmInTx(tx, id, user.id, days), TX_OPTIONS)
 }

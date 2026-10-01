@@ -86,6 +86,8 @@ BEGIN
     RAISE EXCEPTION 'confirmation token does not match the current data (run the dry-run again) - nothing changed';
   END IF;
 
+  -- Kept users point at warehouses that are deleted: clear their default first.
+  UPDATE users SET "defaultWarehouseId" = NULL, "defaultWarehouseLocked" = false WHERE "defaultWarehouseId" IS NOT NULL;
   EXECUTE 'TRUNCATE TABLE ' || (SELECT string_agg(format('%I', t), ', ') FROM unnest(delete_tables) AS t) || ' RESTART IDENTITY';
 
   DELETE FROM users WHERE id <> admin_id;

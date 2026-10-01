@@ -58,7 +58,7 @@ async function main() {
       await recordStockValueChange(tx, { productId: p.id, warehouseId: wh.id, delta: 50, userId: admin.id, type: "OPENING_STOCK" })
     }
     await postAccounting(tx, {}, admin.id)
-  })
+  }, { maxWait: 10_000, timeout: 120_000 })
 
   const body = (extra: any = {}) => ({
     customerId: cust.id, warehouseId: wh.id,

@@ -33,6 +33,7 @@ import { formatCurrency } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
 import { Customer } from "@/lib/types"
 import { useCan } from "@/components/providers/current-user-provider"
+import { UrlActions } from "@/components/url-actions"
 
 export default function CustomersPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -43,6 +44,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([])
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [search, setSearch] = useState("")
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -142,10 +144,16 @@ export default function CustomersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>All Customers</CardTitle>
-          <CardDescription>
-            List of all customers in the system
-          </CardDescription>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <CardTitle>All Customers</CardTitle>
+              <CardDescription>
+                List of all customers in the system
+              </CardDescription>
+            </div>
+            <Input className="max-w-xs" placeholder="Search name, phone or email" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <UrlActions onNew={() => canCreate && handleAdd()} onQuery={setSearch} />
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -173,7 +181,7 @@ export default function CustomersPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  customers.map((customer) => {
+                  customers.filter((x) => !search.trim() || [x.name, x.phone, x.email].some((v) => v?.toLowerCase().includes(search.trim().toLowerCase()))).map((customer) => {
                     const balance = getCustomerBalance(customer)
                     return (
                       <TableRow key={customer.id}>

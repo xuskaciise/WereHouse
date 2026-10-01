@@ -283,6 +283,9 @@ export const PAGE_MODULES: [string, Module | Module[]][] = [
   ["/purchases/returns", "purchase_returns"],
   ["/landed-costs", "landed_costs"],
   ["/landed-cost-types", "landed_cost_types"],
+  ["/settings/landed-cost-types", "landed_cost_types"],
+  ["/settings/expense-categories", "expense_categories"],
+  ["/settings/general", "settings"],
   ["/purchases", "purchases"],
   ["/transfers/new", "stock_transfers"],
   ["/transfers", "stock_transfers"],
@@ -297,11 +300,13 @@ export const PAGE_MODULES: [string, Module | Module[]][] = [
   ["/payments", ["customer_payments", "supplier_payments"]],
   ["/expenses", ["expenses", "expense_categories"]],
   ["/reports/expenses", "reports_finance"],
-  ["/reports/profit-loss", "reports_finance"],
+  ["/reports/profit-loss", "reports_finance"],
+  ["/reports/stock", "reports_stock"],
   ["/accounts", "accounting"],
   ["/reports", ["reports_stock", "reports_sales", "reports_finance"]],
   ["/users", "users"],
-  ["/settings", "settings"],
+  // The Settings hub: each tab has its own module (see /settings/*).
+  ["/settings", ["settings", "landed_cost_types", "expense_categories"]],
   ["/roles", "roles"],
 ]
 

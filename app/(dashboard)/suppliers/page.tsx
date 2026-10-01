@@ -34,6 +34,7 @@ import { Supplier } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { useCan } from "@/components/providers/current-user-provider"
+import { UrlActions } from "@/components/url-actions"
 
 export default function SuppliersPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -44,6 +45,7 @@ export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [search, setSearch] = useState("")
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -144,10 +146,16 @@ export default function SuppliersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>All Suppliers</CardTitle>
-          <CardDescription>
-            List of all suppliers in the system
-          </CardDescription>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <CardTitle>All Suppliers</CardTitle>
+              <CardDescription>
+                List of all suppliers in the system
+              </CardDescription>
+            </div>
+            <Input className="max-w-xs" placeholder="Search name, phone or email" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <UrlActions onNew={() => canCreate && handleAdd()} onQuery={setSearch} />
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -176,7 +184,7 @@ export default function SuppliersPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  suppliers.map((supplier) => (
+                  suppliers.filter((x) => !search.trim() || [x.name, x.phone, x.email].some((v) => v?.toLowerCase().includes(search.trim().toLowerCase()))).map((supplier) => (
                     <TableRow key={supplier.id}>
                       <TableCell className="font-medium">
                         {supplier.name}

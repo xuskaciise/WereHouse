@@ -32,6 +32,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { PaginationControls } from "@/components/ui/pagination-controls"
 import { useCan } from "@/components/providers/current-user-provider"
 import Link from "next/link"
+import { downloadCsv } from "@/lib/export-file"
 
 const PAGE_SIZE = 25
 
@@ -146,7 +147,26 @@ export default function StockMovementsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button
+            variant="outline"
+            disabled={filteredMovements.length === 0}
+            onClick={() =>
+              downloadCsv(`stock_movements_${new Date().toISOString().slice(0, 10)}.csv`, [
+                ["Date", "Type", "Product", "SKU", "Warehouse", "Quantity", "Reference", "Notes", "User"],
+                ...filteredMovements.map((m: any) => [
+                  String(m.createdAt).slice(0, 19).replace("T", " "),
+                  m.type,
+                  m.product?.name,
+                  m.product?.sku,
+                  m.warehouse?.name,
+                  m.quantity,
+                  m.reference ?? "",
+                  m.notes ?? "",
+                  m.user?.username ?? "",
+                ]),
+              ])
+            }
+          >
             <Download className="mr-2 h-4 w-4" />
             Export CSV
           </Button>

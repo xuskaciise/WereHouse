@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import { useParams } from "next/navigation"
 import { ArrowLeft, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -10,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatCurrency, formatDate, formatUnitCost } from "@/lib/utils"
+import { CompanyHeader } from "@/components/company-header"
 import { paymentSummary } from "@/lib/payment-methods"
 
 // Printable credit note (SR-000001).
@@ -51,7 +51,7 @@ export default function SalesReturnPage() {
                 <Link className="underline print:no-underline" href={`/sales/${r.salesOrder?.id}`}>{r.salesOrder?.orderNumber}</Link> ({formatDate(r.salesOrder?.orderDate)}) · warehouse {r.warehouse?.name} · by {r.user?.username}
               </p>
             </div>
-            <Image src="/siu_logo.png" alt="SIU" width={64} height={64} className="h-14 w-auto" />
+            <CompanyHeader />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">

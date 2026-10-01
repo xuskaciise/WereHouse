@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ArrowLeft, Plus, Trash2, Download } from "lucide-react"
+import { ArrowLeft, Plus, Trash2, ScanLine } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -22,7 +22,18 @@ import {
 import { useRouter } from "next/navigation"
 import { resolveTaxRate, taxLabel } from "@/lib/tax-rules"
 import Link from "next/link"
-import Image from "next/image"
+import { CompanyHeader, useCompany } from "@/components/company-header"
+import { QuickCreateButton } from "@/components/quick-create"
+import { defaultWarehouseFor, rememberWarehouse } from "@/components/default-warehouse"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  PaymentMethodFields,
+  emptyPaymentMethod,
+  paymentMethodBody,
+  paymentMethodProblems,
+  usePaymentConfig,
+  type PaymentMethodValue,
+} from "@/components/payment-method-fields"
 
 interface OrderItem {
   productId: string
@@ -106,6 +117,15 @@ export default function NewSalesOrderPage() {
   const canDeliver = useCan("sales_deliver", "create")
   // ?edit=<id>: edit a draft, or a confirmed order before any delivery.
   const [editing, setEditing] = useState<any | null>(null)
+  // ?mode=sell: counter sale ("Sell now"): walk-in customer, deliver + pay at once.
+  const [sellMode, setSellMode] = useState(false)
+  const company = useCompany()
+  const canTakePayment = useCan("customer_payments", "create")
+  const paymentConfig = usePaymentConfig()
+  const [paidNow, setPaidNow] = useState(false)
+  const [paidAmount, setPaidAmount] = useState("")
+  const [payMethod, setPayMethod] = useState<PaymentMethodValue>(emptyPaymentMethod("CASH"))
+  const [quickAdd, setQuickAdd] = useState("")
   const [customers, setCustomers] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
   const [warehouses, setWarehouses] = useState<any[]>([])
@@ -124,13 +144,45 @@ export default function NewSalesOrderPage() {
     fetch("/api/settings").then(async (r) => r.ok && setTaxRate(resolveTaxRate(await r.json(), "sales")))
   }, [])
   const orderNumber = editing?.orderNumber ?? "New order"
+  const walkInId = company?.walkInCustomerId ?? null
+  const isWalkIn = !!walkInId && customerId === walkInId
+  useEffect(() => {
+    if (!sellMode || editing) return
+    if (walkInId) setCustomerId((current) => current || walkInId)
+    setItems((prev) => (prev.length ? prev : [{ productId: "", quantity: 1, unitPrice: 0, discountType: "PERCENT", discountValue: "" }]))
+  }, [sellMode, walkInId, editing])
+  // Walk-in sales are always paid in full; other customers may pay now (optional).
+  const payNow = isWalkIn || paidNow
+
+  // Scan / type a SKU (or an exact name) and press Enter: adds the product or +1.
+  const addByCode = () => {
+    const code = quickAdd.trim().toLowerCase()
+    if (!code) return
+    const product = products.find((p) => p.sku?.toLowerCase() === code) ?? products.find((p) => p.name?.toLowerCase() === code)
+    if (!product) {
+      toast({ title: "Not found", description: `No product with SKU or name "${quickAdd.trim()}"`, variant: "destructive" })
+      return
+    }
+    setItems((prev) => {
+      const at = prev.findIndex((i) => i.productId === product.id)
+      if (at >= 0) return prev.map((i, n) => (n === at ? { ...i, quantity: i.quantity + 1 } : i))
+      const empty = prev.findIndex((i) => !i.productId)
+      const line = { productId: product.id, quantity: 1, unitPrice: product.sellingPrice, discountType: "PERCENT" as DiscountTypeValue, discountValue: "" }
+      return empty >= 0 ? prev.map((i, n) => (n === empty ? line : i)) : [...prev, line]
+    })
+    setQuickAdd("")
+  }
 
   useEffect(() => {
     fetchCustomers()
     fetchProducts()
     fetchWarehouses()
     fetchStock()
-    const editId = new URLSearchParams(window.location.search).get("edit")
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("mode") === "sell") setSellMode(true)
+    else if (!params.get("customer")) setItems((prev) => (prev.length ? prev : [{ productId: "", quantity: 1, unitPrice: 0, discountType: "PERCENT", discountValue: "" }]))
+    if (params.get("customer")) setCustomerId(params.get("customer")!)
+    const editId = params.get("edit")
     if (editId) {
       fetch(`/api/sales-orders/${editId}`).then(async (r) => {
         if (!r.ok) return
@@ -185,6 +237,10 @@ export default function NewSalesOrderPage() {
       if (response.ok) {
         const data = await response.json()
         setWarehouses(data)
+        // Default / last used warehouse (not when editing an order).
+        if (!new URLSearchParams(window.location.search).get("edit")) {
+          setWarehouseId((current) => current || defaultWarehouseFor(currentUser, data))
+        }
       }
     } catch (error) {
       console.error("Error fetching warehouses:", error)
@@ -344,6 +400,17 @@ export default function NewSalesOrderPage() {
 
   const handleSubmit = async (mode: "draft" | "confirm" | "sell_now") => {
     const isDraft = mode === "draft"
+    if (isWalkIn && mode !== "sell_now") {
+      toast({ title: "Walk-in customer", description: "Walk-in sales are paid in full at once. Choose a named customer for orders on credit.", variant: "destructive" })
+      return
+    }
+    if (mode === "sell_now" && payNow) {
+      const problem = paymentMethodProblems(payMethod, paymentConfig).error
+      if (problem) {
+        toast({ title: "Payment", description: problem, variant: "destructive" })
+        return
+      }
+    }
     if (!customerId || !warehouseId || items.length === 0) {
       toast({
         title: "Validation Error",
@@ -412,6 +479,9 @@ export default function NewSalesOrderPage() {
           discountReason: discountReason.trim() || null,
           notes: editing?.notes ?? null,
           mode,
+          ...(mode === "sell_now" && payNow && {
+            payment: { amount: isWalkIn ? (totalCents / 100).toFixed(2) : paidAmount || (totalCents / 100).toFixed(2), ...paymentMethodBody(payMethod) },
+          }),
         }),
       })
 
@@ -495,7 +565,7 @@ export default function NewSalesOrderPage() {
         </Link>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            {editing ? `Edit ${editing.orderNumber}` : "Create New Sale Order"}
+            {editing ? `Edit ${editing.orderNumber}` : sellMode ? "Sell now" : "Create New Sale Order"}
           </h1>
           <p className="text-muted-foreground">
             Create a new sales order for a customer
@@ -528,6 +598,15 @@ export default function NewSalesOrderPage() {
                   searchPlaceholder="Search customers..."
                   emptyMessage="No customers found."
                 />
+                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>{isWalkIn ? "Walk-in: paid in full at the sale. For credit choose a named customer." : ""}</span>
+                  <span className="flex items-center gap-2">
+                    {walkInId && !isWalkIn && !editing && (
+                      <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => setCustomerId(walkInId)}>Walk-in customer</Button>
+                    )}
+                    <QuickCreateButton kind="customer" onCreated={(c) => { setCustomers((prev) => [...prev, c]); setCustomerId(c.id) }} />
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -538,7 +617,7 @@ export default function NewSalesOrderPage() {
                     label: warehouse.name,
                   }))}
                   value={warehouseId}
-                  onValueChange={setWarehouseId}
+                  onValueChange={(id) => { setWarehouseId(id); rememberWarehouse(currentUser, id) }}
                   placeholder="Select warehouse"
                   searchPlaceholder="Search warehouses..."
                   emptyMessage="No warehouses found."
@@ -691,14 +770,23 @@ export default function NewSalesOrderPage() {
                   </TableBody>
                 </Table>
               </div>
-              <Button
-                variant="outline"
-                className="mt-4"
-                onClick={addItem}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Another Item
-              </Button>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Button variant="outline" onClick={addItem}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Another Item
+                </Button>
+                <div className="relative min-w-[220px] flex-1">
+                  <ScanLine className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-8"
+                    placeholder="Scan / type SKU and press Enter"
+                    value={quickAdd}
+                    onChange={(e) => setQuickAdd(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addByCode() } }}
+                  />
+                </div>
+                <QuickCreateButton kind="product" onCreated={(p) => { setProducts((prev) => [...prev, p]); setItems((prev) => [...prev.filter((i) => i.productId), { productId: p.id, quantity: 1, unitPrice: Number(p.sellingPrice), discountType: "PERCENT", discountValue: "" }]) }} />
+              </div>
             </CardContent>
           </Card>
 
@@ -774,13 +862,44 @@ export default function NewSalesOrderPage() {
             </Button>
           ) : (
             <div className="space-y-2">
+              {canConfirm && canDeliver && (sellMode || isWalkIn || paidNow || canTakePayment) && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Payment</CardTitle>
+                    <CardDescription>{isWalkIn ? "Walk-in sale: the full amount is paid now." : "Money received with \"Sell & deliver now\" (optional)."}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {!canTakePayment ? (
+                      <p className="text-sm text-destructive">Your role cannot record payments{isWalkIn ? ", so it cannot sell to the walk-in customer" : ""}.</p>
+                    ) : (
+                      <>
+                        {!isWalkIn && (
+                          <label className="flex items-center gap-2 text-sm">
+                            <Checkbox checked={paidNow} onCheckedChange={(c) => { setPaidNow(c === true); if (c === true) setPaidAmount((totalCents / 100).toFixed(2)) }} />
+                            Paid now
+                          </label>
+                        )}
+                        {payNow && (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label>Amount paid</Label>
+                              <Input type="number" min="0" step="0.01" value={isWalkIn ? (totalCents / 100).toFixed(2) : paidAmount} disabled={isWalkIn} onChange={(e) => setPaidAmount(e.target.value)} />
+                            </div>
+                            <div className="sm:col-span-2"><PaymentMethodFields value={payMethod} onChange={setPayMethod} idPrefix="sale-pay" /></div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
               <div className="flex flex-wrap gap-2">
-                {canDraft && (
+                {canDraft && !sellMode && !isWalkIn && (
                   <Button variant="outline" className="flex-1" onClick={() => handleSubmit("draft")} disabled={isSaving || discountErrors.length > 0}>
                     {isSaving ? "Saving..." : "Save draft"}
                   </Button>
                 )}
-                {canConfirm && (
+                {canConfirm && !sellMode && !isWalkIn && (
                   <Button
                     variant="secondary"
                     className="flex-1"
@@ -791,8 +910,12 @@ export default function NewSalesOrderPage() {
                   </Button>
                 )}
                 {canConfirm && canDeliver && (
-                  <Button className="flex-1" onClick={() => handleSubmit("sell_now")} disabled={isSaving || hasInsufficientStock || discountErrors.length > 0}>
-                    {hasInsufficientStock ? "Insufficient stock" : "Sell & deliver now"}
+                  <Button
+                    className="flex-1"
+                    onClick={() => handleSubmit("sell_now")}
+                    disabled={isSaving || hasInsufficientStock || discountErrors.length > 0 || (isWalkIn && !canTakePayment)}
+                  >
+                    {hasInsufficientStock ? "Insufficient stock" : payNow ? `Sell & deliver now · paid ${money(isWalkIn ? totalCents : Math.round(Number(paidAmount || 0) * 100))}` : "Sell & deliver now"}
                   </Button>
                 )}
               </div>
@@ -820,33 +943,13 @@ export default function NewSalesOrderPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Live Invoice Preview</CardTitle>
-                <Button variant="outline" size="sm">
-                  <Download className="mr-2 h-4 w-4" />
-                  Download PDF
-                </Button>
-              </div>
+              <CardTitle>Invoice preview</CardTitle>
+              <CardDescription>Print or save as PDF from the order page after saving.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="text-center border-b pb-4">
-                <div className="mb-3 flex justify-center">
-                  <Image
-                    src="/siu_logo.png"
-                    alt="SIU Warehouse logo"
-                    width={72}
-                    height={72}
-                    className="h-16 w-auto"
-                    priority
-                  />
-                </div>
-                <div className="text-lg font-bold">Siu Warehouse</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  123 Business School Ave.
-                  <br />
-                  Education District, ED 10245
-                </div>
-                <div className="text-xs text-muted-foreground mt-2">
+              <div className="border-b pb-4">
+                <CompanyHeader align="center" />
+                <div className="mt-2 text-center text-xs text-muted-foreground">
                   Invoice #{orderNumber}
                 </div>
               </div>
@@ -922,7 +1025,7 @@ export default function NewSalesOrderPage() {
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground mt-2">
-                  *Terms: Net 30
+                  Terms: {company?.paymentTerms ?? ""}
                 </div>
               </div>
             </CardContent>

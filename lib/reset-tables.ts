@@ -22,6 +22,8 @@ export const RESET_DELETE_TABLES = [
   "journal_lines",
   "journal_entries",
   "inventory_valuation_entries",
+  "landed_cost_template_items",
+  "landed_cost_templates",
   "landed_cost_logs",
   "purchase_landed_cost_allocations",
   "purchase_landed_costs",

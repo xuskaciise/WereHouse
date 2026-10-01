@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Plus, MoreHorizontal, Printer, Edit, Trash2, Eye, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -34,7 +35,17 @@ import { can } from "@/lib/permission-rules"
 const escapeHtml = (value: string) =>
   value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
 
+// ?tab=customers|suppliers (menu: Customer / Supplier payments), ?new=1 opens "Record payment".
 export default function PaymentsPage() {
+  return (
+    <Suspense>
+      <PaymentsContent />
+    </Suspense>
+  )
+}
+
+function PaymentsContent() {
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   // Tabs, lists and buttons follow the customer_payments / supplier_payments
   // permissions; the API enforces the same.
@@ -57,6 +68,14 @@ export default function PaymentsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<any | null>(null)
+  useEffect(() => {
+    const tab = searchParams.get("tab")
+    if ((tab === "customers" && canCustomer) || (tab === "suppliers" && canSupplier)) setActiveTab(tab)
+    if (searchParams.get("new") === "1") {
+      setEditingPayment(null)
+      setIsDialogOpen(true)
+    }
+  }, [searchParams, canCustomer, canSupplier])
   const [selectedPayment, setSelectedPayment] = useState<any | null>(null)
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null)
 

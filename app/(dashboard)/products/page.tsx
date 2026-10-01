@@ -31,6 +31,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { validateProductDates } from "@/lib/product-date-validation"
 import { useCan } from "@/components/providers/current-user-provider"
 import { AccountLinkFields, emptyAccountLinks, type AccountLinkValue } from "@/components/account-select"
+import { UrlActions } from "@/components/url-actions"
 
 export default function ProductsPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -233,6 +234,7 @@ export default function ProductsPage() {
 
       <Card>
         <CardHeader>
+          <UrlActions onNew={() => { if (canCreate) { setEditingProduct(null); setIsDialogOpen(true) } }} onQuery={setSearchTerm} />
           <div className="flex items-center gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

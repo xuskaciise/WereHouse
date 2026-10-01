@@ -50,6 +50,8 @@ export const POST = withAuth(
     const tableList = Prisma.raw(RESET_DELETE_TABLES.map((t) => `"${t}"`).join(", "))
     const counts = await prisma.$transaction(async (tx) => {
       const before = await countRows(tx)
+      // Kept users point at warehouses that are deleted: clear their default first.
+      await tx.$executeRaw`UPDATE "users" SET "defaultWarehouseId" = NULL, "defaultWarehouseLocked" = false`
       await tx.$executeRaw`TRUNCATE TABLE ${tableList} RESTART IDENTITY`
       const after = await countRows(tx)
       return RESET_DELETE_TABLES.map((table) => ({ table, before: before[table], after: after[table] }))

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import { useParams, useRouter } from "next/navigation"
 import { AlertTriangle, ArrowLeft, PackageCheck, Pencil, Plus, Printer, Send, Trash2, Undo2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -17,6 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from "@/components/ui/use-toast"
 import { useCan, useCurrentUser } from "@/components/providers/current-user-provider"
 import { formatCurrency, formatDate, formatUnitCost } from "@/lib/utils"
+import { CompanyHeader } from "@/components/company-header"
 import { TRANSFER_EVENTS, TRANSFER_STATUS } from "@/lib/transfer-labels"
 import { PaymentMethodFields, emptyPaymentMethod, paymentMethodBody, paymentMethodProblems, usePaymentConfig, type PaymentMethodValue } from "@/components/payment-method-fields"
 
@@ -192,7 +192,7 @@ export default function TransferDetailPage() {
               {t.notes && <p className="mt-1 text-sm">{t.notes}</p>}
               {t.cancelReason && <p className="mt-1 text-sm text-destructive">Cancelled: {t.cancelReason}</p>}
             </div>
-            <Image src="/siu_logo.png" alt="SIU" width={64} height={64} className="h-14 w-auto" />
+            <CompanyHeader />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">

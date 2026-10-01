@@ -13,6 +13,8 @@ export interface CurrentUser {
   permissions: PermissionMap
   /** Discount limit a reason is measured against (see lib/sales-discounts.ts). */
   discountReasonReferenceLimit: number
+  defaultWarehouseId?: string | null
+  defaultWarehouseLocked?: boolean
 }
 
 const CurrentUserContext = createContext<CurrentUser | null>(null)

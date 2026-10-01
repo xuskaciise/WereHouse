@@ -1,277 +1,170 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import {
-  LayoutDashboard,
-  Package,
-  ShoppingCart,
-  ShoppingBag,
-  Warehouse,
-  TrendingUp,
-  FileText,
-  CreditCard,
-  DollarSign,
-  Settings,
   AlertTriangle,
-  Users,
+  ArrowLeftRight,
+  BookOpen,
+  Boxes,
+  CalendarClock,
   ChevronDown,
   ChevronRight,
-  ShieldCheck,
-  Tags,
-  ArrowLeftRight,
-  CalendarClock,
-  Undo2,
-  PieChart,
+  CreditCard,
+  FileBarChart,
+  FileSpreadsheet,
   Landmark,
-  BookOpen,
+  LayoutDashboard,
+  Package,
+  Receipt,
   Scale,
+  Settings,
+  ShieldCheck,
+  ShoppingBag,
+  ShoppingCart,
+  Store,
+  Tags,
+  TrendingUp,
+  Truck,
+  Undo2,
+  UserCog,
+  Users,
+  Warehouse,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/components/providers/current-user-provider"
-import { ROLE_LABELS, canOpenPage } from "@/lib/permission-rules"
+import { ROLE_LABELS } from "@/lib/permission-rules"
+import { type NavSection, activeItem, visibleSections } from "@/lib/navigation"
+import { useCompany } from "@/components/company-header"
+import { useAttention } from "@/components/layout/use-attention"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
 
-interface NavItem {
-  name: string
-  href: string
-  icon: React.ComponentType<{ className?: string }>
-  children?: NavItem[]
+const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  dashboard: LayoutDashboard,
+  sell: Store,
+  cart: ShoppingCart,
+  calendar: CalendarClock,
+  undo: Undo2,
+  users: Users,
+  payments: CreditCard,
+  bag: ShoppingBag,
+  truck: Truck,
+  package: Package,
+  tags: Tags,
+  boxes: Boxes,
+  alert: AlertTriangle,
+  warehouse: Warehouse,
+  transfer: ArrowLeftRight,
+  trend: TrendingUp,
+  expense: Receipt,
+  landmark: Landmark,
+  book: BookOpen,
+  ledger: FileSpreadsheet,
+  scale: Scale,
+  reports: FileBarChart,
+  userCog: UserCog,
+  shield: ShieldCheck,
+  settings: Settings,
 }
 
-interface NavSection {
-  title: string
-  items: NavItem[]
-}
+const STORAGE_KEY = "nav-collapsed-sections"
 
-const navigationSections: NavSection[] = [
-  {
-    title: "Core",
-    items: [{ name: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
-  },
-  {
-    title: "Master Data",
-    items: [
-      { name: "Warehouses", href: "/warehouses", icon: Warehouse },
-      { name: "Categories", href: "/categories", icon: FileText },
-      { name: "Products", href: "/products", icon: Package },
-      { name: "Suppliers", href: "/suppliers", icon: ShoppingBag },
-      { name: "Customers", href: "/customers", icon: ShoppingCart },
-    ],
-  },
-  {
-    title: "Procurement (Inbound)",
-    items: [
-      { name: "Purchases", href: "/purchases", icon: ShoppingBag },
-      { name: "Purchase Returns", href: "/purchases/returns", icon: Undo2 },
-      { name: "Landed Cost Types", href: "/landed-cost-types", icon: Tags },
-      { name: "Stock (In-hand)", href: "/inventory", icon: Package },
-    ],
-  },
-  {
-    title: "Inventory Control",
-    items: [
-      { name: "Stock Transfers", href: "/transfers", icon: ArrowLeftRight },
-      { name: "Stock Movements", href: "/inventory/movements", icon: TrendingUp },
-      { name: "Low Stock Alerts", href: "/inventory/low-stock", icon: AlertTriangle },
-      { name: "Expenses", href: "/expenses", icon: DollarSign },
-    ],
-  },
-  {
-    title: "Sales & Finance",
-    items: [
-      { name: "Sales", href: "/sales", icon: ShoppingCart },
-      { name: "Reservations", href: "/sales/reservations", icon: CalendarClock },
-      { name: "Sales Returns", href: "/sales/returns", icon: Undo2 },
-      { name: "Payments", href: "/payments", icon: CreditCard },
-    ],
-  },
-  {
-    title: "Accounting",
-    items: [
-      { name: "Chart of Accounts", href: "/accounts", icon: Landmark },
-      { name: "Journal", href: "/accounts/journal", icon: BookOpen },
-      { name: "Trial Balance", href: "/accounts/trial-balance", icon: Scale },
-    ],
-  },
-  {
-    title: "System",
-    items: [
-      { name: "Reports", href: "/reports", icon: FileText },
-      { name: "Expense Reports", href: "/reports/expenses", icon: PieChart },
-      { name: "Profit & Loss", href: "/reports/profit-loss", icon: TrendingUp },
-      { name: "Users", href: "/users", icon: Users },
-      { name: "Roles & Permissions", href: "/roles", icon: ShieldCheck },
-      { name: "Settings", href: "/settings", icon: Settings },
-    ],
-  },
-]
-
-export function Sidebar() {
+/** Menu grouped by business area; sections collapse and remember their state. */
+export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
+  const params = useSearchParams()
   const user = useCurrentUser()
-  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({})
+  const company = useCompany()
+  const attention = useAttention()
+  const sections = useMemo<NavSection[]>(() => visibleSections(user.permissions), [user.permissions])
+  const search = params.toString() ? `?${params.toString()}` : ""
+  const active = activeItem(pathname, search, sections)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
-  // Initialize open menus based on active routes
   useEffect(() => {
-    const initialOpen: Record<string, boolean> = {}
-    navigationSections.forEach((section) => {
-      section.items.forEach((item) => {
-        if (item.children && item.children.length > 0) {
-          const hasActiveChild = item.children.some((child) => {
-            return pathname === child.href
-          })
-          const isParentActive = pathname === item.href
-          initialOpen[item.name] = hasActiveChild || isParentActive
-        }
-      })
+    try {
+      setCollapsed(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}"))
+    } catch {
+      setCollapsed({})
+    }
+  }, [])
+  const toggle = (key: string) =>
+    setCollapsed((prev) => {
+      const next = { ...prev, [key]: !prev[key] }
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      } catch {
+        // storage unavailable: state only for this page
+      }
+      return next
     })
-    setOpenMenus(initialOpen)
-  }, [pathname])
-
-  const getUserInitials = () => {
-    return user.username.substring(0, 2).toUpperCase()
-  }
-
-  const getUserDisplayName = () => {
-    return user.username.charAt(0).toUpperCase() + user.username.slice(1)
-  }
-
-  const getRoleDisplayName = () => {
-    return ROLE_LABELS[user.role]
-  }
 
   return (
-    <div className="flex h-screen w-64 flex-col border-r bg-card">
-      <div className="flex h-16 items-center gap-2 border-b px-6">
+    <div className="flex h-full flex-col">
+      <div className="flex h-16 shrink-0 items-center gap-2 border-b px-5">
         <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border bg-white">
-          <Image src="/siu_logo.png" alt="SIU Logo" width={40} height={40} className="h-full w-full object-cover" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={company?.logoUrl ?? "/siu_logo.png"} alt="Logo" className="h-full w-full object-contain" />
         </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold">Siu Warehouse</span>
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate text-sm font-semibold">{company?.name ?? "Siu Warehouse"}</span>
           <span className="text-xs text-muted-foreground">Inventory System</span>
         </div>
       </div>
 
-      <nav className="flex-1 p-4 overflow-y-auto">
-        {navigationSections.map((section) => {
-          // Links follow the same page permissions the server enforces.
-          const items = section.items.filter((item) => canOpenPage(user.permissions, item.href))
-          if (items.length === 0) return null
+      <nav className="flex-1 overflow-y-auto p-3" aria-label="Main">
+        {sections.map((section) => {
+          // A collapsed section still opens when it holds the current page.
+          const isCollapsed = !!section.label && !!collapsed[section.key] && !(active && section.items.includes(active))
           return (
-          <div key={section.title} className="mb-5">
-            <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">
-              {section.title}
-            </p>
-            <div className="space-y-1">
-              {items.map((item) => {
-                // Check if any child route is active (more precise matching)
-                // First check for exact matches, then check for path prefixes
-                const hasActiveChild = item.children?.some((child) => {
-                  return pathname === child.href
-                })
-
-                // Check if parent route is active (but not if a child matches exactly or has a prefix match)
-                const exactChildMatch = item.children?.some((child) => {
-                  return pathname === child.href
-                })
-                const isParentActive = !exactChildMatch && pathname === item.href
-
-                // If item has children, render as collapsible
-                if (item.children && item.children.length > 0) {
-                  const isOpen = openMenus[item.name] ?? false
-
-                  return (
-                    <Collapsible
-                      key={item.name}
-                      open={isOpen}
-                      onOpenChange={(open) => {
-                        setOpenMenus((prev) => ({ ...prev, [item.name]: open }))
-                      }}
-                      className="w-full"
-                    >
-                      <CollapsibleTrigger
+            <div key={section.key} className="mb-3">
+              {section.label && (
+                <button
+                  type="button"
+                  onClick={() => toggle(section.key)}
+                  className="mb-1 flex w-full items-center justify-between rounded px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 hover:text-foreground"
+                  aria-expanded={!isCollapsed}
+                >
+                  {section.label}
+                  {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </button>
+              )}
+              {!isCollapsed && (
+                <div className="space-y-0.5">
+                  {section.items.map((item) => {
+                    const Icon = ICONS[item.icon] ?? Package
+                    const isActive = item === active
+                    const count = item.badge ? attention[item.badge] ?? 0 : 0
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={onNavigate}
                         className={cn(
-                          "w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                          isParentActive
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                          isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                         )}
                       >
-                        <div className="flex items-center gap-3">
-                          <item.icon className="h-5 w-5" />
-                          {item.name}
-                        </div>
-                        {isOpen ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" />
+                        <Icon className="h-4 w-4 shrink-0" />
+                        <span className="flex-1 truncate">{item.label}</span>
+                        {count > 0 && (
+                          <span
+                            className={cn(
+                              "min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold",
+                              isActive ? "bg-primary-foreground text-primary" : "bg-destructive text-destructive-foreground"
+                            )}
+                            title="Needs attention"
+                          >
+                            {count > 99 ? "99+" : count}
+                          </span>
                         )}
-                      </CollapsibleTrigger>
-                      <CollapsibleContent className="pl-4 space-y-1 mt-1">
-                        {item.children.map((child) => {
-                          // More precise child active detection
-                          // Find the most specific (longest) matching child first
-                          const allChildren = item.children || []
-                          const matchingChildren = allChildren.filter((c) => {
-                            return pathname === c.href
-                          })
-
-                          // Sort by href length (longest first) to prioritize more specific matches
-                          matchingChildren.sort((a, b) => b.href.length - a.href.length)
-
-                          // Only mark as active if this child is the most specific match
-                          const isChildActive = matchingChildren.length > 0 && matchingChildren[0].href === child.href
-
-                          return (
-                            <Link
-                              key={child.href}
-                              href={child.href}
-                              className={cn(
-                                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                                isChildActive
-                                  ? "bg-primary text-primary-foreground"
-                                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                              )}
-                            >
-                              <child.icon className="h-4 w-4" />
-                              {child.name}
-                            </Link>
-                          )
-                        })}
-                      </CollapsibleContent>
-                    </Collapsible>
-                  )
-                }
-
-                // Regular navigation item without children
-                const isActive = pathname === item.href
-
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    )}
-                  >
-                    <item.icon className="h-5 w-5" />
-                    {item.name}
-                  </Link>
-                )
-              })}
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
             </div>
-          </div>
           )
         })}
       </nav>
@@ -279,14 +172,23 @@ export function Sidebar() {
       <div className="border-t p-4">
         <div className="flex items-center gap-3">
           <Avatar>
-            <AvatarFallback>{getUserInitials()}</AvatarFallback>
+            <AvatarFallback>{user.username.substring(0, 2).toUpperCase()}</AvatarFallback>
           </Avatar>
-          <div className="flex flex-col">
-            <span className="text-sm font-medium">{getUserDisplayName()}</span>
-            <span className="text-xs text-muted-foreground">{getRoleDisplayName()}</span>
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-medium">{user.name || user.username}</span>
+            <span className="text-xs text-muted-foreground">{ROLE_LABELS[user.role]}</span>
           </div>
         </div>
       </div>
     </div>
+  )
+}
+
+/** Desktop sidebar (on phones the same menu opens as a drawer from the navbar). */
+export function Sidebar() {
+  return (
+    <aside className="hidden h-screen w-64 shrink-0 border-r bg-card md:block print:hidden">
+      <SidebarContent />
+    </aside>
   )
 }

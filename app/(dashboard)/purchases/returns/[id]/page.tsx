@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import { useParams } from "next/navigation"
 import { ArrowLeft, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatCurrency, formatDate, formatUnitCost } from "@/lib/utils"
+import { CompanyHeader } from "@/components/company-header"
 import { paymentSummary } from "@/lib/payment-methods"
 
 // Printable purchase return note (PR-000001).
@@ -49,7 +49,7 @@ export default function PurchaseReturnPage() {
                 {formatDate(r.returnDate)} · from warehouse {r.warehouse?.name} · purchase order {r.purchaseOrder?.orderNumber} ({formatDate(r.purchaseOrder?.orderDate)}) · by {r.user?.username}
               </p>
             </div>
-            <Image src="/siu_logo.png" alt="SIU" width={64} height={64} className="h-14 w-auto" />
+            <CompanyHeader />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">

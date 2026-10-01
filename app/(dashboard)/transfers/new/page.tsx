@@ -12,7 +12,8 @@ import { Combobox } from "@/components/ui/combobox"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/components/ui/use-toast"
-import { useCan } from "@/components/providers/current-user-provider"
+import { useCan, useCurrentUser } from "@/components/providers/current-user-provider"
+import { defaultWarehouseFor } from "@/components/default-warehouse"
 
 interface Line {
   productId: string
@@ -26,6 +27,7 @@ export default function NewTransferPage() {
   const [warehouses, setWarehouses] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
   const [stock, setStock] = useState<any[]>([])
+  const currentUser = useCurrentUser()
   const [fromWarehouseId, setFrom] = useState("")
   const [toWarehouseId, setTo] = useState("")
   const [expectedDate, setExpectedDate] = useState("")
@@ -34,7 +36,13 @@ export default function NewTransferPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetch("/api/warehouses").then(async (r) => r.ok && setWarehouses(await r.json()))
+    fetch("/api/warehouses").then(async (r) => {
+      if (!r.ok) return
+      const data = await r.json()
+      setWarehouses(data)
+      // Goods usually leave the user's own (default / last used) warehouse.
+      setFrom((current) => current || defaultWarehouseFor(currentUser, data))
+    })
     fetch("/api/products").then(async (r) => r.ok && setProducts(await r.json()))
     fetch("/api/stock").then(async (r) => r.ok && setStock(await r.json()))
   }, [])

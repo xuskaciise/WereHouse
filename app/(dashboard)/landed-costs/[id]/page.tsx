@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import Image from "next/image"
 import { ArrowLeft, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -11,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useCan } from "@/components/providers/current-user-provider"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { CompanyHeader } from "@/components/company-header"
 import { METHOD_LABELS, unit4 } from "../../purchases/landed-costs-section"
 
 export default function LandedCostReportPage() {
@@ -62,7 +62,7 @@ export default function LandedCostReportPage() {
                 )}
               </div>
             </div>
-            <Image src="/siu_logo.png" alt="SIU" width={64} height={64} className="h-14 w-auto" />
+            <CompanyHeader />
           </div>
         </CardHeader>
         <CardContent className="space-y-6">

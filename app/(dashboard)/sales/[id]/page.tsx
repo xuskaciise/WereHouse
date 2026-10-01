@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import { useParams, useRouter } from "next/navigation"
-import { AlertTriangle, ArrowLeft, CalendarClock, CheckCircle2, Pencil, Printer, Trash2, Truck, Undo2, Unlock, X } from "lucide-react"
+import { AlertTriangle, ArrowLeft, Banknote, CalendarClock, CheckCircle2, Pencil, Printer, Trash2, Truck, Undo2, Unlock, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -18,6 +17,8 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 import { discountLabel } from "@/lib/discount-rules"
 import { taxLabel } from "@/lib/tax-rules"
 import { SALES_EVENTS, SALES_STATUS, isOpenSalesStatus } from "@/lib/sales-labels"
+import { CompanyHeader, useCompany } from "@/components/company-header"
+import { RecordPaymentDialog } from "@/components/record-payment-dialog"
 
 const when = (d: string | null | undefined) => (d ? `${formatDate(d)} ${new Date(d).toLocaleTimeString()}` : "")
 
@@ -27,6 +28,9 @@ export default function SalesOrderPage() {
   const { toast } = useToast()
   const seesCost = useCan("product_cost", "view")
   const canReturn = useCan("sales_returns", "create")
+  const canReceivePayment = useCan("customer_payments", "create")
+  const company = useCompany()
+  const [payOpen, setPayOpen] = useState(false)
 
   const [o, setO] = useState<any | null>(null)
   const [error, setError] = useState("")
@@ -80,6 +84,9 @@ export default function SalesOrderPage() {
   const status = SALES_STATUS[o.status]
   const open = isOpenSalesStatus(o.status)
   const paid = (o.customerPayments ?? []).reduce((sum: number, p: any) => sum + Number(p.amount), 0)
+  // Open on this order: invoiced (delivered - returned), or the order total before delivery.
+  const invoiced = Number(o.deliveredTotal) - Number(o.returnedTotal ?? 0)
+  const due = Math.round(((o.status === "DELIVERED" || o.status === "PARTIALLY_DELIVERED" ? invoiced : Number(o.total)) - paid) * 100) / 100
 
   const openDeliver = () => {
     setDeliver(Object.fromEntries(o.items.filter((i: any) => i.remainingQuantity > 0).map((i: any) => [i.id, String(i.remainingQuantity)])))
@@ -154,8 +161,13 @@ export default function SalesOrderPage() {
               <Link href={`/sales/returns/new?order=${o.id}`}><Undo2 className="mr-2 h-4 w-4" /> Return goods</Link>
             </Button>
           )}
-          <Button variant="outline" onClick={() => window.print()}>
-            <Printer className="mr-2 h-4 w-4" /> Print invoice
+          {canReceivePayment && o.status !== "DRAFT" && o.status !== "CANCELLED" && (
+            <Button variant="outline" onClick={() => setPayOpen(true)}>
+              <Banknote className="mr-2 h-4 w-4" /> Receive payment
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => window.print()} title="Print, or choose Save as PDF in the print dialog">
+            <Printer className="mr-2 h-4 w-4" /> Print / PDF
           </Button>
         </div>
       </div>
@@ -184,7 +196,7 @@ export default function SalesOrderPage() {
                 </p>
               )}
             </div>
-            <Image src="/siu_logo.png" alt="SIU" width={64} height={64} className="h-14 w-auto" />
+            <CompanyHeader />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -251,6 +263,10 @@ export default function SalesOrderPage() {
               <div className="flex justify-between text-muted-foreground"><span>Returned (credit notes)</span><span>-{formatCurrency(o.returnedTotal)}</span></div>
             )}
             <div className="flex justify-between text-muted-foreground"><span>Paid</span><span>{formatCurrency(paid)}</span></div>
+            <div className={`flex justify-between font-medium ${due > 0 ? "text-destructive" : "text-green-700"}`}>
+              <span>{due >= 0 ? "Balance due" : "Paid in advance"}</span><span>{formatCurrency(Math.abs(due))}</span>
+            </div>
+            {company?.paymentTerms && <div className="pt-2 text-xs text-muted-foreground">Terms: {company.paymentTerms}</div>}
           </div>
           {o.discountReason && <p className="text-sm text-muted-foreground">Discount reason: {o.discountReason}</p>}
           <div className="hidden grid-cols-2 gap-8 pt-8 text-sm print:grid">
@@ -380,6 +396,18 @@ export default function SalesOrderPage() {
           </ol>
         </CardContent>
       </Card>
+
+      <RecordPaymentDialog
+        open={payOpen}
+        onOpenChange={setPayOpen}
+        kind="customer"
+        partyId={o.customerId}
+        partyName={o.customer?.name ?? ""}
+        orderId={o.id}
+        orderNumber={o.orderNumber}
+        suggested={Math.max(0, due)}
+        onSaved={load}
+      />
 
       <Dialog open={deliverOpen} onOpenChange={setDeliverOpen}>
         <DialogContent className="max-w-2xl">

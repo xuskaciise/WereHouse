@@ -13,6 +13,9 @@ export interface SessionUser {
   role: Role
   /** Resolved for this request from role_permissions (see lib/permissions.ts). */
   permissions: PermissionMap
+  /** Warehouse preselected in forms (Users / profile); locked = set by an admin only. */
+  defaultWarehouseId?: string | null
+  defaultWarehouseLocked?: boolean
 }
 
 export { HttpError }
@@ -30,7 +33,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
 
   const user = await prisma.user.findUnique({
     where: { id },
-    select: { id: true, name: true, username: true, role: true, status: true },
+    select: { id: true, name: true, username: true, role: true, status: true, defaultWarehouseId: true, defaultWarehouseLocked: true },
   })
   if (!user || user.status !== "APPROVED") return null
 
@@ -40,6 +43,8 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     username: user.username,
     role: user.role,
     permissions: await getRolePermissions(user.role),
+    defaultWarehouseId: user.defaultWarehouseId,
+    defaultWarehouseLocked: user.defaultWarehouseLocked,
   }
 })
 

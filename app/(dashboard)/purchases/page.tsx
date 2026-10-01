@@ -12,6 +12,7 @@ import Link from "next/link"
 import { purchaseStatusLabel } from "@/lib/purchase-rules"
 import { PurchaseOrderDetailsSheet, purchaseOrderStatusBadgeVariant } from "./purchase-order-details-sheet"
 import { useCan } from "@/components/providers/current-user-provider"
+import { downloadCsv, moneyCell } from "@/lib/export-file"
 
 export default function PurchasesPage() {
   // Hide what the role may not do; the API enforces the same permissions.
@@ -42,6 +43,11 @@ export default function PurchasesPage() {
       if (response.ok) {
         const data = await response.json()
         setPurchaseOrders(data || [])
+        const open = new URLSearchParams(window.location.search).get("open")
+        if (open) {
+          const order = (data as any[]).find((o) => o.id === open)
+          if (order) setSelectedOrder(order)
+        }
       } else {
         toast({
           title: "Error",
@@ -83,9 +89,28 @@ export default function PurchasesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button
+            variant="outline"
+            disabled={purchaseOrders.length === 0}
+            onClick={() =>
+              downloadCsv(`purchase_orders_${new Date().toISOString().slice(0, 10)}.csv`, [
+                ["Order", "Date", "Supplier", "Warehouse", "Status", "Subtotal", "Discount", "Tax", "Total"],
+                ...purchaseOrders.map((o: any) => [
+                  o.orderNumber,
+                  String(o.orderDate).slice(0, 10),
+                  o.supplier?.name,
+                  o.warehouse?.name,
+                  o.status,
+                  moneyCell(o.subtotal),
+                  moneyCell(o.discount),
+                  moneyCell(o.tax),
+                  moneyCell(o.total),
+                ]),
+              ])
+            }
+          >
             <Download className="mr-2 h-4 w-4" />
-            Export PDF
+            Export CSV
           </Button>
           {canCreate && (
             <Link href="/purchases/new">

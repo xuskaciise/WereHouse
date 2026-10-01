@@ -8,15 +8,19 @@ import type { Module } from "@/lib/permission-rules"
 import {
   type LandedCostInput,
   type PlanCost,
+  assertManualMatches,
+  inputToPlanCost,
   itemCostFigures,
   landedCostInclude,
   loadForPlanning,
   planLandedCosts,
+  syncLandedCosts,
   toPlanCost,
   toPlanItems,
 } from "@/lib/landed-costs"
 
 type Db = Prisma.TransactionClient | typeof prisma
+type Tx = Prisma.TransactionClient
 
 // Access, finalize rule, audit log and response shape for the landed cost
 // routes (app/api/purchase-orders/[id]/landed-costs/**).
@@ -240,4 +244,81 @@ export function parseTypeName(value: unknown): string {
   if (!name) throw new HttpError(400, "Name is required")
   if (name.length > 60) throw new HttpError(400, "Name must be at most 60 characters")
   return name
+}
+
+/**
+ * Adds one landed cost to a (locked, editable) purchase order: amount with
+ * the current quantities, allocations, stock / COGS revaluation, optional
+ * "paid now" supplier payment and the log. Shared by the landed-costs route
+ * and landed cost templates. The caller posts the journal.
+ */
+export async function createLandedCostInTx(
+  tx: Tx,
+  userId: string,
+  purchaseOrderId: string,
+  input: LandedCostInput,
+  options: {
+    reason: string | null
+    typeName: string
+    paidNow?: { paymentMethod: string; payerPhone: string | null; transactionId: string | null; reference?: unknown } | null
+  }
+): Promise<string> {
+  const loaded = await loadForPlanning(tx, purchaseOrderId)
+  const items = toPlanItems(loaded)
+  const plan = planLandedCosts(items, [...loaded.landedCosts.map(toPlanCost), inputToPlanCost("__new__", input)])
+  const amount = plan.costs.find((c) => c.id === "__new__")!.amount
+  assertManualMatches(input, items, amount)
+
+  const cost = await tx.purchaseLandedCost.create({
+    data: {
+      purchaseOrderId,
+      typeId: input.typeId,
+      paidToSupplierId: input.paidToSupplierId,
+      amountType: input.amountType,
+      value: input.value,
+      percentBase: input.percentBase,
+      amount,
+      allocationMethod: input.allocationMethod,
+      reference: input.reference,
+      costDate: input.costDate,
+      notes: input.notes,
+      userId,
+      ...(input.manual && {
+        allocations: {
+          create: [...input.manual].map(([itemId, manualAmount]) => ({
+            purchaseOrderItemId: itemId,
+            manualAmount,
+            amount: manualAmount,
+          })),
+        },
+      }),
+    },
+  })
+  await syncLandedCosts(tx, purchaseOrderId, userId)
+
+  const paid = options.paidNow
+  if (paid) {
+    await tx.supplierPayment.create({
+      data: {
+        supplierId: input.paidToSupplierId,
+        landedCostId: cost.id,
+        amount,
+        paymentMethod: paid.paymentMethod,
+        payerPhone: paid.payerPhone,
+        transactionId: paid.transactionId,
+        reference: typeof paid.reference === "string" ? paid.reference.trim() || null : input.reference,
+        notes: `Landed cost: ${options.typeName}`,
+        userId,
+      },
+    })
+  }
+  await logLandedCost(tx, {
+    purchaseOrderId,
+    userId,
+    action: "CREATE",
+    landedCostId: cost.id,
+    after: await costSnapshot(tx, cost.id),
+    reason: options.reason,
+  })
+  return cost.id
 }

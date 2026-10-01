@@ -24,6 +24,8 @@ export const purchaseOrderDetailInclude = {
     orderBy: { createdAt: "desc" as const },
     include: { user: userSummary, items: true },
   },
+  // Payments made against this order (the "Pay supplier" suggestion).
+  supplierPayments: { select: { id: true, amount: true, paymentDate: true, paymentMethod: true } },
 } satisfies Prisma.PurchaseOrderInclude
 
 export function totalReceived(item: { receiveItems: { quantityReceived: number }[] }): number {

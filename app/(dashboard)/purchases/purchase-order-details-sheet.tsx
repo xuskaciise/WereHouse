@@ -2,7 +2,9 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, PackageCheck, Pencil, Printer, Undo2 } from "lucide-react"
+import { CompanyHeader } from "@/components/company-header"
+import { RecordPaymentDialog } from "@/components/record-payment-dialog"
+import { AlertTriangle, Banknote, PackageCheck, Pencil, Printer, Undo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -102,6 +104,8 @@ export function PurchaseOrderDetailsSheet({
   const canEditOrder = useCan("purchases", "edit")
   const canViewLandedCosts = useCan("landed_costs", "view")
   const canReturn = useCan("purchase_returns", "create")
+  const canPay = useCan("supplier_payments", "create")
+  const [payOpen, setPayOpen] = useState(false)
 
   const [receiveOpen, setReceiveOpen] = useState(false)
   const [receiveNote, setReceiveNote] = useState("")
@@ -280,12 +284,7 @@ export function PurchaseOrderDetailsSheet({
           <div id="purchase-order-print-root" className="space-y-6 pt-2">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between pr-6">
               <div className="flex flex-col gap-3 min-[480px]:flex-row min-[480px]:items-center min-[480px]:gap-4 min-w-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/siu_logo.png"
-                  alt="SIU"
-                  className="h-12 w-auto max-w-[200px] object-contain object-left"
-                />
+                <CompanyHeader align="left" />
                 <div className="min-w-0 text-left">
                   <SheetTitle className="text-left text-xl font-semibold leading-tight">
                     Purchase Order: {order.orderNumber}
@@ -306,6 +305,12 @@ export function PurchaseOrderDetailsSheet({
                   <Button type="button" variant="default" size="sm" onClick={openReceiveDialog}>
                     <PackageCheck className="mr-2 h-4 w-4" />
                     Receive Order
+                  </Button>
+                )}
+                {canPay && order.status !== "CANCELLED" && (
+                  <Button type="button" variant="outline" size="sm" onClick={() => setPayOpen(true)}>
+                    <Banknote className="mr-2 h-4 w-4" />
+                    Pay supplier
                   </Button>
                 )}
                 {canReturn && order.items?.some((i: any) => totalReceivedForLineItem(i) > 0) && (
@@ -472,6 +477,17 @@ export function PurchaseOrderDetailsSheet({
           </div>
         </SheetContent>
       </Sheet>
+      <RecordPaymentDialog
+        open={payOpen}
+        onOpenChange={setPayOpen}
+        kind="supplier"
+        partyId={order.supplierId}
+        partyName={order.supplier?.name ?? ""}
+        orderId={order.id}
+        orderNumber={order.orderNumber}
+        suggested={Math.max(0, Math.round((Number(order.total) - (order.supplierPayments ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0)) * 100) / 100)}
+        onSaved={() => onReceiveComplete(order.id)}
+      />
 
       <Dialog open={receiveOpen} onOpenChange={setReceiveOpen}>
         <DialogContent className="max-w-2xl sm:max-w-3xl">

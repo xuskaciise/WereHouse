@@ -14,6 +14,9 @@ import { resolveTaxRate, taxLabel } from "@/lib/tax-rules"
 import { useToast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { useCurrentUser } from "@/components/providers/current-user-provider"
+import { QuickCreateButton } from "@/components/quick-create"
+import { defaultWarehouseFor, rememberWarehouse } from "@/components/default-warehouse"
 
 interface OrderItem {
   productId: string
@@ -29,13 +32,14 @@ export default function NewPurchaseOrderPage() {
   }, [])
   const { toast } = useToast()
   const router = useRouter()
+  const currentUser = useCurrentUser()
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
   const [warehouses, setWarehouses] = useState<any[]>([])
   const [supplierId, setSupplierId] = useState("")
   const [warehouseId, setWarehouseId] = useState("")
   const [expectedDelivery, setExpectedDelivery] = useState("")
-  const [items, setItems] = useState<OrderItem[]>([])
+  const [items, setItems] = useState<OrderItem[]>([{ productId: "", quantity: 1, unitPrice: 0 }])
   const [notes, setNotes] = useState("")
   const [isSaving, setIsSaving] = useState(false)
 
@@ -75,6 +79,7 @@ export default function NewPurchaseOrderPage() {
       if (response.ok) {
         const data = await response.json()
         setWarehouses(data)
+        setWarehouseId((current) => current || defaultWarehouseFor(currentUser, data))
       }
     } catch (error) {
       console.error("Error fetching warehouses:", error)
@@ -213,6 +218,9 @@ export default function NewPurchaseOrderPage() {
                   searchPlaceholder="Search suppliers..."
                   emptyMessage="No suppliers found."
                 />
+                <div className="flex justify-end">
+                  <QuickCreateButton kind="supplier" onCreated={(sup) => { setSuppliers((prev) => [...prev, sup]); setSupplierId(sup.id) }} />
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -223,7 +231,7 @@ export default function NewPurchaseOrderPage() {
                     label: warehouse.name,
                   }))}
                   value={warehouseId}
-                  onValueChange={setWarehouseId}
+                  onValueChange={(id) => { setWarehouseId(id); rememberWarehouse(currentUser, id) }}
                   placeholder="Select warehouse"
                   searchPlaceholder="Search warehouses..."
                   emptyMessage="No warehouses found."
@@ -330,6 +338,9 @@ export default function NewPurchaseOrderPage() {
                 <Plus className="mr-2 h-4 w-4" />
                 Add Row
               </Button>
+              <span className="ml-2 inline-flex align-middle">
+                <QuickCreateButton kind="product" onCreated={(p) => { setProducts((prev) => [...prev, p]); setItems((prev) => [...prev.filter((i) => i.productId), { productId: p.id, quantity: 1, unitPrice: Number(p.costPrice ?? 0) }]) }} />
+              </span>
             </CardContent>
           </Card>
 

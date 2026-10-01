@@ -44,6 +44,19 @@ export const PUT = withAuth<{ id: string }>(async (request, { params }) => {
     data.passwordHash = await hashPassword(body.password)
   }
 
+  // Default warehouse for the user's forms; locked = the user cannot change it.
+  if (body.defaultWarehouseId !== undefined) {
+    const warehouseId = typeof body.defaultWarehouseId === "string" && body.defaultWarehouseId ? body.defaultWarehouseId : null
+    if (warehouseId && !(await prisma.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true } }))) {
+      throw new HttpError(400, "Warehouse not found")
+    }
+    data.defaultWarehouse = warehouseId ? { connect: { id: warehouseId } } : { disconnect: true }
+  }
+  if (body.defaultWarehouseLocked !== undefined) {
+    if (typeof body.defaultWarehouseLocked !== "boolean") throw new HttpError(400, "defaultWarehouseLocked must be true or false")
+    data.defaultWarehouseLocked = body.defaultWarehouseLocked
+  }
+
   await assertAdminRemains(params.id, { role, status })
 
   const user = await prisma.user.update({

@@ -621,7 +621,13 @@ function UserForm({
     username: user?.username || user?.email || "",
     password: "",
     role: user?.role || "STUDENT",
+    defaultWarehouseId: (user as any)?.defaultWarehouseId ?? "",
+    defaultWarehouseLocked: !!(user as any)?.defaultWarehouseLocked,
   })
+  const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => {
+    if (user) fetch("/api/warehouses").then(async (r) => r.ok && setWarehouses(await r.json()))
+  }, [user])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -662,6 +668,8 @@ function UserForm({
           username: formData.username,
           password: formData.password || undefined,
           role: formData.role,
+          // Default warehouse (edit only): preselected in the user's forms; locked = only an admin changes it.
+          ...(user && { defaultWarehouseId: formData.defaultWarehouseId || null, defaultWarehouseLocked: formData.defaultWarehouseLocked }),
         }),
       })
 
@@ -751,6 +759,27 @@ function UserForm({
           </SelectContent>
         </Select>
       </div>
+
+      {user && (
+        <div className="space-y-2 rounded-md border p-3">
+          <Label htmlFor="defaultWarehouse">Default warehouse</Label>
+          <Select value={formData.defaultWarehouseId || "__none"} onValueChange={(v) => setFormData({ ...formData, defaultWarehouseId: v === "__none" ? "" : v })}>
+            <SelectTrigger id="defaultWarehouse"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none">None (last used)</SelectItem>
+              {warehouses.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={formData.defaultWarehouseLocked}
+              onChange={(e) => setFormData({ ...formData, defaultWarehouseLocked: e.target.checked })}
+            />
+            Locked (the user cannot change it in their profile)
+          </label>
+        </div>
+      )}
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onSuccess} disabled={isSubmitting}>

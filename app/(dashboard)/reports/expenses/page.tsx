@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import Image from "next/image"
 import { Download, FileSpreadsheet, Printer } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Button } from "@/components/ui/button"
@@ -12,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/components/ui/use-toast"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { CompanyHeader } from "@/components/company-header"
 import { PAYMENT_METHODS, methodLabel } from "@/lib/payment-methods"
 import { downloadCsv, downloadXlsx, moneyCell, type Cell } from "@/lib/export-file"
 
@@ -128,7 +128,7 @@ export default function ExpenseReportsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Image src="/siu_logo.png" alt="SIU" width={48} height={48} className="hidden h-12 w-auto print:block" />
+          <CompanyHeader align="left" className="hidden print:flex" />
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Expense reports</h1>
             <p className="text-muted-foreground">{filterText}{data?.scope === "OWN" && " · your own expenses"}</p>

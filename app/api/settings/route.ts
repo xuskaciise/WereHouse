@@ -4,6 +4,7 @@ import { HttpError } from "@/lib/auth-guard"
 import { DEFAULT_PAYMENT_CONFIG, PAYMENT_METHODS, PAYMENT_METHOD_SETTING } from "@/lib/payment-methods"
 import { isValidTaxRateInput } from "@/lib/tax-rules"
 import { CURRENCIES } from "@/lib/utils"
+import { DEFAULT_PAYMENT_TERMS, LOGO_MAX_LENGTH, LOGO_SETTING, WALK_IN_SETTING } from "@/lib/company"
 
 const TAX_KEYS: Record<string, string> = {
   defaultTaxRate: "Default tax rate",
@@ -17,6 +18,12 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   companyPhone: "",
   companyEmail: "",
   companyWebsite: "",
+  // Printed on invoices and receipts.
+  paymentTerms: DEFAULT_PAYMENT_TERMS,
+  // data:image/...;base64 (served by /api/company/logo; not returned by GET).
+  [LOGO_SETTING]: "",
+  // Customer preselected in "Sell now"; its sales must be paid in full at the sale.
+  [WALK_IN_SETTING]: "",
   defaultCurrency: "USD",
   // Tax rates in % (0-100, max 2 decimals); an empty sales / purchase rate
   // falls back to the default rate (lib/tax-rules.ts). Stored on each order.
@@ -39,10 +46,13 @@ export const GET = withAuth(async () => {
     where: { key: { in: Object.keys(DEFAULT_SETTINGS) } },
   })
 
-  const result = { ...DEFAULT_SETTINGS }
+  const result: Record<string, string | boolean> = { ...DEFAULT_SETTINGS }
   for (const setting of settings) {
     if (setting.value) result[setting.key] = setting.value
   }
+  // The logo is large: only whether one is set (the image is at /api/company/logo).
+  result.hasCompanyLogo = !!result[LOGO_SETTING]
+  delete result[LOGO_SETTING]
   return json(result)
 }, { authenticatedOnly: true })
 
@@ -94,6 +104,22 @@ export const PUT = withAuth(
         body[key] = String(days)
         continue
       }
+      if (key === LOGO_SETTING) {
+        const v = String(value)
+        if (v !== "" && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(v)) {
+          throw new HttpError(400, "The logo must be a PNG, JPEG or WebP image")
+        }
+        if (v.length > LOGO_MAX_LENGTH) throw new HttpError(400, "The logo is too large (max. about 300 KB)")
+        continue
+      }
+      if (key === WALK_IN_SETTING) {
+        const v = String(value)
+        if (v && !(await prisma.customer.findUnique({ where: { id: v }, select: { id: true } }))) {
+          throw new HttpError(400, "Walk-in customer not found")
+        }
+        continue
+      }
+      if (key === "paymentTerms" && String(value).length > 300) throw new HttpError(400, "Payment terms must be at most 300 characters")
       if (key === "defaultCurrency") {
         if (!CURRENCIES.includes(String(value) as never)) throw new HttpError(400, `Currency must be one of ${CURRENCIES.join(", ")}`)
         continue

@@ -9,6 +9,8 @@ export const publicUserSelect = {
   email: true,
   role: true,
   status: true,
+  defaultWarehouseId: true,
+  defaultWarehouseLocked: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect

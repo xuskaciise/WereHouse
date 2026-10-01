@@ -14,15 +14,20 @@ datasource db {
 }
 
 model User {
-  id           String     @id @default(cuid())
-  email        String?    @unique
-  name         String
-  username     String     @unique
-  passwordHash String? // bcrypt hash, never plaintext
-  role         Role       @default(STUDENT)
-  status       UserStatus @default(PENDING)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id                     String     @id @default(cuid())
+  email                  String?    @unique
+  name                   String
+  username               String     @unique
+  passwordHash           String? // bcrypt hash, never plaintext
+  role                   Role       @default(STUDENT)
+  status                 UserStatus @default(PENDING)
+  // Warehouse preselected in forms. Set by an admin (Users) or by the user
+  // in their profile unless the admin locked it.
+  defaultWarehouseId     String?
+  defaultWarehouse       Warehouse? @relation("UserDefaultWarehouse", fields: [defaultWarehouseId], references: [id], onDelete: SetNull)
+  defaultWarehouseLocked Boolean    @default(false)
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
 
   stockMovements          StockMovement[]
   purchaseOrders          PurchaseOrder[]
@@ -52,6 +57,7 @@ model User {
   purchaseReturns         PurchaseReturn[]
   salesReturns            SalesReturn[]
   journalEntries          JournalEntry[]
+  landedCostTemplates     LandedCostTemplate[]
 
   @@map("users")
 }
@@ -153,12 +159,13 @@ model Supplier {
   userId        String?
   user          User?        @relation(fields: [userId], references: [id])
 
-  purchaseOrders   PurchaseOrder[]
-  supplierPayments SupplierPayment[]
-  landedCosts      PurchaseLandedCost[]
-  transferCosts    StockTransferCost[]
-  purchaseReturns  PurchaseReturn[]
-  journalLines     JournalLine[]
+  purchaseOrders          PurchaseOrder[]
+  supplierPayments        SupplierPayment[]
+  landedCosts             PurchaseLandedCost[]
+  transferCosts           StockTransferCost[]
+  purchaseReturns         PurchaseReturn[]
+  journalLines            JournalLine[]
+  landedCostTemplateItems LandedCostTemplateItem[]
 
   @@index([userId])
   @@map("suppliers")
@@ -210,6 +217,7 @@ model Warehouse {
   salesOrders        SalesOrder[]
   purchaseReturns    PurchaseReturn[]
   salesReturns       SalesReturn[]
+  defaultForUsers    User[]                    @relation("UserDefaultWarehouse")
   fromStockTransfers StockTransfer[]           @relation("FromWarehouse")
   toStockTransfers   StockTransfer[]           @relation("ToWarehouse")
 
@@ -903,6 +911,7 @@ model LandedCostType {
 
   costs         PurchaseLandedCost[]
   transferCosts StockTransferCost[]
+  templateItems LandedCostTemplateItem[]
 
   @@map("landed_cost_types")
 }
@@ -1275,4 +1284,42 @@ model JournalLine {
   @@index([supplierId])
   @@index([customerId])
   @@map("journal_lines")
+}
+
+// A saved set of landed costs (e.g. the usual customs + clearing + transport
+// of one route) applied to a purchase order in one click; every line is then
+// an ordinary landed cost, validated and editable as usual.
+model LandedCostTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  nameKey     String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items LandedCostTemplateItem[]
+
+  @@map("landed_cost_templates")
+}
+
+model LandedCostTemplateItem {
+  id               String                @id @default(cuid())
+  templateId       String
+  template         LandedCostTemplate    @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  typeId           String
+  type             LandedCostType        @relation(fields: [typeId], references: [id])
+  // null = chosen when the template is applied (defaults to the PO supplier)
+  paidToSupplierId String?
+  paidToSupplier   Supplier?             @relation(fields: [paidToSupplierId], references: [id])
+  amountType       LandedCostAmountType  @default(FIXED)
+  value            Decimal               @db.Decimal(12, 4)
+  percentBase      LandedCostPercentBase @default(GOODS)
+  allocationMethod LandedCostAllocation  @default(VALUE)
+  sortOrder        Int                   @default(0)
+
+  @@index([templateId])
+  @@map("landed_cost_template_items")
 }

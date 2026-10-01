@@ -1,12 +1,13 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/components/ui/use-toast"
@@ -54,7 +55,20 @@ function inDateRange(dateValue: string | Date, start: string, end: string) {
   return true
 }
 
+// Reports hub: this page holds the Sales, Purchases and Payments tabs
+// (?tab=...); Stock, Expenses and Profit & Loss are their own pages. The tab
+// links are in the reports layout.
 export default function ReportsPage() {
+  return (
+    <Suspense>
+      <ReportsContent />
+    </Suspense>
+  )
+}
+
+function ReportsContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   // Each tab needs its report permission; only the data for allowed tabs is loaded.
   const { permissions } = useCurrentUser()
   const showPurchases = can(permissions, "reports_stock", "view")
@@ -62,6 +76,9 @@ export default function ReportsPage() {
   const showPayments = can(permissions, "reports_finance", "view")
   // Profit needs costs: product_cost plus a sales or finance report.
   const showProfit = can(permissions, "product_cost", "view") && (showSales || showPayments)
+  const allowedTabs = [showSales && "sales", showPurchases && "purchases", showPayments && "payments"].filter(Boolean) as string[]
+  const requested = searchParams.get("tab") ?? ""
+  const activeTab = allowedTabs.includes(requested) ? requested : allowedTabs[0] ?? "sales"
   const [profit, setProfit] = useState<any | null>(null)
   const [byMethod, setByMethod] = useState<any[]>([])
   const { toast } = useToast()
@@ -283,9 +300,9 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Reports</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{activeTab === "sales" ? "Sales report" : activeTab === "purchases" ? "Purchases report" : "Payments report"}</h1>
           <p className="text-muted-foreground">
-            Detailed filterable purchase, sales, and payment tracking reports.
+            Filter by period, supplier, customer or warehouse.
           </p>
         </div>
         <div className="w-48 space-y-1">
@@ -305,12 +322,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      <Tabs defaultValue={showPurchases ? "purchases" : showSales ? "sales" : "payments"} className="space-y-4">
-        <TabsList className={`grid w-full ${["grid-cols-1", "grid-cols-1", "grid-cols-2", "grid-cols-3"][[showPurchases, showSales, showPayments].filter(Boolean).length]}`}>
-          {showPurchases && <TabsTrigger value="purchases">Purchase Report</TabsTrigger>}
-          {showSales && <TabsTrigger value="sales">Sales Report</TabsTrigger>}
-          {showPayments && <TabsTrigger value="payments">Payments Report</TabsTrigger>}
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={(tab) => router.replace(`/reports?tab=${tab}`)} className="space-y-4">
 
         <TabsContent value="purchases" className="space-y-4">
           <Card>

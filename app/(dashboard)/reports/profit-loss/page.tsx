@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import Image from "next/image"
 import { Download, FileSpreadsheet, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/components/ui/use-toast"
 import { formatCurrency, formatDate } from "@/lib/utils"
+import { CompanyHeader } from "@/components/company-header"
 import { downloadCsv, downloadXlsx, moneyCell, type Cell } from "@/lib/export-file"
 
 const iso = (d: Date) => d.toISOString().slice(0, 10)
@@ -101,7 +101,7 @@ export default function ProfitLossPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Image src="/siu_logo.png" alt="SIU" width={48} height={48} className="hidden h-12 w-auto print:block" />
+          <CompanyHeader align="left" className="hidden print:flex" />
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Profit &amp; Loss</h1>
             <p className="text-muted-foreground">

@@ -1,4 +1,6 @@
+import { Suspense } from "react"
 import { redirect } from "next/navigation"
+import { Breadcrumbs } from "@/components/layout/breadcrumbs"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Navbar } from "@/components/layout/navbar"
 import { CurrentUserProvider } from "@/components/providers/current-user-provider"
@@ -19,10 +21,17 @@ export default async function DashboardLayout({
   return (
     <CurrentUserProvider user={{ ...user, discountReasonReferenceLimit }} currency={currency}>
       <div className="flex h-screen overflow-hidden">
-        <Sidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <Navbar />
-          <main className="flex-1 overflow-y-auto bg-muted/50 p-6">
+        <Suspense>
+          <Sidebar />
+        </Suspense>
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <Suspense>
+            <Navbar />
+          </Suspense>
+          <main className="flex-1 overflow-y-auto bg-muted/50 p-3 sm:p-6 print:bg-white print:p-0">
+            <Suspense>
+              <Breadcrumbs />
+            </Suspense>
             {children}
           </main>
         </div>
