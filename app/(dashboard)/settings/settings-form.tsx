@@ -60,8 +60,10 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
   const [resetConfirmText, setResetConfirmText] = useState("")
   const [resetPassword, setResetPassword] = useState("")
   const [isResettingSystem, setIsResettingSystem] = useState(false)
-  // null = unknown / not an admin; false = locked on this server (production).
-  const [resetEnabled, setResetEnabled] = useState<boolean | null>(null)
+  const [resetResult, setResetResult] = useState<{
+    backup: string | null
+    counts: { table: string; before: number; after: number }[]
+  } | null>(null)
   const [settings, setSettings] = useState({
     companyName: "",
     companyAddress: "",
@@ -105,14 +107,6 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
   useEffect(() => {
     fetchSettings()
   }, [])
-
-  useEffect(() => {
-    if (currentUser.role !== "ADMIN") return
-    fetch("/api/admin/system-reset")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => setResetEnabled(data ? data.enabled === true : false))
-      .catch(() => setResetEnabled(false))
-  }, [currentUser.role])
 
   const fetchSettings = async () => {
     try {
@@ -182,39 +176,13 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
   const canEditSettings = can(currentUser.permissions, "settings", "edit")
   const isAdminUser = currentUser.role === "ADMIN"
 
-  const isTruncateConfirmed = resetConfirmText.trim().toUpperCase() === "TRUNCATE"
+  const isResetConfirmed = resetConfirmText.trim() === "RESET"
 
   const canSubmitSystemReset =
-    isTruncateConfirmed && resetPassword.trim().length > 0 && isAdminUser && resetEnabled === true && !isResettingSystem
+    isResetConfirmed && resetPassword.length > 0 && isAdminUser && !isResettingSystem
 
   const handleSystemReset = async () => {
-    if (!isAdminUser) {
-      toast({
-        title: "Forbidden",
-        description: "Only admin users can perform system reset.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (!isTruncateConfirmed) {
-      toast({
-        title: "Confirmation Required",
-        description: "Type TRUNCATE in all caps to continue.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (!resetPassword.trim()) {
-      toast({
-        title: "Password Required",
-        description: "Enter your admin password to continue.",
-        variant: "destructive",
-      })
-      return
-    }
-
+    if (!canSubmitSystemReset) return
     setIsResettingSystem(true)
     try {
       const response = await fetch("/api/admin/system-reset", {
@@ -223,6 +191,7 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          confirm: "RESET",
           password: resetPassword,
         }),
       })
@@ -232,9 +201,10 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
         throw new Error(result.error || "Failed to reset system data")
       }
 
+      setResetResult({ backup: result.backup ?? null, counts: result.counts ?? [] })
       toast({
         title: "System Reset Complete",
-        description: "All business data was deleted. Users, permissions, settings and landed cost types were kept.",
+        description: "All business data was deleted. Users, permissions, settings and the chart of accounts were kept.",
       })
       setResetConfirmText("")
       setResetPassword("")
@@ -525,61 +495,50 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
         </Card>}
 
         {/* Danger Zone */}
-        {show("general") && <Card className="border-destructive/30">
+        {show("general") && isAdminUser && <Card className="border-destructive/30">
           <CardHeader>
             <CardTitle className="text-destructive">Danger Zone</CardTitle>
             <CardDescription>
-              Permanently delete all business data. Users, permissions, settings and landed cost types are kept.
+              Permanently delete all business data. All users, permissions, settings and the chart of accounts are kept.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-muted-foreground">
               This action will clear warehouses, products, categories, suppliers, customers, purchases, landed costs,
-              sales, payments, stock, stock movements, transfers, expenses and expense categories. This cannot be undone.
+              sales, returns, payments, stock, stock movements, transfers, expenses, journals and logs. User accounts
+              (admins and students) keep their roles and passwords. The default landed cost types and expense
+              categories are restored. A backup copy is taken first when possible. This cannot be undone from the app.
             </div>
-
-            {isAdminUser && resetEnabled === false && (
-              <p className="text-sm text-muted-foreground">
-                The system reset is locked on this server (ALLOW_SYSTEM_RESET is not enabled). Production data resets
-                are done by the operator with a verified backup (scripts/reset/reset-test-data.sh).
-              </p>
-            )}
-
-            {!isAdminUser && (
-              <p className="text-sm text-destructive">
-                Only admin users can access this operation.
-              </p>
-            )}
 
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button type="button" variant="destructive" disabled={!isAdminUser || resetEnabled !== true}>
-                  Reset System Data (TRUNCATE)
+                <Button type="button" variant="destructive">
+                  Reset System Data
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Confirm System Reset</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Type <span className="font-semibold text-foreground">TRUNCATE</span> in all caps to enable reset.
-                    Users, permissions and settings will remain intact.
+                    Type <span className="font-semibold text-foreground">RESET</span> and your admin password.
+                    All business data is deleted; users, permissions, settings and the chart of accounts remain.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
 
                 <div className="space-y-2">
-                  <Label htmlFor="truncate-confirmation">Confirmation</Label>
+                  <Label htmlFor="reset-confirmation">Confirmation</Label>
                   <Input
-                    id="truncate-confirmation"
+                    id="reset-confirmation"
                     value={resetConfirmText}
                     onChange={(e) => setResetConfirmText(e.target.value)}
-                    placeholder="Type TRUNCATE"
+                    placeholder="Type RESET"
                     autoComplete="off"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="truncate-password">Admin Password</Label>
+                  <Label htmlFor="reset-password">Admin Password</Label>
                   <Input
-                    id="truncate-password"
+                    id="reset-password"
                     type="password"
                     value={resetPassword}
                     onChange={(e) => setResetPassword(e.target.value)}
@@ -607,6 +566,43 @@ export function SettingsForm({ section }: { section: SettingsSection }) {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+
+            {isResettingSystem && (
+              <p className="text-sm text-muted-foreground">Resetting system data, please wait…</p>
+            )}
+
+            {resetResult && (
+              <div className="space-y-2">
+                <p className="text-sm">
+                  Backup:{" "}
+                  {resetResult.backup ? (
+                    <span className="font-mono">{resetResult.backup}</span>
+                  ) : (
+                    <span className="text-destructive">not taken (the reset ran without a backup)</span>
+                  )}
+                </p>
+                <div className="max-h-80 overflow-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-muted">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">Table</th>
+                        <th className="px-3 py-2 text-right font-medium">Before</th>
+                        <th className="px-3 py-2 text-right font-medium">After</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resetResult.counts.map((row) => (
+                        <tr key={row.table} className="border-t">
+                          <td className="px-3 py-1.5 font-mono text-xs">{row.table}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums">{row.before}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums">{row.after}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>}
 

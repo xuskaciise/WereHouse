@@ -1,66 +1,46 @@
-import { Prisma } from "@prisma/client"
-import { TX_OPTIONS, prisma } from "@/lib/prisma"
+import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
 import { verifyPassword } from "@/lib/password"
-import { RESET_DELETE_TABLES } from "@/lib/reset-tables"
+import { FailureLimiter } from "@/lib/rate-limit"
+import { backupBeforeReset, resetSystemData } from "@/lib/system-reset"
 
-// "Keep configuration" reset: deletes all business data (RESET_DELETE_TABLES),
-// keeps users, permissions, settings and landed cost types. Hard-coded
-// identifiers only; nothing user-supplied reaches the SQL. No CASCADE: if a
-// table outside the list references a listed one, the reset fails instead of
-// silently wiping it.
-//
-// Disabled unless ALLOW_SYSTEM_RESET=true (dev / staging). Production resets
-// use scripts/reset/reset-test-data.sh, which takes a verified backup first.
-function resetEnabled() {
-  return process.env.ALLOW_SYSTEM_RESET === "true"
-}
+// Settings "Reset System Data": deletes all business data, keeps all users,
+// permissions, settings and the chart of accounts (lib/system-reset.ts).
+// ADMIN-only (checked against the server session by withAuth); the admin
+// must type RESET and re-enter their password.
 
-async function countRows(tx: Prisma.TransactionClient) {
-  const counts: Record<string, number> = {}
-  for (const table of RESET_DELETE_TABLES) {
-    const rows = await tx.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM ${Prisma.raw(`"${table}"`)}`
-    counts[table] = Number(rows[0].n)
-  }
-  return counts
-}
+// 5 wrong passwords within 15 minutes lock the reset for that admin for 15 minutes.
+const passwordFailures = new FailureLimiter(5, 15 * 60_000, 15 * 60_000)
 
-export const GET = withAuth(async () => json({ enabled: resetEnabled() }), { roles: ["ADMIN"] })
-
-// ADMIN-only (checked against the server session by withAuth), and the admin
-// must re-enter their password.
 export const POST = withAuth(
   async (request, { user }) => {
-    if (!resetEnabled()) {
-      throw new HttpError(403, "System reset is disabled on this server (ALLOW_SYSTEM_RESET is not true)")
-    }
     const body = await readJson(request)
+    if (body?.confirm !== "RESET") throw new HttpError(400, "Type RESET to confirm")
     const password = typeof body?.password === "string" ? body.password : ""
     if (!password) throw new HttpError(400, "Admin password is required")
 
+    if (passwordFailures.isBlocked(user.id)) {
+      throw new HttpError(429, "Too many wrong passwords. Try again in 15 minutes.")
+    }
     const admin = await prisma.user.findUnique({
       where: { id: user.id },
       select: { passwordHash: true },
     })
     if (!(await verifyPassword(password, admin?.passwordHash))) {
+      passwordFailures.recordFailure(user.id)
       throw new HttpError(401, "Invalid admin password")
     }
+    passwordFailures.reset(user.id)
 
-    const tableList = Prisma.raw(RESET_DELETE_TABLES.map((t) => `"${t}"`).join(", "))
-    const counts = await prisma.$transaction(async (tx) => {
-      const before = await countRows(tx)
-      // Kept users point at warehouses that are deleted: clear their default first.
-      await tx.$executeRaw`UPDATE "users" SET "defaultWarehouseId" = NULL, "defaultWarehouseLocked" = false`
-      await tx.$executeRaw`TRUNCATE TABLE ${tableList} RESTART IDENTITY`
-      const after = await countRows(tx)
-      return RESET_DELETE_TABLES.map((table) => ({ table, before: before[table], after: after[table] }))
-    }, TX_OPTIONS)
+    const backup = await backupBeforeReset()
+    const counts = await resetSystemData(user.id)
 
-    console.warn(`System data reset performed by user ${user.id}`)
+    console.warn(`System data reset performed by user ${user.id} (backup: ${backup ?? "none"})`)
     return json({
       success: true,
-      message: "System data reset completed. Users, permissions, settings and landed cost types were kept.",
+      message: "System data reset completed. Users, permissions, settings and the chart of accounts were kept.",
+      backup,
       counts,
     })
   },

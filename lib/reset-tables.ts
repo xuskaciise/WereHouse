@@ -1,5 +1,5 @@
 // Classification of every database table for data resets. Used by the
-// Settings "Danger Zone" (app/api/admin/system-reset) and checked against
+// Settings "Danger Zone" (lib/system-reset.ts) and checked against
 // prisma/schema.prisma by scripts/check-reset-tables.mjs (part of `npm run
 // lint`): a new table must be added to exactly one of these lists.
 //

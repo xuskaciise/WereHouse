@@ -30,6 +30,7 @@ DECLARE
   admin_id text;
   all_tables text[];
   delete_tables text[];
+  referenced_tables text[];
   tbl text;
   n bigint;
   counts_text text := '';
@@ -88,7 +89,18 @@ BEGIN
 
   -- Kept users point at warehouses that are deleted: clear their default first.
   UPDATE users SET "defaultWarehouseId" = NULL, "defaultWarehouseLocked" = false WHERE "defaultWarehouseId" IS NOT NULL;
-  EXECUTE 'TRUNCATE TABLE ' || (SELECT string_agg(format('%I', t), ', ') FROM unnest(delete_tables) AS t) || ' RESTART IDENTITY';
+  -- Postgres refuses to TRUNCATE a table that a kept table has a foreign key
+  -- to (users -> warehouses), even when no row uses it: those are emptied
+  -- with DELETE after the others are truncated.
+  SELECT array_agg(DISTINCT confrelid::regclass::text) INTO referenced_tables
+  FROM pg_constraint WHERE contype = 'f' AND conrelid::regclass::text = ANY (keep_tables);
+  EXECUTE 'TRUNCATE TABLE ' || (SELECT string_agg(format('%I', t), ', ') FROM unnest(delete_tables) AS t
+    WHERE t <> ALL (COALESCE(referenced_tables, '{}'))) || ' RESTART IDENTITY';
+  FOREACH tbl IN ARRAY delete_tables LOOP
+    IF tbl = ANY (COALESCE(referenced_tables, '{}')) THEN
+      EXECUTE format('DELETE FROM %I', tbl);
+    END IF;
+  END LOOP;
 
   DELETE FROM users WHERE id <> admin_id;
 
