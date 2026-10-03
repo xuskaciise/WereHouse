@@ -89,7 +89,14 @@ function toBody(form: CostForm) {
 }
 
 /** "Additional costs" of a purchase order (shown inside the PO details sheet). */
-export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: string }) {
+export function LandedCostsSection({
+  purchaseOrderId,
+  onViewChange,
+}: {
+  purchaseOrderId: string
+  /** Called with every new view (load, add, edit, delete), so the PO totals update at once. */
+  onViewChange?: (view: any) => void
+}) {
   const { toast } = useToast()
   const currentUser = useCurrentUser()
   const canCreate = useCan("landed_costs", "create")
@@ -129,6 +136,10 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (view) onViewChange?.(view)
+  }, [view, onViewChange])
 
   const openForm = async (cost: any | null) => {
     if (types.length === 0) {
@@ -257,7 +268,7 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
         <div>
           <h3 className="text-lg font-semibold">Additional costs</h3>
           <p className="text-sm text-muted-foreground">
-            Goods {formatCurrency(view.goodsValue)} · Costs {formatCurrency(view.totalCosts)} · Uplift {Number(view.upliftPercent).toFixed(2)}%
+            Goods before tax {formatCurrency(view.goodsValue)} · Costs {formatCurrency(view.totalCosts)} · Uplift {Number(view.upliftPercent).toFixed(2)}%
             {finalized && (
               <>
                 {" "}
@@ -371,6 +382,7 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
                 <TableHead className="text-right">Cost / unit</TableHead>
                 <TableHead className="text-right">Landed unit cost</TableHead>
                 <TableHead className="text-right">Increase</TableHead>
+                <TableHead className="text-right">Line landed total</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -383,6 +395,7 @@ export function LandedCostsSection({ purchaseOrderId }: { purchaseOrderId: strin
                   <TableCell className="text-right">{unit4(item.costPerUnit)}</TableCell>
                   <TableCell className="text-right font-medium">{unit4(item.landedUnitCost)}</TableCell>
                   <TableCell className="text-right">{Number(item.costIncreasePercent).toFixed(2)}%</TableCell>
+                  <TableCell className="text-right">{formatCurrency(item.lineLandedTotal)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

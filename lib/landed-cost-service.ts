@@ -110,6 +110,15 @@ export async function costSnapshot(db: Db, costId: string) {
   }
 }
 
+/**
+ * Goods total (the PO total after tax and discount: what the supplier is
+ * owed) + landed costs (owed to their own parties) = total landed cost.
+ * The supplier payable is always the goods total only.
+ */
+export function landedTotals(goodsTotal: Money, landedCostsTotal: Money) {
+  return { goodsTotal, landedCostsTotal, totalLandedCost: goodsTotal.plus(landedCostsTotal) }
+}
+
 /** Everything the PO's "Additional costs" section and the Landed Cost Report show. */
 export async function landedCostView(db: Db, purchaseOrderId: string) {
   const po = await db.purchaseOrder.findUniqueOrThrow({
@@ -160,6 +169,8 @@ export async function landedCostView(db: Db, purchaseOrderId: string) {
       costPerUnit: figures.perUnit,
       landedUnitCost: figures.landedUnitCost,
       costIncreasePercent: figures.increasePercent,
+      // Line value before tax and discount + its allocated costs.
+      lineLandedTotal: item.subtotal.plus(figures.landedCost),
     }
   })
   const costs = po.landedCosts.map((cost) => {
@@ -187,6 +198,7 @@ export async function landedCostView(db: Db, purchaseOrderId: string) {
     goodsValue: goods,
     totalCosts: total,
     upliftPercent: goods.isZero() ? ZERO : total.times(100).div(goods).toDecimalPlaces(2, Decimal.ROUND_HALF_UP),
+    ...landedTotals(po.total, total),
     items,
     costs,
     logs: po.landedCostLogs,

@@ -81,6 +81,13 @@ if (po) {
 }
 check("unknown purchase order -> 404", (await admin("/api/purchase-orders/nope")).status === 404)
 
+// Task 16: landed total next to the goods total (which stays the supplier's amount).
+if (po) {
+  check("PO list has goods + landed totals", "totalLandedCost" in po && "landedCostsTotal" in po && Number(po.goodsTotal) === Number(po.total), JSON.stringify(po).slice(0, 160))
+  const lv = await (await admin(`/api/purchase-orders/${po.id}/landed-costs`)).json()
+  check("landed cost view has the total landed cost", Number(lv.totalLandedCost) === Number(lv.goodsTotal) + Number(lv.landedCostsTotal), JSON.stringify(lv).slice(0, 160))
+}
+
 // Task 15: open cost lines, multi-row preview, FIFO preview (nothing written).
 if (po) {
   const open = await admin(`/api/landed-costs?purchaseOrderId=${po.id}&open=1`)

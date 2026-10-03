@@ -2,7 +2,9 @@ import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 import { json, readJson, withAuth } from "@/lib/api"
 import { HttpError } from "@/lib/auth-guard"
-import { scopeWhere } from "@/lib/permissions"
+import { hasPermission, scopeWhere } from "@/lib/permissions"
+import { ZERO } from "@/lib/money"
+import { landedTotals } from "@/lib/landed-cost-service"
 import { assertCanReference } from "@/lib/ownership"
 import { calculateOrderTotals, createWithOrderNumber, parseOrderItems, parseOrderStatus } from "@/lib/orders"
 import { containsAny, dateRangeWhere, listResponse, searchTerm } from "@/lib/pagination"
@@ -28,9 +30,22 @@ export const GET = withAuth(async (request, { user }) => {
     ...(status && { status: parseOrderStatus(status) }),
   }
   const include = params.get("view") === "summary" ? purchaseOrderSummaryInclude : purchaseOrderInclude
+  const seesLandedCosts = hasPermission(user, ["landed_costs", "view"])
   return listResponse(request, {
     findMany: (page) => prisma.purchaseOrder.findMany({ where, include, orderBy: { createdAt: "desc" }, ...page }),
     count: () => prisma.purchaseOrder.count({ where }),
+    map: async (orders) => {
+      if (!seesLandedCosts || orders.length === 0) return orders
+      // `total` stays the goods total owed to the supplier; landed costs are
+      // owed to their own parties and only added for the landed total.
+      const sums = await prisma.purchaseLandedCost.groupBy({
+        by: ["purchaseOrderId"],
+        where: { purchaseOrderId: { in: orders.map((o) => o.id) } },
+        _sum: { amount: true },
+      })
+      const byOrder = new Map(sums.map((s) => [s.purchaseOrderId, s._sum.amount ?? ZERO]))
+      return orders.map((o) => ({ ...o, ...landedTotals(o.total, byOrder.get(o.id) ?? ZERO) }))
+    },
   })
 }, { permission: [["purchases", "view"], ["reports_stock", "view"], ["reports_finance", "view"]] })
 

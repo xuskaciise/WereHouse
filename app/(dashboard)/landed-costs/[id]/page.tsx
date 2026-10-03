@@ -12,6 +12,7 @@ import { useCan } from "@/components/providers/current-user-provider"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { CompanyHeader } from "@/components/company-header"
 import { METHOD_LABELS, unit4 } from "../../purchases/landed-costs-section"
+import { LandedTotalSummary } from "../../purchases/landed-total-summary"
 
 export default function LandedCostReportPage() {
   const { id } = useParams<{ id: string }>()
@@ -66,18 +67,11 @@ export default function LandedCostReportPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-[2fr_1fr]">
+            <LandedTotalSummary view={view} />
             <div className="rounded-md border p-3">
-              <div className="text-sm text-muted-foreground">Goods value</div>
+              <div className="text-sm text-muted-foreground">Goods value before tax (allocation basis)</div>
               <div className="text-xl font-semibold">{formatCurrency(view.goodsValue)}</div>
-            </div>
-            <div className="rounded-md border p-3">
-              <div className="text-sm text-muted-foreground">Additional costs</div>
-              <div className="text-xl font-semibold">{formatCurrency(view.totalCosts)}</div>
-            </div>
-            <div className="rounded-md border p-3">
-              <div className="text-sm text-muted-foreground">Uplift</div>
-              <div className="text-xl font-semibold">{Number(view.upliftPercent).toFixed(2)}%</div>
             </div>
           </div>
 
@@ -87,7 +81,7 @@ export default function LandedCostReportPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Type</TableHead>
-                  <TableHead>Paid to</TableHead>
+                  <TableHead>Paid to (payable)</TableHead>
                   <TableHead>Basis</TableHead>
                   <TableHead>Allocation</TableHead>
                   <TableHead>Reference</TableHead>
@@ -134,6 +128,7 @@ export default function LandedCostReportPage() {
                     <TableHead className="text-right">Unit cost before</TableHead>
                     <TableHead className="text-right">Landed unit cost</TableHead>
                     <TableHead className="text-right">Increase</TableHead>
+                    <TableHead className="text-right">Line landed total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -149,6 +144,7 @@ export default function LandedCostReportPage() {
                       <TableCell className="text-right">{unit4(item.unitPrice)}</TableCell>
                       <TableCell className="text-right font-semibold">{unit4(item.landedUnitCost)}</TableCell>
                       <TableCell className="text-right">{Number(item.costIncreasePercent).toFixed(2)}%</TableCell>
+                      <TableCell className="text-right">{formatCurrency(item.lineLandedTotal)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

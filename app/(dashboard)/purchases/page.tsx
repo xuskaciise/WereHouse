@@ -23,6 +23,7 @@ export default function PurchasesPage() {
   const router = useRouter()
   // Hide what the role may not do; the API enforces the same permissions.
   const canCreate = useCan("purchases", "create")
+  const seesLanded = useCan("landed_costs", "view")
   const [status, setStatus] = useState(ALL)
   const list = usePagedList("/api/purchase-orders", { status: status === ALL ? undefined : status })
 
@@ -41,7 +42,10 @@ export default function PurchasesPage() {
     if (!res.ok) return
     const rows = await res.json()
     downloadCsv(`purchase_orders_${new Date().toISOString().slice(0, 10)}.csv`, [
-      ["Order", "Date", "Supplier", "Warehouse", "Status", "Subtotal", "Discount", "Tax", "Total"],
+      [
+        "Order", "Date", "Supplier", "Warehouse", "Status", "Subtotal", "Discount", "Tax", "Goods total (owed to supplier)",
+        ...(seesLanded ? ["Landed costs", "Total landed cost"] : []),
+      ],
       ...rows.map((o: any) => [
         o.orderNumber,
         String(o.orderDate).slice(0, 10),
@@ -52,6 +56,7 @@ export default function PurchasesPage() {
         moneyCell(o.discount),
         moneyCell(o.tax),
         moneyCell(o.total),
+        ...(seesLanded ? [moneyCell(o.landedCostsTotal), moneyCell(o.totalLandedCost)] : []),
       ]),
     ])
   }
@@ -101,7 +106,8 @@ export default function PurchasesPage() {
                 <TableHead>PO number</TableHead>
                 <TableHead>Supplier</TableHead>
                 <TableHead>Order date</TableHead>
-                <TableHead>Amount</TableHead>
+                <TableHead className="text-right" title="Owed to the supplier">Goods total</TableHead>
+                {seesLanded && <TableHead className="text-right" title="Goods total + landed costs (not owed to the supplier)">Landed total</TableHead>}
                 <TableHead>Status</TableHead>
                 <TableHead>Created by</TableHead>
                 <TableHead className="text-right">Open</TableHead>
@@ -109,7 +115,7 @@ export default function PurchasesPage() {
             </TableHeader>
             <TableBody>
               <ListStateRow
-                colSpan={7}
+                colSpan={seesLanded ? 8 : 7}
                 loading={list.loading && list.rows.length === 0}
                 error={list.error}
                 empty={list.rows.length === 0}
@@ -124,7 +130,15 @@ export default function PurchasesPage() {
                   </TableCell>
                   <TableCell>{order.supplier?.name || "N/A"}</TableCell>
                   <TableCell>{formatDate(order.orderDate)}</TableCell>
-                  <TableCell>{formatCurrency(order.total || 0)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(order.total || 0)}</TableCell>
+                  {seesLanded && (
+                    <TableCell className="text-right">
+                      {formatCurrency(order.totalLandedCost ?? order.total ?? 0)}
+                      {Number(order.landedCostsTotal) > 0 && (
+                        <div className="text-xs text-muted-foreground">+{formatCurrency(order.landedCostsTotal)} costs</div>
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Badge variant={purchaseOrderStatusBadgeVariant(order.status)}>{purchaseStatusLabel(order.status)}</Badge>
                   </TableCell>

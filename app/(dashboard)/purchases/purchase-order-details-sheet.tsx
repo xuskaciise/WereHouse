@@ -23,8 +23,9 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
 import { useCan } from "@/components/providers/current-user-provider"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { formatCurrency, formatDate, formatUnitCost } from "@/lib/utils"
 import { LandedCostsSection } from "./landed-costs-section"
+import { LandedTotalSummary } from "./landed-total-summary"
 import { taxLabel } from "@/lib/tax-rules"
 import {
   ADJUSTMENT_REASON_MAX_LENGTH,
@@ -110,7 +111,13 @@ export function PurchaseOrderDetailsSheet({
   const canViewLandedCosts = useCan("landed_costs", "view")
   const canReturn = useCan("purchase_returns", "create")
   const canPay = useCan("supplier_payments", "create")
+  const seesCost = useCan("product_cost", "view")
   const [payOpen, setPayOpen] = useState(false)
+  // Latest landed cost view (from LandedCostsSection), so totals update as costs change.
+  const [landedView, setLanded] = useState<any | null>(null)
+  const landed = landedView?.purchaseOrder?.id === order.id ? landedView : null
+  const landedItem = (itemId: string) => landed?.items?.find((i: any) => i.id === itemId)
+  const showLandedColumns = canViewLandedCosts && seesCost && !!landed && Number(landed.landedCostsTotal) > 0
 
   const [receiveOpen, setReceiveOpen] = useState(false)
   const [receiveNote, setReceiveNote] = useState("")
@@ -388,6 +395,8 @@ export function PurchaseOrderDetailsSheet({
                           <TableHead className="text-right">Remaining</TableHead>
                           <TableHead className="text-right">Unit Price</TableHead>
                           <TableHead className="text-right">Subtotal</TableHead>
+                          {showLandedColumns && <TableHead className="text-right">Landed unit cost</TableHead>}
+                          {showLandedColumns && <TableHead className="text-right">Line landed total</TableHead>}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -420,6 +429,12 @@ export function PurchaseOrderDetailsSheet({
                               <TableCell className="text-right">
                                 {formatCurrency(item.subtotal ?? item.quantity * item.unitPrice)}
                               </TableCell>
+                              {showLandedColumns && (
+                                <TableCell className="text-right">{formatUnitCost(landedItem(item.id)?.landedUnitCost)}</TableCell>
+                              )}
+                              {showLandedColumns && (
+                                <TableCell className="text-right">{formatCurrency(landedItem(item.id)?.lineLandedTotal ?? 0)}</TableCell>
+                              )}
                             </TableRow>
                           )
                         })}
@@ -451,13 +466,19 @@ export function PurchaseOrderDetailsSheet({
                     </div>
                   )}
                   <div className="flex justify-between text-lg font-bold border-t pt-2">
-                    <span>Total</span>
+                    <span>
+                      Total
+                      <span className="block text-xs font-normal text-muted-foreground">Owed to the supplier (goods only)</span>
+                    </span>
                     <span className="text-primary">{formatCurrency(order.total || 0)}</span>
                   </div>
                 </div>
+                {canViewLandedCosts && landed && Number(landed.landedCostsTotal) > 0 && <LandedTotalSummary view={landed} />}
               </div>
 
-              {canViewLandedCosts && <LandedCostsSection key={order.updatedAt} purchaseOrderId={order.id} />}
+              {canViewLandedCosts && (
+                <LandedCostsSection key={order.updatedAt} purchaseOrderId={order.id} onViewChange={setLanded} />
+              )}
 
               {history.length > 0 && (
                 <div className="space-y-3 border-t pt-4">

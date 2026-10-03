@@ -68,6 +68,7 @@ export const COST_FIELDS = new Set([
   "landedCost",
   "appliedLandedCost",
   "landedUnitCost",
+  "lineLandedTotal",
   "costPerUnit",
   "costIncreasePercent",
   "totalStockValue",
@@ -84,7 +85,7 @@ export const COST_FIELDS = new Set([
   "profitAfterLosses",
 ])
 
-function omitCostFields(value: unknown): unknown {
+export function omitCostFields(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(omitCostFields)
   if (value === null || typeof value !== "object") return value
   const result: Record<string, unknown> = {}
