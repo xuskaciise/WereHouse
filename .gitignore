@@ -39,3 +39,6 @@ next-env.d.ts
 # local backups
 *.bak-*
 *.bak
+
+# Load-test credentials (generated)
+scripts/loadtest/*.local.json

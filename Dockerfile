@@ -51,6 +51,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
+# Fail the image build if the native bcrypt binary for this platform is missing
+# (logins would otherwise only fail at runtime).
+RUN node -e "require('@node-rs/bcrypt').hashSync('image-check', 4)"
+
 USER nextjs
 
 EXPOSE 3000
