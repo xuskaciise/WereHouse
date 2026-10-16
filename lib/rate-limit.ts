@@ -24,7 +24,10 @@ export class SlidingWindowLimiter {
     const now = Date.now()
     const windowStart = now - this.windowMs
     const stamps = (this.hits.get(key) ?? []).filter((t) => t > windowStart)
-    stamps.push(now)
+    // Rejected hits are not recorded, so a client that keeps retrying is let
+    // back in as soon as its earlier requests leave the window.
+    const over = stamps.length >= this.limit
+    if (!over) stamps.push(now)
     this.hits.set(key, stamps)
 
     if (this.hits.size > MAX_KEYS) {
@@ -35,7 +38,7 @@ export class SlidingWindowLimiter {
       }
     }
 
-    return stamps.length > this.limit
+    return over
   }
 }
 
