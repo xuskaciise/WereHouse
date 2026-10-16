@@ -93,7 +93,7 @@ class Client {
       const t0 = performance.now()
       const csrf = await this.req("login: csrf", "/api/auth/csrf")
       if (csrf.status === 429) { await sleep((csrf.retryAfter || 10) * 1000); continue }
-      if (csrf.status !== 200) return false
+      if (csrf.status !== 200) return csrf.status ? `csrf HTTP ${csrf.status}` : "network error"
       const r = await this.req("login: credentials", "/api/auth/callback/credentials", {
         method: "POST",
         headers: { "X-Auth-Return-Redirect": "1" },
@@ -103,20 +103,23 @@ class Client {
       const url = new URL(r.data?.url ?? BASE, BASE)
       const ok = r.status < 400 && !url.searchParams.get("error")
       if (ok) record("login: total (incl. retries)", performance.now() - t0, "ok")
-      return ok
+      return ok ? true : url.searchParams.get("code") || url.searchParams.get("error") || `HTTP ${r.status}`
     }
-    return false
+    return "still 429 after 5 tries"
   }
 }
 
 let loggedIn = 0
 let loginFailed = 0
+const loginFailures = new Map() // username -> reason
 let pagesOpened = 0
 
 async function virtualUser(i, stopAt) {
   await sleep((RAMP * i) / VUS)
   const client = new Client()
-  if (!(await client.login(usernames[i % usernames.length]))) { loginFailed++; return }
+  const username = usernames[i % usernames.length]
+  const result = await client.login(username)
+  if (result !== true) { loginFailed++; loginFailures.set(username, result); return }
   loggedIn++
   while (Date.now() < stopAt) {
     const page = PAGE_NAMES[Math.floor(Math.random() * PAGE_NAMES.length)]
@@ -149,5 +152,6 @@ const all = [...stats.values()]
 const total = all.reduce((a, s) => a + s.times.length, 0)
 const count = (pred) => all.reduce((a, s) => a + Object.entries(s.codes).filter(([c]) => pred(c)).reduce((x, [, n]) => x + n, 0), 0)
 console.log(`Signed in: ${loggedIn}/${VUS} (failed: ${loginFailed})   pages opened: ${pagesOpened}`)
+if (loginFailures.size) console.log("Failed sign-ins:", [...loginFailures].map(([u, why]) => `${u} (${why})`).join(", "))
 console.log(`Requests: ${total} in ${elapsed.toFixed(0)}s (${(total / elapsed).toFixed(1)}/s)`)
 console.log(`429 Too Many Requests: ${count((c) => c === "429")}   5xx: ${count((c) => c.startsWith("5"))}   timeouts/network errors: ${count((c) => c === "timeout" || c === "neterr")}`)
