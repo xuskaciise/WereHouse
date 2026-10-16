@@ -101,6 +101,7 @@ class Client {
       })
       if (r.status === 429) { await sleep((r.retryAfter || 10) * 1000); continue }
       const url = new URL(r.data?.url ?? BASE, BASE)
+      if (r.status === 0) return "network error"
       const ok = r.status < 400 && !url.searchParams.get("error")
       if (ok) record("login: total (incl. retries)", performance.now() - t0, "ok")
       return ok ? true : url.searchParams.get("code") || url.searchParams.get("error") || `HTTP ${r.status}`
