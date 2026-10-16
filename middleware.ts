@@ -8,10 +8,17 @@ import { SlidingWindowLimiter, getClientIp } from "@/lib/rate-limit"
 // the database via lib/auth-guard.ts.
 const { auth } = NextAuth(authConfig)
 
-const apiLimiter = new SlidingWindowLimiter(120, 60_000)
-// Login and sign-up: 10 POSTs per minute per IP (on top of the per-account
-// lockout in lib/auth.ts).
-const credentialLimiter = new SlidingWindowLimiter(10, 60_000)
+// Many users usually share one public IP (an office or shop network behind
+// NAT), so signed-in requests are limited per user, not per IP. The per-IP
+// limits only stop floods and anonymous abuse and are sized for ~150 users
+// behind a single IP.
+const userApiLimiter = new SlidingWindowLimiter(300, 60_000)
+const anonymousApiLimiter = new SlidingWindowLimiter(120, 60_000)
+const ipFloodLimiter = new SlidingWindowLimiter(6000, 60_000)
+// Login and sign-up: 100 POSTs per minute per IP, so a whole office can sign
+// in at once; brute force on one account is stopped by the per-account
+// lockout in lib/auth.ts.
+const credentialLimiter = new SlidingWindowLimiter(100, 60_000)
 
 const PUBLIC_PAGES = new Set(["/login"])
 const PUBLIC_API_EXACT = new Set(["/api/register", "/api/health"])
@@ -34,7 +41,11 @@ export default auth((req) => {
     if (req.method === "POST" && CREDENTIAL_ENDPOINTS.has(pathname) && credentialLimiter.hit(ip)) {
       return tooManyRequests()
     }
-    if (apiLimiter.hit(ip)) return tooManyRequests()
+    if (ipFloodLimiter.hit(ip)) return tooManyRequests()
+    // req.auth comes from the verified session JWT, so the user id can't be forged.
+    const userId = req.auth?.user?.id
+    const limited = userId ? userApiLimiter.hit(`u:${userId}`) : anonymousApiLimiter.hit(ip)
+    if (limited) return tooManyRequests()
   }
 
   const isPublic =
