@@ -1,4 +1,7 @@
-import bcrypt from "bcryptjs"
+// Native bcrypt: hashing runs on libuv worker threads instead of blocking the
+// event loop (bcryptjs took ~1s of main-thread CPU per login). Produces and
+// verifies the same $2a/$2b hashes as bcryptjs.
+import { compare as bcryptCompare, hash as bcryptHash } from "@node-rs/bcrypt"
 
 const BCRYPT_COST = 12
 export const MIN_PASSWORD_LENGTH = 8
@@ -17,7 +20,7 @@ export function validatePassword(password: unknown): string | null {
 }
 
 export function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, BCRYPT_COST)
+  return bcryptHash(password, BCRYPT_COST)
 }
 
 /**
@@ -27,9 +30,9 @@ export function hashPassword(password: string): Promise<string> {
  */
 export async function verifyPassword(password: string, hash: string | null | undefined): Promise<boolean> {
   if (!hash) {
-    dummyHash ??= await bcrypt.hash("timing-equalizer", BCRYPT_COST)
-    await bcrypt.compare(password, dummyHash)
+    dummyHash ??= await bcryptHash("timing-equalizer", BCRYPT_COST)
+    await bcryptCompare(password, dummyHash)
     return false
   }
-  return bcrypt.compare(password, hash)
+  return bcryptCompare(password, hash)
 }

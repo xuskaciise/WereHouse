@@ -15,10 +15,13 @@ const { auth } = NextAuth(authConfig)
 const userApiLimiter = new SlidingWindowLimiter(300, 60_000)
 const anonymousApiLimiter = new SlidingWindowLimiter(120, 60_000)
 const ipFloodLimiter = new SlidingWindowLimiter(6000, 60_000)
-// Login and sign-up: 100 POSTs per minute per IP, so a whole office can sign
-// in at once; brute force on one account is stopped by the per-account
-// lockout in lib/auth.ts.
-const credentialLimiter = new SlidingWindowLimiter(100, 60_000)
+// Login and sign-up: 200 POSTs per minute per IP, so a whole office or class
+// can sign in at once; brute force on one account is stopped by the
+// per-account lockout in lib/auth.ts.
+const credentialLimiter = new SlidingWindowLimiter(200, 60_000)
+// Cheap Auth.js reads (no database) that every login page makes before the
+// user is signed in. Only the per-IP flood guard applies to them.
+const AUTH_READS = new Set(["/api/auth/csrf", "/api/auth/session", "/api/auth/providers"])
 
 const PUBLIC_PAGES = new Set(["/login"])
 const PUBLIC_API_EXACT = new Set(["/api/register", "/api/health"])
@@ -38,14 +41,16 @@ export default auth((req) => {
 
   if (isApi) {
     const ip = getClientIp(req.headers)
-    if (req.method === "POST" && CREDENTIAL_ENDPOINTS.has(pathname) && credentialLimiter.hit(ip)) {
-      return tooManyRequests()
-    }
     if (ipFloodLimiter.hit(ip)) return tooManyRequests()
     // req.auth comes from the verified session JWT, so the user id can't be forged.
     const userId = req.auth?.user?.id
-    const limited = userId ? userApiLimiter.hit(`u:${userId}`) : anonymousApiLimiter.hit(ip)
-    if (limited) return tooManyRequests()
+    if (req.method === "POST" && CREDENTIAL_ENDPOINTS.has(pathname)) {
+      if (credentialLimiter.hit(ip)) return tooManyRequests()
+    } else if (userId) {
+      if (userApiLimiter.hit(`u:${userId}`)) return tooManyRequests()
+    } else if (!(req.method === "GET" && AUTH_READS.has(pathname)) && anonymousApiLimiter.hit(ip)) {
+      return tooManyRequests()
+    }
   }
 
   const isPublic =
