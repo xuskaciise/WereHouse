@@ -7,11 +7,15 @@
  * classroom on one network. Read-only: it only sends GET requests (plus the
  * sign-in itself).
  *
+ * Accounts are reused round-robin when VUS is larger than the number of
+ * usernames (each account stays well under the 300 requests/minute per-user
+ * limit with up to ~10 virtual users on it).
+ *
  * Usage:
  *   BASE=http://127.0.0.1:3200 node scripts/loadtest/run.mjs
  * Options (env):
  *   USERS_FILE  JSON {password, usernames[]} (default scripts/loadtest/users.local.json)
- *   VUS         number of virtual users (default: all usernames in the file)
+ *   VUS         number of virtual users (default: one per username in the file)
  *   RAMP        seconds over which users sign in (default 60)
  *   DURATION    seconds of browsing after the ramp (default 180)
  *   THINK_MIN / THINK_MAX  seconds between pages (default 3 / 8)
@@ -23,7 +27,7 @@ import { fileURLToPath } from "node:url"
 const BASE = (process.env.BASE || "http://127.0.0.1:3200").replace(/\/$/, "")
 const HERE = dirname(fileURLToPath(import.meta.url))
 const { password, usernames } = JSON.parse(readFileSync(process.env.USERS_FILE || join(HERE, "users.local.json"), "utf8"))
-const VUS = Math.min(Number(process.env.VUS || usernames.length), usernames.length)
+const VUS = Number(process.env.VUS || usernames.length)
 const RAMP = Number(process.env.RAMP ?? 60) * 1000
 const DURATION = Number(process.env.DURATION ?? 180) * 1000
 const THINK_MIN = Number(process.env.THINK_MIN ?? 3) * 1000
@@ -112,7 +116,7 @@ let pagesOpened = 0
 async function virtualUser(i, stopAt) {
   await sleep((RAMP * i) / VUS)
   const client = new Client()
-  if (!(await client.login(usernames[i]))) { loginFailed++; return }
+  if (!(await client.login(usernames[i % usernames.length]))) { loginFailed++; return }
   loggedIn++
   while (Date.now() < stopAt) {
     const page = PAGE_NAMES[Math.floor(Math.random() * PAGE_NAMES.length)]
