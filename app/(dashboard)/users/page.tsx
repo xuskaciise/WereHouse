@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { formatDate } from "@/lib/utils"
 import { User, Role } from "@/lib/types"
 import { useToast } from "@/components/ui/use-toast"
@@ -55,6 +56,8 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const currentUser = useCurrentUser()
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
 
   useEffect(() => {
     fetchUsers()
@@ -67,6 +70,7 @@ export default function UsersPage() {
       if (response.ok) {
         const data = await response.json()
         setUsers(data || [])
+        setSelectedIds(new Set())
       } else {
         const errorData = await response.json().catch(() => ({ error: "Failed to fetch users" }))
         console.error("API Error:", errorData)
@@ -218,6 +222,73 @@ export default function UsersPage() {
   }
 
   const confirmDialog = useConfirm()
+
+  // Admins and the signed-in user can never be deleted (the API refuses too).
+  const isSelectable = (user: { id: string; role: string }) => user.role !== "ADMIN" && user.id !== currentUser.id
+  const selectableUsers = users.filter(isSelectable)
+  const selectedCount = selectableUsers.filter((u) => selectedIds.has(u.id)).length
+  const allSelected = selectableUsers.length > 0 && selectedCount === selectableUsers.length
+
+  const toggleSelectAll = (checked: boolean) => {
+    setSelectedIds(checked ? new Set(selectableUsers.map((u) => u.id)) : new Set())
+  }
+
+  const toggleSelected = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const handleBulkDelete = async () => {
+    const ids = selectableUsers.filter((u) => selectedIds.has(u.id)).map((u) => u.id)
+    if (ids.length === 0) return
+    if (!(await confirmDialog({
+      title: `Delete ${ids.length} user(s)?`,
+      description: "This cannot be undone. Users with linked records (orders, movements, ...) will be kept.",
+      confirmLabel: "Delete",
+      destructive: true,
+    }))) {
+      return
+    }
+
+    setIsBulkDeleting(true)
+    try {
+      const response = await fetch("/api/users/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        toast({ title: "Error", description: result.error || "Failed to delete users", variant: "destructive" })
+        return
+      }
+      const failed: { name: string | null; reason: string }[] = result.failed || []
+      const deletedCount = (result.deleted || []).length
+      if (failed.length === 0) {
+        toast({ title: "Users Deleted", description: `${deletedCount} user(s) deleted.` })
+      } else {
+        toast({
+          title: `${deletedCount} deleted, ${failed.length} not deleted`,
+          description: (
+            <ul className="list-disc pl-4">
+              {failed.map((f, i) => <li key={i}>{f.name || "Unknown user"}: {f.reason}</li>)}
+            </ul>
+          ),
+          variant: "destructive",
+        })
+      }
+      await fetchUsers()
+    } catch (error) {
+      console.error("Error deleting users:", error)
+      toast({ title: "Error", description: "Failed to delete users", variant: "destructive" })
+    } finally {
+      setIsBulkDeleting(false)
+    }
+  }
 
   const handleDelete = async (id: string) => {
     if (!(await confirmDialog({ title: "Delete this user?", description: "This cannot be undone.", confirmLabel: "Delete", destructive: true }))) {
@@ -483,6 +554,16 @@ export default function UsersPage() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={selectedCount === 0 || isBulkDeleting}
+                onClick={handleBulkDelete}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                {isBulkDeleting ? "Deleting..." : `Delete selected (${selectedCount})`}
+              </Button>
             </div>
           )}
           {isLoading ? (
@@ -493,6 +574,16 @@ export default function UsersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {isAdmin && (
+                    <TableHead className="w-10">
+                      <Checkbox
+                        aria-label="Select all users"
+                        checked={allSelected ? true : selectedCount > 0 ? "indeterminate" : false}
+                        disabled={selectableUsers.length === 0}
+                        onCheckedChange={(checked) => toggleSelectAll(checked === true)}
+                      />
+                    </TableHead>
+                  )}
                   <TableHead>Name</TableHead>
                   <TableHead>Username</TableHead>
                   <TableHead>Role</TableHead>
@@ -505,13 +596,24 @@ export default function UsersPage() {
               <TableBody>
                 {users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={isAdmin ? 8 : 7} className="text-center text-muted-foreground py-8">
                     No users found. Click &quot;Add New User&quot; to create your first user.
                   </TableCell>
                 </TableRow>
               ) : (
                 users.map((user) => (
                 <TableRow key={user.id}>
+                  {isAdmin && (
+                    <TableCell>
+                      <Checkbox
+                        aria-label={`Select ${user.name}`}
+                        checked={isSelectable(user) && selectedIds.has(user.id)}
+                        disabled={!isSelectable(user)}
+                        title={isSelectable(user) ? undefined : "Admins and your own account cannot be deleted"}
+                        onCheckedChange={(checked) => toggleSelected(user.id, checked === true)}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="font-medium">{user.name}</TableCell>
                   <TableCell>{user.username || user.email}</TableCell>
                   <TableCell>{getRoleBadge(user.role)}</TableCell>
