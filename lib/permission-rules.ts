@@ -301,7 +301,7 @@ export const PAGE_MODULES: [string, Module | Module[]][] = [
   ["/expenses", ["expenses", "expense_categories"]],
   ["/reports/expenses", "reports_finance"],
   ["/reports/profit-loss", "reports_finance"],
-  ["/reports/stock", "reports_stock"],
+  ["/reports/stock", "reports_stock"],
   // Every user's work: admin only, like user management.
   ["/reports/user-activity", "users"],
   ["/accounts", "accounting"],
