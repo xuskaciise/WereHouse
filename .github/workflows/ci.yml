@@ -46,7 +46,7 @@ jobs:
           target: runner
           push: false
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
       - name: Build migrator image (not pushed)
         uses: docker/build-push-action@v6
         with:
