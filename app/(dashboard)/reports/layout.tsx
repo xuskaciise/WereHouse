@@ -17,6 +17,7 @@ export default async function Layout({ children }: { children: React.ReactNode }
             { label: "Stock", href: "/reports/stock", modules: ["reports_stock"] },
             { label: "Expenses", href: "/reports/expenses", modules: ["reports_finance"] },
             { label: "Profit & Loss", href: "/reports/profit-loss", modules: ["reports_finance"] },
+            { label: "User Activity", href: "/reports/user-activity", modules: ["users"] },
           ]}
         />
       </Suspense>
