@@ -36,12 +36,23 @@
   }
 }
 
-/* Purchase order / sheet print: show only printable region */
 @media print {
   @page {
     margin: 12mm;
   }
-  body * {
+  /* Pages print their whole content: the app frame scrolls inside a screen-high box on screen,
+     which would cut the printout to the first screen. */
+  .print-flow {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
+
+/* Purchase order sheet print: show only the printable region — and ONLY while that sheet is open.
+   Without the :has() guard every other page printed as a blank sheet. */
+@media print {
+  body:has(#purchase-order-print-root) * {
     visibility: hidden;
   }
   #purchase-order-print-root,
@@ -55,7 +66,7 @@
     width: 100%;
     padding: 0;
   }
-  [role="dialog"] {
+  body:has(#purchase-order-print-root) [role="dialog"] {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;

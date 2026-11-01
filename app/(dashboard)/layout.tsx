@@ -23,15 +23,15 @@ export default async function DashboardLayout({
   return (
     <CurrentUserProvider user={{ ...user, discountReasonReferenceLimit }} currency={currency}>
       <ConfirmProvider>
-      <div className="flex h-screen overflow-hidden">
+      <div className="print-flow flex h-screen overflow-hidden">
         <Suspense>
           <Sidebar />
         </Suspense>
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="print-flow flex min-w-0 flex-1 flex-col overflow-hidden">
           <Suspense>
             <Navbar />
           </Suspense>
-          <main className="flex-1 overflow-y-auto bg-muted/50 p-3 sm:p-6 print:bg-white print:p-0">
+          <main className="print-flow flex-1 overflow-y-auto bg-muted/50 p-3 sm:p-6 print:bg-white print:p-0">
             <Suspense>
               <Breadcrumbs />
             </Suspense>
