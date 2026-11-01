@@ -49,10 +49,11 @@
   }
 }
 
-/* Purchase order sheet print: show only the printable region — and ONLY while that sheet is open.
-   Without the :has() guard every other page printed as a blank sheet. */
+/* Purchase order print (sheet or page): show only the printable region — and ONLY where it exists.
+   Without the :has() guard every other page printed as a blank sheet. :where() keeps the hiding
+   rule at zero specificity, so `#purchase-order-print-root *` below still wins. */
 @media print {
-  body:has(#purchase-order-print-root) * {
+  :where(body:has(#purchase-order-print-root) *) {
     visibility: hidden;
   }
   #purchase-order-print-root,
